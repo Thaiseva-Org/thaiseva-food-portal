@@ -1,0 +1,131 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: "Roboto", sans-serif;
+}
+
+:root {
+  /* Color Variables */
+  --logo-text-color: #122159;
+  --primary-bg-color: #f1f5f9;
+  --light-text-color: #868482;
+  --main-headings-color: #3b82f6;
+  --secondary-text-color: #475569;
+
+  /* Dashboard Colors */
+  --green-prime-color: #04ab14;
+  --green-bg-color: #0eae3133;
+  --red-prime-color: #fa5b5b;
+  --red-bg-color: #fa5b5b1a;
+  --yellow-prime-color: #fda237;
+  --yellow-bg-color: #fda23738;
+  --blue-prime-color: #3b69ff;
+  --blue-bg-color: #ebefff;
+  --purple-prime-color: #724ffd;
+  --purple-bg-color: #724ffd1a;
+
+  /* Drawer Colors */
+  --drawer-inactive-color: #00000087;
+  --drawer-main-color: #f87608;
+  --drawer-icon-color: #fea12f;
+  --drawer-secondary-color: #fff8eb;
+  --drawer-border-color: #fea12f;
+  --drawer-hover-color: #ffe9c6;
+
+  /* Icons Bg Colors */
+  --accept-button-bg-color: rgb(34 197 94);
+  --reject-button-bg-color: rgb(239, 46, 46);
+
+  --categories-bg-color: #2c7aff;
+  --categories-light-bg-color: #8ac3ff;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+/* Style the vertical scrollbar thumb */
+::-webkit-scrollbar-thumb {
+  background-color: gray;
+  border-radius: 5px;
+  box-shadow: 0 0 2px rgba(30, 11, 153, 0.2);
+}
+
+/* Style the horizontal scrollbar */
+::-webkit-scrollbar:horizontal {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: rgb(225, 222, 222);
+}
+
+/* Style the horizontal scrollbar thumb */
+::-webkit-scrollbar-thumb:horizontal {
+  background-color: gray;
+  border-radius: 5px;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.2);
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, and Edge */
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+button {
+  cursor: pointer;
+}
+
+input[type="date"].date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.5) sepia(1) saturate(5) hue-rotate(175deg);
+}
+
+input:checked {
+  background-color: #22c55e;
+}
+
+input:checked ~ span:last-child {
+  --tw-translate-x: 1.75rem;
+}
+
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.light-text {
+  @apply text-[var(--secondary-text-color)] font-semibold;
+}
+
+.sidebar-active-tab {
+  @apply bg-[var(--drawer-secondary-color)] text-[var(--drawer-main-color)] font-bold border-l-4 border-l-[var(--drawer-border-color)];
+}
+
+.sidebar-inactive-tab {
+  @apply text-[var(--drawer-inactive-color)] font-medium;
+}
+
+.date-input {
+  @apply bg-transparent;
+}
