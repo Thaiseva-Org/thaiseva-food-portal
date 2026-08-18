@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { db, storage } from "../../../../firebaseConfig"; // Adjust the import based on your firebase configuration
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { MdLocationOn, MdFileUpload } from "react-icons/md";
-import { FaImages, FaRegImage } from "react-icons/fa"; // Import FaImages and FaRegImage
-import axios from "axios"; // Import Axios
+import { FaImages, FaRegImage } from "react-icons/fa";
+import axios from "axios";
 import { useAuth } from "../../../AuthContext";
 import AddressAutocomplete from "../../../components/AddressAutoComplete";
+import { updateRestaurantProfile } from "../../../api";
+import { getGoogleMapsApiKey } from "../../../utils/tenant";
+import { partnerPath } from "../../../utils/partnerRoutes";
 
 const EditRestaurant = () => {
-  const { restaId } = useParams(); // Get restaurant ID from URL params
   const [restaurantName, setRestaurantName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [emailId, setEmailId] = useState("");
@@ -18,14 +20,13 @@ const EditRestaurant = () => {
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState(null);
-  const [timestamp, setTimestamp] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const { currentUser } = useAuth();
   const modalRef = useRef(null);
   const navigate = useNavigate();
 
-  const GOOGLE_API_KEY = "AIzaSyDwTBiBiGtJLrlbaiKzVN5BBCj8He1l5Zc"; // Replace with your API key
+  const GOOGLE_API_KEY = getGoogleMapsApiKey();
 
   useEffect(() => {
     const fetchRestaurantData = async () => {
@@ -42,7 +43,6 @@ const EditRestaurant = () => {
           setLocation(data.location || "");
           setDescription(data.description || "");
           setImage(data.imageUrl || "");
-          setTimestamp(data.timestamp || "");
         } else {
           alert("No such restaurant!");
         }
@@ -51,10 +51,10 @@ const EditRestaurant = () => {
       }
     };
 
-    if (currentUser && restaId) {
+    if (currentUser?.uid) {
       fetchRestaurantData();
     }
-  }, [currentUser, restaId]);
+  }, [currentUser]);
 
   // const formatPhoneNumber = (value) => {
   //   // Remove all non-numeric characters
@@ -103,13 +103,25 @@ const EditRestaurant = () => {
 
   const handleImageUpload = async (file) => {
     if (file) {
+      if (!file.type?.startsWith("image/")) {
+        alert("Only image files are allowed.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image must be under 5MB.");
+        return;
+      }
       setUploading(true);
-      const storageRef = ref(storage, `restaurantImages/${file.name}`);
+      const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const storageRef = ref(
+        storage,
+        `restaurants/${currentUser.uid}/profile/${safeName}`
+      );
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setImage(url);
       setUploading(false);
-      setDropdownOpen(false); // Close dropdown after uploading
+      setDropdownOpen(false);
     }
   };
 
@@ -172,23 +184,23 @@ const EditRestaurant = () => {
       confirm("Are you sure you want to update this restaurant's information?")
     ) {
       try {
-        const restaurantData = {
-          name: restaurantName || "N/A",
-          phoneNumber: phoneNumber || "N/A",
-          emailId: emailId || "N/A",
-          foodType: foodType || "N/A",
-          location: location || "N/A",
-          description: description || "N/A",
-          imageUrl: image || "N/A",
-          timestamp: timestamp || serverTimestamp(),
-        };
-        const restaurantsDocRef = doc(db, "restaurants", currentUser.uid);
-        await updateDoc(restaurantsDocRef, restaurantData);
+        await updateRestaurantProfile({
+          ownerUid: currentUser.uid,
+          fields: {
+            name: restaurantName || "N/A",
+            phoneNumber: phoneNumber || "N/A",
+            emailId: emailId || "N/A",
+            foodType: foodType || "N/A",
+            location: location || "N/A",
+            description: description || "N/A",
+            imageUrl: image || "N/A",
+          },
+        });
         alert("Restaurant information updated successfully");
-        navigate(`/${currentUser.uid}/restaurant`);
+        navigate(partnerPath("restaurant"));
       } catch (error) {
         console.error("Error updating documents: ", error.message);
-        alert("Failed to update. Please try again.");
+        alert(error.message || "Failed to update. Deploy Cloud Functions first.");
       }
     }
   };

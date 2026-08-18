@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
 import { collection, addDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { MdLocationOn } from "react-icons/md";
 import axios from "axios";
+import { getGoogleMapsApiKey } from "../../../utils/tenant";
 
 const AddRestaInfo = () => {
   const [restaurantName, setRestaurantName] = useState("");
@@ -17,7 +18,7 @@ const AddRestaInfo = () => {
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  const GOOGLE_API_KEY = "AIzaSyDwTBiBiGtJLrlbaiKzVN5BBCj8He1l5Zc";
+  const GOOGLE_API_KEY = getGoogleMapsApiKey();
 
   useEffect(() => {
     document.title = "Thaiseva | Food Admin - Add Restaurant";

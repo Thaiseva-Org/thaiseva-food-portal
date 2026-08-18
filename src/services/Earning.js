@@ -1,101 +1,30 @@
 import {
   doc,
   getDoc,
-  setDoc,
   getDocs,
   collection,
-  updateDoc,
   query,
   where,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 
-async function updateHourlyEarnings(orderAmount, id = "") {
-  try {
-    const now = new Date();
-
-    const currentDate = now.toISOString().slice(0, 10);
-    const currentHour = `${now.getHours().toString().padStart(2, "0")}:00`;
-
-    const dailyDocRef = doc(
-      db,
-      `Earnings/${id === "" ? "Admin" : id}/dailyEarnings`,
-      currentDate
-    );
-    const dailyDocSnapshot = await getDoc(dailyDocRef);
-
-    if (dailyDocSnapshot.exists()) {
-      const data = dailyDocSnapshot.data();
-      let totalAmount = data.totalAmount || 0;
-      let hourlyEarnings = data.hourlyEarnings || [];
-
-      // Find if the current hour already exists
-      const index = hourlyEarnings.findIndex(
-        (entry) => entry.hour === currentHour
-      );
-
-      if (index >= 0) {
-        // Update existing entry
-        hourlyEarnings[index].earnings += Number(orderAmount);
-      } else {
-        // Add new entry for this hour
-        hourlyEarnings.push({
-          hour: currentHour,
-          earnings: Number(orderAmount),
-        });
-      }
-      totalAmount += Number(orderAmount);
-
-      await updateDoc(dailyDocRef, { hourlyEarnings, totalAmount });
-    } else {
-      // Create the document if it doesn't exist
-      await setDoc(dailyDocRef, {
-        date: currentDate,
-        hourlyEarnings: [{ hour: currentHour, earnings: Number(orderAmount) }],
-        totalAmount: Number(orderAmount),
-        timestamp: new Date(),
-      });
-    }
-  } catch (error) {
-    console.error("Error updating hourly earnings:", error);
-  }
+/**
+ * Client-side earnings writes are DISABLED for security.
+ * Money mutations run only in Cloud Functions (markOrderDelivered).
+ * These stubs remain so any leftover imports fail safely.
+ */
+async function updateHourlyEarnings() {
+  console.error(
+    "updateHourlyEarnings is disabled on the client. Use markOrderDelivered Cloud Function."
+  );
+  throw new Error("Client earnings writes are forbidden.");
 }
 
-async function updateMonthlyEarnings(orderAmount, id = "") {
-  try {
-    const now = new Date();
-
-    // Format year and month (e.g., "2025-01" for January 2025)
-    const currentYearMonth = `${now.getFullYear()}-${(now.getMonth() + 1)
-      .toString()
-      .padStart(2, "0")}`;
-
-    const monthlyDocRef = doc(
-      db,
-      `Earnings/${id === "" ? "Admin" : id}/monthlyEarnings`,
-      currentYearMonth
-    );
-    const monthlyDocSnapshot = await getDoc(monthlyDocRef);
-
-    if (monthlyDocSnapshot.exists()) {
-      // Update the existing document
-      const data = monthlyDocSnapshot.data();
-      const currentEarnings = data.totalEarnings || 0;
-
-      await updateDoc(monthlyDocRef, {
-        totalEarnings: currentEarnings + Number(orderAmount),
-      });
-    } else {
-      // Create a new document if it doesn't exist
-      await setDoc(monthlyDocRef, {
-        month: currentYearMonth,
-        totalEarnings: Number(orderAmount),
-        timestamp: new Date(),
-      });
-    }
-  } catch (error) {
-    console.error("Error updating monthly earnings:", error);
-  }
+async function updateMonthlyEarnings() {
+  console.error(
+    "updateMonthlyEarnings is disabled on the client. Use markOrderDelivered Cloud Function."
+  );
+  throw new Error("Client earnings writes are forbidden.");
 }
 
 async function getHourlyEarnings(id = "") {
@@ -120,7 +49,20 @@ async function getHourlyEarnings(id = "") {
 
     if (dailyDocSnapshot.exists()) {
       const data = dailyDocSnapshot.data();
-      const fetchedHourlyData = data.hourlyEarnings || [];
+      const combinedHourly = new Map();
+      for (const item of Array.isArray(data.hourlyEarnings) ? data.hourlyEarnings : []) {
+        combinedHourly.set(item.hour, Number(item.earnings || 0));
+      }
+      for (const [hour, earnings] of Object.entries(data.hourlyEarningsMap || {})) {
+        combinedHourly.set(
+          hour,
+          Number(combinedHourly.get(hour) || 0) + Number(earnings || 0)
+        );
+      }
+      const fetchedHourlyData = [...combinedHourly].map(([hour, earnings]) => ({
+        hour,
+        earnings,
+      }));
 
       fetchedHourlyData.forEach((item) => {
         const index = hourlyEarnings.findIndex(
@@ -264,6 +206,85 @@ async function getMonthlyEarnings(id = "") {
   }
 }
 
+function formatDateToDDMMMLocal(dateString) {
+  return new Date(dateString).toLocaleDateString("en-US", {
+    day: "2-digit",
+    month: "short",
+  });
+}
+
+async function getEarningsForRange(id = "", startDate, endDate) {
+  if (!startDate || !endDate) return getAllTimeEarnings(id);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const days = Math.round((end - start) / 86400000);
+  const today = new Date().toISOString().slice(0, 10);
+  if (startDate === endDate && startDate === today) {
+    return getHourlyEarnings(id);
+  }
+  if (days > 45) return getMonthlyEarnings(id);
+
+  try {
+    const earningsRef = collection(
+      db,
+      `Earnings/${id === "" ? "Admin" : id}/dailyEarnings`
+    );
+    const earningsQuery = query(
+      earningsRef,
+      where("date", ">=", startDate),
+      where("date", "<=", endDate)
+    );
+    const querySnapshot = await getDocs(earningsQuery);
+    const earningsMap = new Map(
+      querySnapshot.docs.map((docSnap) => [
+        docSnap.id,
+        docSnap.data().totalAmount || 0,
+      ])
+    );
+    const rows = [];
+    const cursor = new Date(startDate);
+    const last = new Date(endDate);
+    while (cursor <= last) {
+      const key = cursor.toISOString().slice(0, 10);
+      rows.push({
+        data: formatDateToDDMMMLocal(key),
+        earnings: earningsMap.get(key) || 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return rows;
+  } catch (error) {
+    console.error("Error fetching earnings range:", error);
+    return getWeeklyEarnings(id);
+  }
+}
+
+async function getAllTimeEarnings(id = "") {
+  try {
+    const earningsRef = collection(
+      db,
+      `Earnings/${id === "" ? "Admin" : id}/monthlyEarnings`
+    );
+    const querySnapshot = await getDocs(earningsRef);
+    const rows = querySnapshot.docs
+      .map((docSnap) => {
+        const monthId = docSnap.id;
+        return {
+          data: formatDateToMMMYY(monthId),
+          earnings: docSnap.data().totalEarnings || 0,
+          sortKey: monthId,
+        };
+      })
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    return rows.length
+      ? rows.map(({ data, earnings }) => ({ data, earnings }))
+      : await getMonthlyEarnings(id);
+  } catch (error) {
+    console.error("Error fetching all-time earnings:", error);
+    return getMonthlyEarnings(id);
+  }
+}
+
 export {
   updateHourlyEarnings,
   updateMonthlyEarnings,
@@ -271,4 +292,6 @@ export {
   getTodayEarnings,
   getWeeklyEarnings,
   getMonthlyEarnings,
+  getAllTimeEarnings,
+  getEarningsForRange,
 };

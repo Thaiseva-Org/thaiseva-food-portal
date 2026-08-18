@@ -6,25 +6,39 @@ import {
   where,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { Taco, TacoTwo } from "../../assets";
+import Chip from "@mui/material/Chip";
 import { useAuth } from "../../AuthContext";
 import Loading from "../../components/Loading";
+import { DashSection, StatusMeter } from "../../components/dashboard";
+import {
+  formatCount,
+  formatCountFull,
+  formatPercent,
+} from "../../utils/format";
 
 const FoodStats = () => {
-  const { roleData } = useAuth();
+  const { roleData, currentUser } = useAuth();
   const [totalFoods, setTotalFoods] = useState(0);
   const [availableFoods, setAvailableFoods] = useState(0);
   const [notAvailableFoods, setNotAvailableFoods] = useState(0);
-  const [loading, setLoading] = useState(true); // Initialize loading state
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true); // Start loading
+      setLoading(true);
       const db = getFirestore();
       try {
+        const menuRoot =
+          currentUser?.uid ||
+          roleData?.restaurantOwnerUid ||
+          roleData?.restaurantId;
+        if (!menuRoot) {
+          setLoading(false);
+          return;
+        }
         const itemsCollectionRef = collection(
           db,
-          `food_items/${roleData.restaurantId}/items`
+          `food_items/${menuRoot}/items`
         );
         const totalItems = await getCountFromServer(itemsCollectionRef);
         const totalCount = totalItems.data().count;
@@ -46,62 +60,58 @@ const FoodStats = () => {
     };
 
     fetchData();
-  }, []);
+  }, [
+    currentUser?.uid,
+    roleData?.restaurantOwnerUid,
+    roleData?.restaurantId,
+  ]);
 
-  // Calculate percentages
   const availablePercentage =
     totalFoods > 0 ? (availableFoods / totalFoods) * 100 : 0;
   const notAvailablePercentage =
     totalFoods > 0 ? (notAvailableFoods / totalFoods) * 100 : 0;
 
   return (
-    <div className="col-span-12 lg:col-span-6 bg-white p-4 rounded-lg pb-8 shadow-md">
-      <p className="text-xl font-bold">Food Item Status</p>
+    <DashSection
+      title="Food item status"
+      subtitle="Menu availability at a glance"
+      action={
+        !loading ? (
+          <Chip
+            size="small"
+            color="primary"
+            variant="outlined"
+            label={`${formatCount(totalFoods)} total`}
+            title={`${formatCountFull(totalFoods)} total items`}
+          />
+        ) : null
+      }
+    >
       {loading ? (
-        <Loading />
+        <div className="h-28 flex items-center justify-center">
+          <Loading />
+        </div>
+      ) : totalFoods === 0 ? (
+        <div className="empty-state py-10">
+          <p className="text-sm">No menu items yet.</p>
+        </div>
       ) : (
         <>
-          <div className="flex items-center justify-between mt-12">
-            <div className="flex items-center gap-3">
-              <img src={Taco} className="h-8" alt="Available Foods" />
-              <div className="text-slate-700 dark:text-slate-700">
-                Active Items
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-44 bg-gray-200 rounded-full md:h-2 h-1 dark:bg-gray-700">
-                <div
-                  className="bg-yellow-600 md:h-2 h-1 rounded-full dark:bg-yellow-500"
-                  style={{ width: `${availablePercentage}%` }}
-                ></div>
-              </div>
-              <p className="text-slate-700">
-                {availableFoods} ({availablePercentage.toFixed(0)}%)
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-1">
-              <img src={TacoTwo} className="h-8" alt="Not Available Foods" />
-              <div className="text-slate-700 dark:text-slate-700">
-                Inactive Items
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-44 bg-gray-200 rounded-full md:h-2 h-1 dark:bg-gray-700">
-                <div
-                  className="bg-red-600 md:h-2 h-1 rounded-full dark:bg-red-500"
-                  style={{ width: `${notAvailablePercentage}%` }}
-                ></div>
-              </div>
-              <p className="text-slate-700">
-                {notAvailableFoods} ({notAvailablePercentage.toFixed(0)}%)
-              </p>
-            </div>
-          </div>
+          <StatusMeter
+            label="Active items"
+            valueLabel={`${formatCount(availableFoods)} (${formatPercent(availablePercentage)})`}
+            percent={availablePercentage}
+            color="success"
+          />
+          <StatusMeter
+            label="Inactive items"
+            valueLabel={`${formatCount(notAvailableFoods)} (${formatPercent(notAvailablePercentage)})`}
+            percent={notAvailablePercentage}
+            color="error"
+          />
         </>
       )}
-    </div>
+    </DashSection>
   );
 };
 

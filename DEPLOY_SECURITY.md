@@ -1,0 +1,137 @@
+# Deploy guide — security fix (APIs + rules)
+
+## What changed
+
+1. **Cloud Functions API** (`functions/`) owns money, order status, commission, approvals, menu mutations, and dine-in bookings (customer create/list/update/cancel + restaurant accept/reject).
+2. **Firestore rules** block client updates to `orders` and all `Earnings` writes; lock financial restaurant fields.
+3. **Storage rules** require image MIME + 5MB max; prefer `restaurants/{uid}/...` paths.
+4. **SPA** calls callables via `src/api/*`; auth no longer overwrites profiles on Google login.
+5. **`firebase-admin` removed** from the frontend package.
+
+## Auth session security (Firebase JWT)
+
+Firebase Auth already issues signed **ID tokens (JWTs)**. This app adds a client session layer:
+
+| Control | Behavior |
+|---------|----------|
+| Persistence | Default **session** (clears when browser closes). “Remember me” → local |
+| On login | Force-refresh JWT + bind `auth_time` / nonce session marker |
+| Idle timeout | Default **30 min** (`VITE_SESSION_IDLE_MINUTES`) |
+| Max lifetime | Default **12 h** from JWT `auth_time` (`VITE_SESSION_MAX_HOURS`) |
+| Token refresh | `onIdTokenChanged` + proactive refresh near expiry |
+| Logout | Clears session markers + `signOut` |
+| Login throttle | 5 failures / 5 min (client); Functions still enforce rate limits |
+
+Code: `src/utils/sessionSecurity.js`, `src/utils/authSession.js`, `AuthContext.jsx`.
+
+## Firestore rules & indexes (multi-app — do not shrink / widen carelessly)
+
+This project shares one Firestore database with hotel/travel/website apps.
+
+- **Rules policy:** `FIRESTORE_RULES_NOTES.md` · guard `tests/firestoreRulesIsolation.test.cjs`
+- **Indexes policy:** `FIRESTORE_INDEXES_NOTES.md` · guard `tests/firestoreIndexesIsolation.test.cjs`
+- **Never** put food-only claims into `isAdmin()`; use `isFoodAdmin()` on food paths only
+- **Never** deploy `firestore.indexes.json` with only food indexes — CLI can **delete** production hotel/car/van indexes
+- Prefer `firebase deploy --only firestore:rules` when you are not intentionally changing indexes
+
+## Deploy order (important)
+
+```bash
+# 1) Install function deps
+cd functions
+npm install
+cd ..
+
+# 2) Deploy rules FIRST in staging, then functions, then hosting
+firebase deploy --only firestore:rules,storage
+firebase deploy --only functions:food-portal
+npm run build
+firebase deploy --only hosting
+```
+
+> Deploying rules that deny order updates **before** functions are live will break status buttons. Prefer deploy functions + hosting together after rules on a maintenance window, or deploy functions first if rules already allow nothing new.
+
+Recommended production sequence:
+
+1. `firebase deploy --only functions:food-portal`
+2. Deploy SPA (hosting) that uses APIs
+3. `firebase deploy --only firestore:rules,storage`
+
+## Provision master admin claims
+
+Master claims must be provisioned through an audited Admin SDK/operator
+workflow. The browser never converts a Firestore profile flag into master
+access.
+
+## Custom claims
+
+| Role | Claims |
+|------|--------|
+| Master | `{ foodRole: "masterAdmin" }` (legacy `role` is still read during migration) |
+| Restaurant owner (after verify) | `{ foodRole: "restaurantOwner", foodRestaurantId: "<ownerUid>", foodRestaurantOwner: true }` |
+
+Claims are set only by the Admin SDK. Restaurant-owner claims are merged by
+`reviewRestaurantApplication`, so claims belonging to other applications in
+the shared Firebase project are preserved. Master claims must be provisioned
+with a separately audited Admin SDK script or secure operator process;
+Firestore profile fields are never trusted as master authorization.
+
+## Menu path migration
+
+New items write to `food_items/{ownerUid}/items/{itemId}`.
+
+If production data lives under short public IDs, run a one-off Admin script to copy:
+
+`food_items/{publicId}/items/*` → `food_items/{ownerUid}/items/*`
+
+## API list (callable, region `asia-southeast1`)
+
+| Function | Role |
+|----------|------|
+| `ensureUserProfile` | any auth |
+| `submitRestaurantApplication` | any auth |
+| `reviewRestaurantApplication` | master |
+| `updateRestaurantProfile` | owner / master |
+| `setRestaurantOpenState` | owner / master |
+| `adminUpdateCommission` | master |
+| `transitionOrderStatus` | owner / master |
+| `markOrderDelivered` | master |
+| `clearOrderPayment` | master |
+| `createDineInBooking` | any auth (customer app) |
+| `listMyDineInBookings` | any auth (own bookings) |
+| `getDineInBooking` | booking owner, or owner / master |
+| `updateDineInBooking` | booking owner (Pending only) |
+| `cancelDineInBooking` | booking owner (Pending or Accepted) |
+| `setDineInBookingStatus` | owner / master (Accept / Reject) |
+| `createFoodItem` / `updateFoodItem` / `setFoodItemActive` / `deleteFoodItem` | owner / master |
+
+Customer-app booking contract, payloads, and error codes: **`APP_BOOKING_API.md`**.
+
+## Local env
+
+```bash
+cp .env.example .env.local
+# fill all required Firebase values, App Check site key, and Google Maps key
+```
+
+Production callable functions enforce Firebase App Check by default. Register
+the web app with reCAPTCHA Enterprise before deploying. Only local emulators
+may set `ENFORCE_APP_CHECK=false`.
+
+## Post-deploy checklist
+
+- [ ] Partner cannot set commission on apply
+- [ ] Google login does not wipe `isRestaurantAdmin`
+- [ ] Order status updates only via API
+- [ ] Customer app creates / cancels table bookings via booking callables (not client `setDoc`)
+- [ ] Restaurant accept / reject uses `setDineInBookingStatus`
+- [ ] Delivered once → earnings once (retry is idempotent)
+- [ ] Payment clear works
+- [ ] Approve restaurant sets claims + commission
+- [ ] `npm audit` triage remaining high/critical deps
+- [ ] Restrict API keys in Google Cloud Console
+- [ ] App Check requests show valid tokens; unverified callable requests fail
+
+`firebase deploy --only hosting` runs `npm run production:check` automatically
+and refuses to deploy when required Firebase/App Check configuration, tests,
+build, or either production dependency audit fails.

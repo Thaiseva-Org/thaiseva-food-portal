@@ -1,39 +1,78 @@
 import { Pagination } from "@mui/material";
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
+import DataBoxes from "../../components/DataBoxes";
+import DateRangeFilter from "../../components/DateRangeFilter";
+import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
+import StatusBadge from "../../components/StatusBadge";
 import { useBookings } from "../../context/BookingsProvider";
 import { fetchOrders, fetchOrdersTotalPages } from "../../services/GetOrders";
+import { isPlatformOrder } from "../../utils/platformRestaurant";
+import {
+  ORDER_STATUS_FILTERS,
+  ORDER_STATUS_SUMMARY,
+  countOrdersByStatus,
+  formatOrderAmount,
+  getStatusCount,
+  getStatusFilterLabel,
+  orderMatchesStatusFilter,
+  sortOrdersByStatus,
+  summaryCardActive,
+} from "../../utils/orderStatus";
+
+const matchesSearch = (item, query) => {
+  if (!query) return true;
+  const haystack = [
+    item.CustomerName,
+    item.Location,
+    item.restaurantName,
+    item.Date,
+    item.Status,
+    item.Amount,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+};
 
 const OrdersDetails = () => {
   const { isMasterAdmin } = useAuth();
-  const { orders } = useBookings();
+  const { orders, ordersLoading, ordersError } = useBookings();
   const [orderDetailsRecord, setOrderDetailsRecord] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [isRealTime, setIsRealTime] = useState(true);
+  const [isRealTime, setIsRealTime] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [lastDocs, setLastDocs] = useState([]);
   const [refetch, setRefetch] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("all");
 
   useEffect(() => {
-    document.title = "Thaiseva | Manage Orders";
+    document.title = "Thaiseva | Orders";
   }, []);
 
-  const handleDateRangeSubmit = (event) => {
-    event.preventDefault();
-    if (endDate == "") {
-      alert("Please select both start and end!!");
-      return;
-    }
+  const applyDateRange = () => {
     setPage(1);
     setLastDocs([]);
     setIsRealTime(false);
     setRefetch((p) => !p);
+  };
+
+  const resetToLive = () => {
+    setIsRealTime(true);
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
+    setLastDocs([]);
+    setError(null);
   };
 
   useEffect(() => {
@@ -53,181 +92,365 @@ const OrdersDetails = () => {
           setLastDocs
         );
     }
-  }, [isMasterAdmin, page, isRealTime, refetch]);
+  }, [isMasterAdmin, page, isRealTime, refetch]); // eslint-disable-line react-hooks/exhaustive-deps -- date values and cursors are applied only by explicit submit/page triggers
 
   const handleChangePage = (_, newPage) => {
     setPage(newPage);
   };
 
-  if (loading)
-    return (
-      <div className="py-10">
-        <Loading />
-      </div>
-    );
-  if (error) return <p>{error}</p>;
+  const sourceRows = isRealTime ? orders : orderDetailsRecord;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const getValueOrNA = (value) => value || "N/A";
+  const stats = useMemo(
+    () => countOrdersByStatus(sourceRows || []),
+    [sourceRows]
+  );
+
+  const filteredRows = useMemo(() => {
+    const matched = (sourceRows || []).filter((item) => {
+      if (
+        sourceFilter === "platform" &&
+        !isPlatformOrder(item)
+      ) {
+        return false;
+      }
+      if (sourceFilter === "partners" && isPlatformOrder(item)) {
+        return false;
+      }
+      return (
+        orderMatchesStatusFilter(item.Status, statusFilter) &&
+        matchesSearch(item, normalizedQuery)
+      );
+    });
+    if (statusFilter === "all" || statusFilter === "active") {
+      return sortOrdersByStatus(matched);
+    }
+    return matched;
+  }, [sourceRows, statusFilter, normalizedQuery, sourceFilter]);
+
+  const pageError = error || (isRealTime ? ordersError : null);
+  const pageLoading = loading || (isRealTime && ordersLoading);
 
   return (
-    <div className="px-6 py-10 w-full">
-      <div className="flex justify-between items-center">
-        <p className="lg:text-3xl md:text-2xl font-bold text-[var(--main-headings-color)]">
-          Order Details
-        </p>
-        <div className="flex gap-2 flex-wrap">
-          <form
-            onSubmit={(e) => {
-              handleDateRangeSubmit(e);
-            }}
-            className="flex items-end justify-between"
-          >
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">Start</legend>
-              <input
-                type="date"
-                className="date-input w-[7.5rem] outline-none"
-                placeholder="Select date"
-                value={startDate}
-                onChange={(event) => {
-                  setStartDate(event.target.value);
-                }}
-                max={new Date().toISOString().split("T")[0]}
-              />
-            </fieldset>
-            <p className="px-2 pt-1 m-auto"> to </p>
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">End</legend>
-              <input
-                type="date"
-                className="date-input w-[7.5rem] outline-none"
-                placeholder="Select date"
-                value={endDate}
-                onChange={(event) => {
-                  if (startDate == "") {
-                    alert("Please Select Start Date First!!");
-                    return;
-                  }
-                  setEndDate(event.target.value);
-                }}
-                min={startDate}
-                max={new Date().toISOString().split("T")[0]}
-              />
-            </fieldset>
-
-            <button
-              type="submit"
-              className="w-24 py-2 mb-1 ml-2 text-sm font-semibold text-white bg-orange-400 rounded hover:bg-orange-500 focus:outline-none focus:shadow-outline"
-            >
-              Apply
-            </button>
-          </form>
-          <div className="mb-1 flex items-end">
-            <button
-              className={` py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none focus:shadow-outline text-sm`}
-              onClick={() => {
-                setIsRealTime(true), setStartDate(""), setEndDate("");
-              }}
-            >
-              Show Realtime
-            </button>
+    <div className="px-4 py-8 md:px-6 md:py-10">
+      {/* Header */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="page-header">Orders</h1>
+            {isRealTime ? (
+              <span className="badge-primary inline-flex items-center gap-1.5">
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                Live · last 24h
+              </span>
+            ) : (
+              <span className="badge-neutral">
+                {startDate && endDate ? `${startDate} → ${endDate}` : "All time"}
+              </span>
+            )}
+          </div>
+          <p className="page-subtext mt-1">
+            Partner tickets and ThaiSeva kitchen tickets. Kitchen tickets have
+            their own status page under Our orders.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              { value: "all", label: "All sources" },
+              { value: "partners", label: "Partner restaurants" },
+              { value: "platform", label: "ThaiSeva kitchen" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  sourceFilter === opt.value
+                    ? "border-brand-500 bg-brand-500 text-white"
+                    : "border-neutral-200 bg-white text-ink"
+                }`}
+                onClick={() => setSourceFilter(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="flex justify-around my-8">
-        <div className="overflow-auto w-[35rem] lg:w-full bg-white shadow-md rounded-lg">
-          {(isRealTime ? orders : orderDetailsRecord).length > 0 ? (
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs uppercase bg-white">
-                <tr>
-                  <th className="px-6 py-3">Restaurant Name</th>
-                  <th className="px-3 py-3">Order ID</th>
-                  <th className="px-6 py-3">Date</th>
-                  <th className="px-6 py-3">Customer Name</th>
-                  <th className="px-2 py-3">Location</th>
-                  <th className="px-3 py-3">Amount</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-8 py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(isRealTime ? orders : orderDetailsRecord).map((item) => (
-                  <tr
-                    key={item.OrderID}
-                    className="bg-white hover:bg-slate-100"
-                  >
-                    <td className="px-6 py-4">
-                      {getValueOrNA(item.restaurantName)}
-                    </td>
-                    <td className="px-3 py-4">{`#${getValueOrNA(
-                      item?.OrderID
-                    )}`}</td>
-                    <td className="px-6 py-4">{getValueOrNA(item?.Date)}</td>
-                    <td className="px-6 py-4">
-                      {getValueOrNA(item?.CustomerName)}
-                    </td>
-                    <td className="px-2 py-4">{getValueOrNA(item.Location)}</td>
-                    <td className="px-3 py-4">
-                      <span>&#3647;</span>
-                      {!isNaN(Number(item?.Amount))
-                        ? Number(item.Amount).toFixed(2)
-                        : 0}
-                    </td>
-                    <td className="px-1 py-4">
-                      <div
-                        className={`border p-1 text-center rounded-md 
-                                            ${
-                                              item.Status === "New Order"
-                                                ? "border-blue-600 text-blue-600"
-                                                : ""
-                                            } 
-                                            ${
-                                              item.Status === "Order Confirm"
-                                                ? "border-orange-500 text-orange-500"
-                                                : ""
-                                            } 
-                                            ${
-                                              item.Status === "Out for Delivery"
-                                                ? "border-yellow-500 text-yellow-500"
-                                                : ""
-                                            } 
-                                            ${
-                                              item.Status === "Cancelled"
-                                                ? "border-red-600 text-red-600"
-                                                : ""
-                                            } 
-                                            ${
-                                              item.Status === "Delivered"
-                                                ? "border-green-600 text-green-600 font-bold"
-                                                : ""
-                                            }`}
-                      >
-                        {getValueOrNA(item.Status)}{" "}
-                      </div>
-                    </td>
-                    <td className="px-1 py-4">
-                      <Link
-                        to={`/foodAdmin/ordersDetails/ordersDetView/${item.OrderID}`}
-                        state={{ restaurantId: item.RestaurantId }}
-                        className="text-white bg-blue-600 border p-1 px-2 rounded-lg"
-                      >
-                        View Order
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-center py-4 w-full light-text">
-              No Orders Found
+      {/* Summary groups — click to filter */}
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        {ORDER_STATUS_SUMMARY.map((card) => {
+          const active = summaryCardActive(statusFilter, card.value);
+          return (
+            <button
+              key={card.value}
+              type="button"
+              className={`text-left rounded-2xl focus-ring ${
+                active ? `ring-2 ${card.ring}` : ""
+              }`}
+              onClick={() => setStatusFilter(card.value)}
+              aria-pressed={active}
+            >
+              <DataBoxes
+                data={getStatusCount(stats, card.value)}
+                title={card.label}
+                icon={card.icon}
+                color={card.color}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Date range */}
+      <div className="mt-4">
+        <DateRangeFilter
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+          onApply={applyDateRange}
+          onReset={resetToLive}
+          loading={loading}
+          resetLabel="Live (24h)"
+        />
+      </div>
+
+      {/* Search strip */}
+      <div className="panel mt-4 !py-3 !px-3.5 sm:!px-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative min-w-0 flex-1 max-w-md">
+            <i
+              className="bi bi-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search customer, restaurant, location…"
+              className="modern-input !pl-9 !py-2"
+              aria-label="Search orders"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <p className="text-xs text-ink-muted">
+              Showing{" "}
+              <strong className="text-ink tabular-nums">
+                {filteredRows.length}
+              </strong>
+              {statusFilter !== "all" && (
+                <>
+                  {" "}
+                  <strong className="text-ink">
+                    {getStatusFilterLabel(statusFilter)}
+                  </strong>
+                </>
+              )}{" "}
+              of{" "}
+              <strong className="text-ink tabular-nums">{stats.total}</strong>
+              {isRealTime ? " live" : " loaded"} orders
             </p>
-          )}
+            {(searchQuery || statusFilter !== "out") && (
+              <button
+                type="button"
+                className="btn-ghost !min-h-0 !px-2.5 !py-1 text-xs"
+                onClick={() => {
+                  setSearchQuery("");
+                  setStatusFilter("out");
+                }}
+              >
+                Reset to Out for delivery
+              </button>
+            )}
+          </div>
+        </div>
+        {!isRealTime && (
+          <p className="mt-2 border-t border-neutral-100 pt-2 text-xs text-ink-muted">
+            Status and search filters apply to the currently loaded page of
+            history results.
+          </p>
+        )}
+      </div>
+
+      {/* Error */}
+      {pageError && (
+        <div className="mt-4">
+          <InfoMessage type="error" message={pageError} />
+        </div>
+      )}
+
+      {/* Full status tabs + table */}
+      <div className="table-shell mt-4 w-full overflow-hidden">
+        <div
+          className="filter-tabs bg-white px-1 sm:px-2"
+          role="tablist"
+          aria-label="Filter by order status"
+        >
+          {ORDER_STATUS_FILTERS.map((opt) => {
+            const active = statusFilter === opt.value;
+            const count = getStatusCount(stats, opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setStatusFilter(opt.value)}
+                className={`filter-tab ${active ? "filter-tab-active" : ""}`}
+                title={opt.label}
+              >
+                <span className="hidden sm:inline">{opt.label}</span>
+                <span className="sm:hidden">{opt.shortLabel}</span>
+                <span className="filter-tab-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {statusFilter === "active" && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 bg-warning-50/40 px-3 py-2 sm:px-4">
+            <p className="text-xs text-ink-muted">
+              Showing all in-progress stages. Jump to:
+            </p>
+            {ORDER_STATUS_FILTERS.filter((f) =>
+              ["confirm", "preparing", "ready", "out"].includes(f.value)
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-warning-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-warning-800 hover:bg-warning-50 focus-ring"
+                onClick={() => setStatusFilter(opt.value)}
+              >
+                {opt.shortLabel}
+                <span className="tabular-nums text-warning-600">
+                  {getStatusCount(stats, opt.value)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="w-full overflow-auto">
+          {pageLoading ? (
+            <div className="py-16">
+              <Loading />
+            </div>
+          ) : filteredRows.length > 0 ? (
+            <table className="w-full min-w-[860px] text-left text-sm">
+            <thead className="table-head text-xs uppercase tracking-wide">
+              <tr>
+                <th scope="col" className="px-4 py-3.5">
+                  Restaurant
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Date
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Customer
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Location
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Amount
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-3.5 text-center">
+                  Action
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {filteredRows.map((item) => (
+                <tr
+                  key={item.OrderID}
+                  className="bg-white transition-colors hover:bg-brand-50/40"
+                >
+                  <td className="px-4 py-4">
+                    <p
+                      className="max-w-[12rem] truncate font-medium text-ink"
+                      title={item.restaurantName}
+                    >
+                      {item.restaurantName || "N/A"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-medium text-ink">{item.Date || "N/A"}</p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-medium text-ink">
+                      {item.CustomerName || "N/A"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p
+                      className="max-w-[12rem] truncate text-ink-muted"
+                      title={item.Location}
+                    >
+                      {item.Location || "N/A"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="font-semibold tabular-nums text-ink">
+                      {formatOrderAmount(item.Amount)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <StatusBadge status={item.Status} />
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <Link
+                      to={`/foodAdmin/ordersDetails/ordersDetView/${item.OrderID}`}
+                      state={{ restaurantId: item.RestaurantId }}
+                      className="btn-primary whitespace-nowrap px-3 py-1.5"
+                    >
+                      View
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="empty-state py-14">
+            <i
+              className="bi bi-receipt text-4xl text-brand-300"
+              aria-hidden="true"
+            />
+            <p className="mt-3 text-base font-semibold text-ink">
+              No orders found
+            </p>
+            <p className="mt-1 max-w-sm text-sm">
+              {searchQuery || statusFilter !== "all"
+                ? "No orders for this status. Try All, another status, or a different date range."
+                : isRealTime
+                  ? "No orders in the last 24 hours. Use the date filters to search history."
+                  : "No orders match this date range."}
+            </p>
+            {statusFilter !== "all" && (
+              <button
+                type="button"
+                className="btn-ghost mt-4"
+                onClick={() => {
+                  setSearchQuery("");
+                  setStatusFilter("all");
+                }}
+              >
+                Show all statuses
+              </button>
+            )}
+          </div>
+        )}
         </div>
       </div>
+
       {!isRealTime && totalPages > 0 && (
-        <div className="w-full flex justify-center">
+        <div className="mt-6 flex w-full justify-center">
           <Pagination
             count={totalPages}
             page={page}

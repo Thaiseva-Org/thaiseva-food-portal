@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -7,6 +7,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../../firebaseConfig"; // Import from the firebaseConfig file
+import { isMasterAdminIdentity } from "../../utils/adminIdentity";
 
 const AdminLogin = () => {
   const [email, setEmail] = useState("");
@@ -16,8 +17,16 @@ const AdminLogin = () => {
 
   const checkAdminRights = async (user) => {
     try {
+      const token = await user.getIdTokenResult(true);
+      const claims = token.claims || {};
       const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (userDoc.exists() && userDoc.data().role === "admin") {
+      const data = userDoc.exists() ? userDoc.data() : {};
+      const isMaster =
+        isMasterAdminIdentity(claims, user.email) ||
+        data.isMasterAdmin === true ||
+        data.role === "Admin" ||
+        data.role === "admin";
+      if (isMaster) {
         navigate("/foodAdmin");
       } else {
         setError("You do not have admin rights.");
@@ -60,8 +69,9 @@ const AdminLogin = () => {
         {error && <p className='text-red-500 mb-4'>{error}</p>}
         <form onSubmit={handleEmailLogin}>
           <div className='mb-4'>
-            <label className='block text-gray-700'>Email</label>
+            <label htmlFor='admin-email' className='block text-gray-700'>Email</label>
             <input
+              id='admin-email'
               type='email'
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -70,8 +80,9 @@ const AdminLogin = () => {
             />
           </div>
           <div className='mb-4'>
-            <label className='block text-gray-700'>Password</label>
+            <label htmlFor='admin-password' className='block text-gray-700'>Password</label>
             <input
+              id='admin-password'
               type='password'
               value={password}
               onChange={(e) => setPassword(e.target.value)}

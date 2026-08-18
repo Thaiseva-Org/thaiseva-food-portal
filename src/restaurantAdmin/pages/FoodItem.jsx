@@ -1,169 +1,488 @@
-import {
-  collection,
-  getCountFromServer,
-  getDocs,
-  limit,
-  query,
-  startAfter,
-  where,
-} from "firebase/firestore";
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom"; // Add useNavigate for redirection
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { db } from "../../../firebaseConfig";
-import ItemList from "./ItemList";
 import { useAuth } from "../../AuthContext.jsx";
+import DataBoxes from "../../components/DataBoxes.jsx";
+import InfoMessage from "../../components/InfoMessage.jsx";
 import Loading from "../../components/Loading.jsx";
+import { deleteFoodItem, setFoodItemActive } from "../../api";
+import { getMenuRootId } from "../../utils/tenant";
+import { useKitchenScope } from "../../hooks/useKitchenScope";
 import Addrestaurant from "./restaurantPages/Addrestaurant";
-import { Pagination } from "@mui/material";
+import MenuItemCard from "./menu/MenuItemCard";
+import MenuItemDetail from "./menu/MenuItemDetail";
+import MenuList from "./menu/MenuList";
+import MenuToolbar from "./menu/MenuToolbar";
+import {
+  DEFAULT_FILTERS,
+  categorySectionId,
+  collectCategoryOptions,
+  computeMenuStats,
+  filterMenuItems,
+  filtersAreActive,
+  getItemKey,
+  groupItemsByCategory,
+  loadViewMode,
+  saveViewMode,
+  sortMenuItems,
+} from "./menu/menuUtils";
 
 const FoodItem = () => {
-  const { isRestaurantAdmin, roleData } = useAuth();
+  const { isRestaurantAdmin, roleData, currentUser: authUser, resData, isMasterAdmin } =
+    useAuth();
+  const kitchen = useKitchenScope();
+  const navigate = useNavigate();
+  const currentUser = authUser?.uid;
+  const menuRoot =
+    kitchen.ownerUid ||
+    getMenuRootId({
+      currentUser: authUser,
+      roleData,
+      resData,
+    });
+  const canManageMenu =
+    kitchen.isPlatformKitchen ? isMasterAdmin : isRestaurantAdmin;
+
   const [items, setItems] = useState([]);
-  const [toggle, setToggle] = useState(false);
+  const [settingsCategories, setSettingsCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const currentUserParam = useParams();
-  const currentUser = currentUserParam["id"];
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [lastDocs, setLastDocs] = useState([]);
+  const [error, setError] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [filters, setFilters] = useState(() => ({
+    ...DEFAULT_FILTERS,
+    viewMode: loadViewMode(),
+  }));
 
   useEffect(() => {
-    document.title = "Thaiseva | Food Item";
+    document.title = "Thaiseva | Menu";
   }, []);
 
-  const foodItemsRef = collection(
-    db,
-    `food_items/${roleData.restaurantId}/items`
-  );
+  useEffect(() => {
+    saveViewMode(filters.viewMode);
+  }, [filters.viewMode]);
 
-  const fetchTotalPages = async () => {
-    let q = query(foodItemsRef, where("active", "==", !toggle));
-    const pages = await getCountFromServer(q);
-    setTotalPages(Math.ceil(pages.data().count / 10));
-  };
+  // Auto-dismiss success messages; keep errors until dismissed
+  useEffect(() => {
+    if (!feedback || feedback.type === "error") return undefined;
+    const t = setTimeout(() => setFeedback(null), 4000);
+    return () => clearTimeout(t);
+  }, [feedback]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      let q = query(foodItemsRef, where("active", "==", !toggle), limit(10));
-      if (page > 0 && lastDocs[page - 1]) {
-        q = query(
-          foodItemsRef,
-          where("active", "==", !toggle),
-          startAfter(lastDocs[page - 1]),
-          limit(10)
-        );
-      }
-
-      const res = await getDocs(q);
-      const fetchedItems = res.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      const lastDoc =
-        res.docs.length > 0 ? res.docs[res.docs.length - 1] : null;
-
-      setLastDocs((prev) => {
-        const updated = [...prev];
-        updated[page] = lastDoc;
-        return updated;
-      });
-      setItems(fetchedItems);
-    } catch (error) {
-      console.error("Error fetching food items:", error);
-    } finally {
-      setLoading(false); // Stop loading state
+  const fetchData = useCallback(async () => {
+    if (!menuRoot) {
+      setItems([]);
+      setLoading(false);
+      return;
     }
-  };
+    setLoading(true);
+    setError(null);
+    try {
+      const foodItemsRef = collection(db, `food_items/${menuRoot}/items`);
+      const [itemsSnap, catSnap] = await Promise.all([
+        getDocs(foodItemsRef),
+        getDoc(doc(db, "settings", "categories")).catch(() => null),
+      ]);
 
-  const handleChangePage = (_, newPage) => {
-    setPage(newPage);
-  };
+      const fetchedItems = itemsSnap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+      setItems(fetchedItems);
+
+      if (catSnap?.exists?.()) {
+        const data = catSnap.data()?.data;
+        setSettingsCategories(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Error fetching food items:", err);
+      setError(err.message || "Could not load menu items.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [menuRoot]);
 
   useEffect(() => {
     if (isRestaurantAdmin && currentUser) {
       fetchData();
-      fetchTotalPages();
+    } else if (!isRestaurantAdmin) {
+      setLoading(false);
     }
-  }, [toggle, isRestaurantAdmin, currentUser, page]);
+  }, [isRestaurantAdmin, currentUser, fetchData]);
+
+  const stats = useMemo(() => computeMenuStats(items), [items]);
+
+  const categories = useMemo(
+    () => collectCategoryOptions(settingsCategories, items),
+    [settingsCategories, items]
+  );
+
+  const filteredItems = useMemo(() => {
+    const filtered = filterMenuItems(items, filters);
+    return sortMenuItems(filtered, filters.sortBy);
+  }, [items, filters]);
+
+  const grouped = useMemo(() => {
+    if (!filters.groupByCategory || filters.viewMode !== "grid") return null;
+    return groupItemsByCategory(filteredItems, settingsCategories);
+  }, [
+    filteredItems,
+    filters.groupByCategory,
+    filters.viewMode,
+    settingsCategories,
+  ]);
+
+  const hasActiveFilters = filtersAreActive(filters);
+
+  const handleFiltersChange = (next) => {
+    setFilters(next);
+  };
+
+  const clearFilters = () => {
+    setFilters((prev) => ({
+      ...DEFAULT_FILTERS,
+      viewMode: prev.viewMode,
+      groupByCategory: prev.groupByCategory,
+    }));
+  };
+
+  const handleEdit = (item) => {
+    const id = getItemKey(item);
+    navigate(`edit/${encodeURIComponent(id)}`);
+  };
+
+  const handleToggleActive = async (item) => {
+    if (!item || !menuRoot) return;
+    const itemId = getItemKey(item);
+    const nextActive = !item.active;
+    setBusyId(itemId);
+    setFeedback(null);
+    try {
+      await setFoodItemActive({
+        ownerUid: menuRoot,
+        itemId,
+        active: nextActive,
+      });
+      setItems((prev) =>
+        prev.map((row) =>
+          getItemKey(row) === itemId ? { ...row, active: nextActive } : row
+        )
+      );
+      setSelectedItem((prev) =>
+        prev && getItemKey(prev) === itemId
+          ? { ...prev, active: nextActive }
+          : prev
+      );
+      setFeedback({
+        type: "success",
+        message: nextActive
+          ? `"${item.itemName}" is now active on your menu.`
+          : `"${item.itemName}" was deactivated and hidden from customers.`,
+      });
+    } catch (err) {
+      console.error(err);
+      setFeedback({
+        type: "error",
+        message: err.message || "Could not update item status.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (item) => {
+    if (!item || !menuRoot) return;
+    const itemId = getItemKey(item);
+    const ok = window.confirm(
+      `Delete "${item.itemName}" permanently? This cannot be undone.`
+    );
+    if (!ok) return;
+    setBusyId(itemId);
+    setFeedback(null);
+    try {
+      await deleteFoodItem({ ownerUid: menuRoot, itemId });
+      setItems((prev) => prev.filter((row) => getItemKey(row) !== itemId));
+      setSelectedItem(null);
+      setFeedback({
+        type: "success",
+        message: `"${item.itemName}" was deleted.`,
+      });
+    } catch (err) {
+      console.error(err);
+      setFeedback({
+        type: "error",
+        message: err.message || "Could not delete item.",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const setStatusFilter = (status) => {
+    setFilters((prev) => ({ ...prev, status }));
+  };
+
+  const toggleDiscountFilter = () => {
+    setFilters((prev) => ({
+      ...prev,
+      hasDiscount: !prev.hasDiscount,
+    }));
+  };
+
+  if (!canManageMenu) {
+    return (
+      <div className="px-4 py-8 md:px-6 md:py-10">
+        <Addrestaurant />
+      </div>
+    );
+  }
 
   return (
-    <>
-      {!isRestaurantAdmin ? (
-        <div className="px-8 py-10">
-          <Addrestaurant />
+    <div
+      className={
+        kitchen.isPlatformKitchen
+          ? "min-w-0"
+          : "page-shell px-4 py-8 md:px-6 md:py-10"
+      }
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          {!kitchen.isPlatformKitchen && <h1 className="page-header">Menu</h1>}
+          <p className="page-subtext mt-1">
+            {kitchen.isPlatformKitchen
+              ? `Dishes on the ThaiSeva app and website · ${stats.active} live · ${stats.inactive} hidden`
+              : `Manage dishes customers see · ${stats.active} active · ${stats.inactive} inactive`}
+          </p>
         </div>
-      ) : (
-        <div className="px-8 pt-10">
-          <div className="flex justify-between">
-            <p className="lg:text-3xl md:text-2xl font-bold text-[var(--main-headings-color)]">
-              Food Item
-            </p>
-            {isRestaurantAdmin && (
-              <Link to="addItem">
-                <button
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                  type="button"
-                >
-                  + Add a new food Item
-                </button>
-              </Link>
-            )}
-          </div>
+        <Link to="addItem" className="btn-primary shrink-0 self-start !min-h-11">
+          <i className="bi bi-plus-lg" aria-hidden="true" />
+          Add menu item
+        </Link>
+      </div>
 
-          <div className="bg-white shadow-md p-10 my-10 rounded-lg relative">
-            <div className="mb-10">
-              <button
-                type="button"
-                onClick={() => setToggle(false)}
-                className={`focus:text-white hover:text-white ring-1 ring-slate-100 focus:bg-blue-700 hover:bg-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300 font-medium rounded-full text-sm px-5 py-2 text-center me-2 mb-2 ${
-                  !toggle ? "bg-blue-700 text-white" : "bg-white text-blue-700"
-                }`}
-              >
-                Active
-              </button>
-              <button
-                type="button"
-                onClick={() => setToggle(true)}
-                className={`focus:text-white hover:text-white ring-1 ring-slate-100 focus:bg-blue-700 hover:bg-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300 font-medium rounded-full text-sm px-5 py-2 text-center me-2 mb-2 ${
-                  toggle ? "bg-blue-700 text-white" : "bg-white text-blue-700"
-                }`}
-              >
-                Inactive
-              </button>
-            </div>
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            filters.status === "all" && !filters.hasDiscount
+              ? "ring-2 ring-brand-400"
+              : ""
+          }`}
+          onClick={() => {
+            setStatusFilter("all");
+            setFilters((p) => ({ ...p, hasDiscount: false }));
+          }}
+          aria-pressed={filters.status === "all" && !filters.hasDiscount}
+        >
+          <DataBoxes
+            data={stats.total}
+            title="All items"
+            icon="bi-journal-richtext"
+            color="blue"
+          />
+        </button>
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            filters.status === "active" ? "ring-2 ring-success-500" : ""
+          }`}
+          onClick={() => setStatusFilter("active")}
+          aria-pressed={filters.status === "active"}
+        >
+          <DataBoxes
+            data={stats.active}
+            title="Active"
+            icon="bi-check-circle"
+            color="green"
+          />
+        </button>
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            filters.status === "inactive" ? "ring-2 ring-neutral-400" : ""
+          }`}
+          onClick={() => setStatusFilter("inactive")}
+          aria-pressed={filters.status === "inactive"}
+        >
+          <DataBoxes
+            data={stats.inactive}
+            title="Inactive"
+            icon="bi-pause-circle"
+            color="yellow"
+          />
+        </button>
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            filters.hasDiscount ? "ring-2 ring-accent-400" : ""
+          }`}
+          onClick={toggleDiscountFilter}
+          aria-pressed={filters.hasDiscount}
+          title="Filter items with a discount"
+        >
+          <DataBoxes
+            data={stats.onDiscount}
+            title="On discount"
+            icon="bi-percent"
+            color="purple"
+          />
+        </button>
+        <div className="rounded-2xl col-span-2 sm:col-span-1" title="Categories used on your menu">
+          <DataBoxes
+            data={stats.categories}
+            title="Categories"
+            icon="bi-tags"
+            color="blue"
+          />
+        </div>
+      </div>
 
-            {/* Loading message */}
-            {loading ? (
-              <div className="py-10">
-                <Loading />
-              </div>
-            ) : isRestaurantAdmin ? (
-              items.length === 0 ? (
-                <p className="text-center w-full light-text">No items yet</p>
-              ) : (
-                <ItemList items={items} toggle={toggle} fetchData={fetchData} />
-              )
-            ) : (
-              <p>No restaurant found. Redirecting...</p>
-            )}
+      <div className="mt-6">
+        <MenuToolbar
+          filters={filters}
+          onChange={handleFiltersChange}
+          categories={categories}
+          resultCount={filteredItems.length}
+          hasActiveFilters={hasActiveFilters}
+          onClear={clearFilters}
+        />
+      </div>
+
+      {feedback && (
+        <div className="mt-4 flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <InfoMessage type={feedback.type} message={feedback.message} />
           </div>
-          {totalPages > 0 && (
-            <div className="w-full flex justify-center">
-              <Pagination
-                count={totalPages}
-                page={page}
-                onChange={handleChangePage}
-                color="primary"
-                siblingCount={0}
-                boundaryCount={0}
-              />
-            </div>
-          )}
+          <button
+            type="button"
+            className="btn-ghost !min-h-9 !px-2 shrink-0"
+            onClick={() => setFeedback(null)}
+            aria-label="Dismiss message"
+          >
+            <i className="bi bi-x-lg" aria-hidden="true" />
+          </button>
         </div>
       )}
-    </>
+      {error && (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <InfoMessage type="error" message={error} />
+          </div>
+          <button type="button" className="btn-outline !min-h-9" onClick={fetchData}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6">
+        {loading ? (
+          <div className="panel py-16">
+            <Loading />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="panel flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+              <i className="bi bi-journal-richtext text-2xl" aria-hidden="true" />
+            </div>
+            <h2 className="text-lg font-semibold text-ink">No menu items yet</h2>
+            <p className="max-w-md page-subtext">
+              Build your digital menu with photos, prices, and categories so
+              customers can browse your dishes.
+            </p>
+            <Link to="addItem" className="btn-primary mt-2 !min-h-11">
+              <i className="bi bi-plus-lg" aria-hidden="true" />
+              Add your first item
+            </Link>
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="panel flex flex-col items-center justify-center gap-3 py-14 text-center">
+            <i
+              className="bi bi-funnel text-3xl text-neutral-400"
+              aria-hidden="true"
+            />
+            <h2 className="text-lg font-semibold text-ink">
+              No dishes match your filters
+            </h2>
+            <p className="page-subtext">
+              Try clearing filters or searching a different term.
+            </p>
+            <button
+              type="button"
+              className="btn-ghost mt-1 !min-h-9"
+              onClick={clearFilters}
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : filters.viewMode === "list" ? (
+          <MenuList
+            items={filteredItems}
+            onView={setSelectedItem}
+            onEdit={handleEdit}
+            onToggleActive={handleToggleActive}
+            busyId={busyId}
+          />
+        ) : grouped ? (
+          <div className="space-y-8">
+            {grouped.map(([category, rows]) => {
+              const sectionId = categorySectionId(category);
+              return (
+                <section key={category} aria-labelledby={sectionId}>
+                  <div className="mb-3 flex items-baseline gap-2 border-b border-neutral-100 pb-2">
+                    <h2
+                      id={sectionId}
+                      className="text-lg font-bold text-ink-heading"
+                    >
+                      {category}
+                    </h2>
+                    <span className="text-sm font-medium text-ink-muted">
+                      {rows.length} {rows.length === 1 ? "item" : "items"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                    {rows.map((item) => (
+                      <MenuItemCard
+                        key={getItemKey(item)}
+                        item={item}
+                        onView={setSelectedItem}
+                        onEdit={handleEdit}
+                        onToggleActive={handleToggleActive}
+                        busyId={busyId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {filteredItems.map((item) => (
+              <MenuItemCard
+                key={getItemKey(item)}
+                item={item}
+                onView={setSelectedItem}
+                onEdit={handleEdit}
+                onToggleActive={handleToggleActive}
+                busyId={busyId}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <MenuItemDetail
+        item={selectedItem}
+        onClose={() => setSelectedItem(null)}
+        onEdit={handleEdit}
+        onToggleActive={handleToggleActive}
+        onDelete={handleDelete}
+        busyId={busyId}
+      />
+    </div>
   );
 };
 

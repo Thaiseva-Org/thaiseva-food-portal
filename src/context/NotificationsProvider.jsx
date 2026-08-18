@@ -1,13 +1,12 @@
+import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
-  addDoc,
-  collection,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  writeBatch,
-} from "firebase/firestore";
-import { createContext, useContext, useEffect, useState } from "react";
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { db } from "../../firebaseConfig";
 import { useAuth } from "../AuthContext";
 import {
@@ -19,126 +18,125 @@ import {
 } from "../assets/index.js";
 
 const NotificationsContext = createContext();
+const NEW_ORDER_IMAGES = [NewOrderImage1, NewOrderImage2, NewOrderImage3];
+const COMPLETED_ORDER_IMAGES = [CompletedOrderImage1, CompletedOrderImage2];
+
+const getStableImage = (images, id = "") => {
+  const hash = [...id].reduce((total, char) => total + char.charCodeAt(0), 0);
+  return images[hash % images.length];
+};
+
+const getRelatedImage = (type, id) => {
+  if (type === "order" || type === "booking") {
+    return getStableImage(NEW_ORDER_IMAGES, id);
+  }
+  if (type === "cmpo" || type === "completed") {
+    return getStableImage(COMPLETED_ORDER_IMAGES, id);
+  }
+  return null;
+};
+
+const timestampToMillis = (timestamp) => {
+  if (typeof timestamp?.toMillis === "function") return timestamp.toMillis();
+  if (typeof timestamp?.toDate === "function") return timestamp.toDate().getTime();
+  return 0;
+};
 
 export const NotificationsProvider = ({ children }) => {
-  const { currentUser, isRestaurantAdmin, isMasterAdmin, authState } =
-    useAuth();
+  const { currentUser, isRestaurantAdmin, isMasterAdmin } = useAuth();
   const [notifications, setNotifications] = useState([]);
-
-  const NewOrderImages = [NewOrderImage1, NewOrderImage2, NewOrderImage3];
-
-  const CompletedOrderImages = [CompletedOrderImage1, CompletedOrderImage2];
-
-  const getRandomImage = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-  const getRelatedImage = (type) => {
-    if (type === "order" || type === "booking") {
-      return getRandomImage(NewOrderImages);
-    } else if (type === "cmpo" || type === "completed") {
-      return getRandomImage(CompletedOrderImages);
-    }
-  };
-
-  const CreateNewNotification = async (
-    title,
-    desc,
-    type,
-    id,
-    role,
-    imageUrl = ""
-  ) => {
-    try {
-      const notifyColRef = collection(
-        db,
-        `notifications/restaurants/${role === "partner" ? id : "RestAdmin"}`
-      );
-      await addDoc(notifyColRef, {
-        type: type ? type : "other",
-        title: title,
-        desc: desc,
-        image: imageUrl,
-        timestamp: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error("Error processing notifications: ", error);
-    }
-  };
-
-  const CreateNewNotificationToUser = async (title, desc, type, id) => {
-    try {
-      const notifyColRef = collection(db, `notifications/users/${id}`);
-      await addDoc(notifyColRef, {
-        type: type ? type : "other",
-        title: title,
-        desc: desc,
-        timestamp: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error("Error processing notifications: ", error);
-    }
-  };
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const channelId = isRestaurantAdmin ? currentUser?.uid : "RestAdmin";
+  const storageKey = currentUser
+    ? `thaiseva:notifications:last-read:${currentUser.uid}:${channelId}`
+    : null;
+  const [lastReadAt, setLastReadAt] = useState(0);
 
   useEffect(() => {
-    const fetchLastVisit = async () => {
-      try {
-        const pathPrefix = `notifications/restaurants/${
-          isRestaurantAdmin ? currentUser.uid : "RestAdmin"
-        }`;
-        let lastVisitTimestamp = new Date(
-          new Date().getTime() - 12 * 60 * 60 * 1000
-        );
-        const notifyColRef = collection(db, pathPrefix);
-        const notifyquery = query(notifyColRef, orderBy("timestamp", "desc"));
+    if (!storageKey) {
+      setLastReadAt(0);
+      return;
+    }
+    const storedValue = Number(window.localStorage.getItem(storageKey));
+    setLastReadAt(Number.isFinite(storedValue) ? storedValue : 0);
+  }, [storageKey]);
 
-        const unsubscribe = onSnapshot(
-          notifyquery,
-          async (snapshot) => {
-            try {
-              const batch = writeBatch(db);
-              const newNotifications = [];
+  useEffect(() => {
+    if (!currentUser || (!isRestaurantAdmin && !isMasterAdmin)) {
+      setNotifications([]);
+      setLoading(false);
+      setError(null);
+      return undefined;
+    }
 
-              snapshot?.docs?.map((doc) => {
-                const data = doc.data();
-                if (
-                  data.timestamp?.toDate &&
-                  data.timestamp.toDate() <= lastVisitTimestamp
-                ) {
-                  batch.delete(doc.ref);
-                } else {
-                  newNotifications.push({
-                    id: doc.id || "N/A",
-                    imageUrl: getRelatedImage(data.type),
-                    ...data,
-                  });
-                }
-              });
-              setNotifications(newNotifications);
-              if (batch._mutations.length > 0) {
-                await batch.commit();
-              }
-            } catch (error) {
-              console.error("Error processing notification: ", error);
-            }
-          },
-          (error) => {
-            console.error("Error with onSnapshot: ", error);
-          }
-        );
+    setLoading(true);
+    setError(null);
+    const pathPrefix = `notifications/restaurants/${channelId}`;
+    const notifyColRef = collection(db, pathPrefix);
+    const notifyquery = query(
+      notifyColRef,
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
 
-        return () => unsubscribe();
-      } catch (error) {
-        console.error("Error fetching last visit: ", error);
+    const unsubscribe = onSnapshot(
+      notifyquery,
+      async (snapshot) => {
+        try {
+          const newNotifications = snapshot.docs.map((notificationDoc) => {
+            const data = notificationDoc.data();
+            return {
+              id: notificationDoc.id || "N/A",
+              imageUrl: getRelatedImage(data.type, notificationDoc.id),
+              ...data,
+            };
+          });
+          setNotifications(newNotifications);
+          setLoading(false);
+        } catch (error) {
+          console.error("Error processing notification: ", error);
+          setError("Notifications could not be displayed.");
+          setLoading(false);
+        }
+      },
+      (error) => {
+        console.error("Error with onSnapshot: ", error);
+        setError("Notifications are temporarily unavailable.");
+        setLoading(false);
       }
-    };
+    );
 
-    (isRestaurantAdmin === true || isMasterAdmin === true) && fetchLastVisit();
-  }, [currentUser, isRestaurantAdmin, authState]);
+    return unsubscribe;
+  }, [currentUser, isRestaurantAdmin, isMasterAdmin, channelId]);
+
+  const unreadCount = useMemo(
+    () =>
+      notifications.filter(
+        (notification) => timestampToMillis(notification.timestamp) > lastReadAt
+      ).length,
+    [lastReadAt, notifications]
+  );
+
+  const markAllAsRead = useCallback(() => {
+    if (!storageKey) return;
+    const newestTimestamp = notifications.reduce(
+      (latest, notification) =>
+        Math.max(latest, timestampToMillis(notification.timestamp)),
+      Date.now()
+    );
+    window.localStorage.setItem(storageKey, String(newestTimestamp));
+    setLastReadAt(newestTimestamp);
+  }, [notifications, storageKey]);
+
   return (
     <NotificationsContext.Provider
       value={{
         notifications,
-        CreateNewNotification,
-        CreateNewNotificationToUser,
+        unreadCount,
+        loading,
+        error,
+        markAllAsRead,
       }}
     >
       {children}

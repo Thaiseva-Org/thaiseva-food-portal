@@ -1,7 +1,6 @@
 import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { signOut } from "firebase/auth";
-import { auth } from "../../../firebaseConfig"; // Adjust the import based on your firebase configuration
+import { Link, useNavigate } from "react-router";
+import { secureSignOut } from "../../utils/authSession";
 
 const LogOutPage = () => {
   const navigate = useNavigate();
@@ -12,10 +11,11 @@ const LogOutPage = () => {
 
   const handleLogOut = async () => {
     try {
-      await signOut(auth);
-      navigate("/auth");
+      await secureSignOut();
+      navigate("/auth", { replace: true });
     } catch (error) {
       console.error("Error logging out: ", error);
+      navigate("/auth", { replace: true });
     }
   };
 
@@ -26,7 +26,7 @@ const LogOutPage = () => {
         <p className="text-3xl mt-8 mb-12">Are you sure you want to log out?</p>
         <div className="flex gap-2 items-center justify-center">
           <Link
-            to="/"
+            to="/partner"
             className="p-2 w-24 text-lg text-white font-semibold rounded-lg bg-slate-600"
           >
             Cancel

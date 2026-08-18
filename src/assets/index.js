@@ -14,8 +14,6 @@ import NewOrderImage3 from "../assets/notification/NewOrder/NewOrder3.jpg";
 import CompletedOrderImage1 from "../assets/notification/Completed/Completed1.jpg";
 import CompletedOrderImage2 from "../assets/notification/Completed/Completed2.jpg";
 
-import loadingAnimation from "../assets/loading-animation.json";
-
 import Taco from "../assets/masterAdmin/activeRest.png";
 import TacoTwo from "../assets/masterAdmin/unactiveRest.png";
 
@@ -35,7 +33,6 @@ export {
   NewOrderImage3,
   CompletedOrderImage1,
   CompletedOrderImage2,
-  loadingAnimation,
   Taco,
   TacoTwo,
   Logo,

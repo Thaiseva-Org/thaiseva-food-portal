@@ -1,31 +1,25 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 const NotFound = () => {
   const navigate = useNavigate();
 
-  const goBack = () => {
-    navigate("/");
-  };
-
   return (
-    <>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
-        <div className="bg-white p-8 rounded-lg shadow-lg text-center">
-          <h1 className="text-3xl font-bold text-red-600">404 Not Found!</h1>
-          <p className="mt-4 text-gray-600">
-            Please check your link once again.
-          </p>
-          <div className="mt-6">
-            <button
-              onClick={goBack}
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-            >
-              Go Back
-            </button>
-          </div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-page-gradient px-4">
+      <div className="modern-card p-8 md:p-10 text-center max-w-md w-full animate-scale-in shadow-glow">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 text-2xl font-bold">
+          404
         </div>
+        <h1 className="text-2xl md:text-3xl font-bold text-ink-heading">
+          Page not found
+        </h1>
+        <p className="mt-3 text-ink-muted">
+          Please check the link and try again.
+        </p>
+        <button onClick={() => navigate("/")} className="btn-primary mt-6">
+          Go back home
+        </button>
       </div>
-    </>
+    </div>
   );
 };
 

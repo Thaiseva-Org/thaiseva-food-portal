@@ -1,0 +1,146 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email in [
+          'admin@gmail.com',
+          'thaiseva_admin@gmail.com'
+        ] ||
+        request.auth.token.admin == true ||
+        getUserData().role == 'Admin' ||
+        getUserData().role == 'admin' ||
+        getUserData().role == 'Sub Admin' ||
+        (getUserData().keys().hasAny(['isMasterAdmin']) && getUserData().isMasterAdmin == true)
+      );
+    }
+
+    function isRestaurantAdmin() {
+      return request.auth != null &&
+        getUserData().keys().hasAny(['isRestaurantAdmin']) &&
+        getUserData().isRestaurantAdmin == true;
+    }
+
+    function isFoodAdmin() {
+      return request.auth != null && (
+        request.auth.token.foodRole == 'masterAdmin' ||
+        request.auth.token.foodMasterAdmin == true ||
+        request.auth.token.role == 'masterAdmin' ||
+        request.auth.token.email in ['admin@gmail.com']
+      );
+    }
+
+    function isImage() {
+      return request.resource == null ||
+        request.resource.contentType.matches('image/.*');
+    }
+
+    function underMaxSize(bytes) {
+      return request.resource == null ||
+        request.resource.size < bytes;
+    }
+
+    // Public marketing / catalog images — admin write
+    match /restaurantImages/{fileName} {
+      allow read: if true;
+      allow write: if isAdmin() || isRestaurantAdmin();
+    }
+
+    match /images/{itemId} {
+      allow read: if true;
+      allow write: if (isAdmin() || isRestaurantAdmin()) && isImage() && underMaxSize(10 * 1024 * 1024);
+    }
+
+    match /blogImages/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImage() && underMaxSize(10 * 1024 * 1024);
+    }
+
+    match /hotelImages/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImage() && underMaxSize(15 * 1024 * 1024);
+    }
+
+    match /serviceImages/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImage() && underMaxSize(10 * 1024 * 1024);
+    }
+
+    // Per-user private uploads
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        underMaxSize(15 * 1024 * 1024);
+    }
+
+    // Partner / hotel / restaurant scoped by auth uid
+    match /partners/{partnerId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == partnerId && underMaxSize(15 * 1024 * 1024));
+    }
+
+    match /hotels/{hotelId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == hotelId && underMaxSize(15 * 1024 * 1024));
+    }
+
+    match /HotelDB/{hotelId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == hotelId && underMaxSize(15 * 1024 * 1024));
+    }
+
+    match /restaurants/{restaurantId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() || isFoodAdmin() || isRestaurantAdmin() ||
+        (isAuthenticated() && request.auth.uid == restaurantId && underMaxSize(15 * 1024 * 1024));
+    }
+
+    // Food public apply uploads use Admin signed URLs. Clients cannot write this path.
+    match /applications/{applicationId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Chat media — scoped under sender uid to prevent cross-user overwrite
+    match /chat/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        underMaxSize(20 * 1024 * 1024);
+    }
+
+    match /chats/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        underMaxSize(20 * 1024 * 1024);
+    }
+
+    match /chatMedia/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        underMaxSize(20 * 1024 * 1024);
+    }
+
+    // Admin-only catch-all (no open authenticated write)
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && underMaxSize(25 * 1024 * 1024);
+    }
+  }
+}

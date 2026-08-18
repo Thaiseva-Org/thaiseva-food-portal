@@ -1,29 +1,36 @@
-import { doc, setDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { db, storage } from "../../../../firebaseConfig";
+import { useNavigate } from "react-router";
+import { storage } from "../../../../firebaseConfig";
 import { useAuth } from "../../../AuthContext";
-import { useNotifications } from "../../../context/NotificationsProvider";
+import { createFoodItem } from "../../../api";
+import { useKitchenScope } from "../../../hooks/useKitchenScope";
+import { getMenuRootId } from "../../../utils/tenant";
+import { partnerPath } from "../../../utils/partnerRoutes";
 import Template from "./Template";
 
 const AddItem = () => {
-  const { resData } = useAuth();
-  const { CreateNewNotification } = useNotifications();
+  const { resData, currentUser, roleData } = useAuth();
+  const kitchen = useKitchenScope();
   const [itemName, setItemName] = useState("");
   const [itemId, setItemId] = useState("");
-  const [price, setPrice] = useState(0);
+  const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState(0);
   const [category, setCategory] = useState("");
   const [itemType, setItemType] = useState("");
   const [description, setDescription] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [image, setImage] = useState(null);
   const [imageFile, setImageFile] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState(null);
+  const [formSuccess, setFormSuccess] = useState(null);
+  const ownerUid =
+    kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
 
   const navigate = useNavigate();
-  const { id } = useParams();
 
   const generateUniqueId = () => {
     const timestamp = Date.now().toString();
@@ -31,23 +38,34 @@ const AddItem = () => {
     return (timestamp + randomPart).slice(-6);
   };
 
-  const handleFileChange = (e) => {
-    if (e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      const imageUrl = URL.createObjectURL(selectedFile);
-      setImage(imageUrl); // Set preview URL
-      setImageFile(selectedFile); // Set actual file
-      setDropdownOpen(false);
+  const applyImageFile = (file) => {
+    if (!file) return;
+    if (!file.type?.startsWith("image/")) {
+      setFormError("Only image files are allowed (JPG, PNG, WebP).");
+      return;
     }
+    if (file.size > 5 * 1024 * 1024) {
+      setFormError("Image must be under 5MB.");
+      return;
+    }
+    setFormError(null);
+    if (image && typeof image === "string" && image.startsWith("blob:")) {
+      URL.revokeObjectURL(image);
+    }
+    setImage(URL.createObjectURL(file));
+    setImageFile(file);
+    setDropdownOpen(false);
+  };
+
+  const handleFileChange = (e) => {
+    applyImageFile(e.target.files?.[0]);
+    e.target.value = "";
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.files[0]) {
-      setImage(e.dataTransfer.files[0]);
-      setDropdownOpen(false); // Close dropdown after dropping
-    }
+    applyImageFile(e.dataTransfer.files?.[0]);
   };
 
   const handleDragOver = (e) => {
@@ -55,83 +73,112 @@ const AddItem = () => {
     e.stopPropagation();
   };
 
+  const clearImage = () => {
+    if (image && typeof image === "string" && image.startsWith("blob:")) {
+      URL.revokeObjectURL(image);
+    }
+    setImage(null);
+    setImageFile(null);
+  };
+
+  const validate = () => {
+    const errors = {};
+    if (!String(itemName || "").trim()) errors.itemName = "Enter a dish name.";
+    const p = Number(price);
+    if (!Number.isFinite(p) || p <= 0) errors.price = "Enter a price greater than 0.";
+    const d = Number(discount);
+    if (!Number.isFinite(d) || d < 0 || d > 100) {
+      errors.discount = "Discount must be between 0 and 100.";
+    }
+    if (!String(category || "").trim()) errors.category = "Choose or add a category.";
+    if (!itemType) errors.itemType = "Select Veg or Non Veg.";
+    if (!String(description || "").trim()) {
+      errors.description = "Add a short description for customers.";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleAddItem = async () => {
-    if (
-      !itemName ||
-      !itemId ||
-      !price ||
-      !category ||
-      !itemType ||
-      !description
-    ) {
-      alert("Please fill all fields.");
+    setFormError(null);
+    setFormSuccess(null);
+    if (!validate()) {
+      setFormError("Please fix the highlighted fields.");
+      return;
+    }
+    if (!ownerUid) {
+      setFormError("Restaurant account not ready. Refresh and try again.");
       return;
     }
 
     try {
       let imageUrl = "";
+      setUploading(true);
+      setUploadProgress(0);
 
-      // Use imageFile for upload instead of image
       if (imageFile) {
-        const imageRef = ref(storage, `images/${itemId}`);
+        const imageRef = ref(
+          storage,
+          `restaurants/${ownerUid}/items/${itemId}`
+        );
         const uploadTask = uploadBytesResumable(imageRef, imageFile);
 
-        setUploading(true);
-        await new Promise((resolve, reject) => {
+        imageUrl = await new Promise((resolve, reject) => {
           uploadTask.on(
             "state_changed",
             (snapshot) => {
               const progress =
                 (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log(`Upload is ${progress}% done`);
+              setUploadProgress(Math.round(progress));
             },
             (error) => {
               console.error("Upload failed:", error);
               reject(error);
             },
             async () => {
-              imageUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve();
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(url);
             }
           );
         });
       }
-      await saveItemData(imageUrl);
+
+      await createFoodItem({
+        ownerUid,
+        itemName: String(itemName).trim(),
+        itemId: String(itemId).replace("#", ""),
+        price: Number(price),
+        discount: Number(discount) || 0,
+        category: String(category).trim(),
+        itemType,
+        description: String(description).trim(),
+        imageUrl,
+      });
+
+      setFormSuccess(
+        "Item saved. It starts inactive — activate it from Menu when ready."
+      );
+      setTimeout(() => navigate(kitchen.listPath || partnerPath("foodItem")), 900);
     } catch (error) {
       console.error("Error adding item:", error);
-      alert("Failed to add item. Please try again.");
+      setFormError(error.message || "Failed to add item. Please try again.");
+      setUploading(false);
+      setUploadProgress(0);
     }
   };
 
   useEffect(() => {
     setItemId(generateUniqueId());
+    document.title = "Thaiseva | Add menu item";
   }, []);
 
-  const docItemId = itemId.replace("#", "");
-
-  const saveItemData = async (imageUrl) => {
-    await setDoc(doc(db, `food_items/${resData.id}/items/${docItemId}`), {
-      itemName,
-      itemId,
-      price: price,
-      discount: discount,
-      category,
-      itemType,
-      description,
-      imageUrl,
-      active: false,
-    });
-    alert("Item added successfully!");
-    await CreateNewNotification(
-      `New Item Added`,
-      `${resData.name} added a new item in menu.`,
-      "nitem",
-      "",
-      "admin",
-      imageUrl
-    );
-    navigate(`/${id}/fooditem`);
-  };
+  useEffect(() => {
+    return () => {
+      if (image && typeof image === "string" && image.startsWith("blob:")) {
+        URL.revokeObjectURL(image);
+      }
+    };
+  }, [image]);
 
   return (
     <Template
@@ -139,16 +186,17 @@ const AddItem = () => {
       setDescription={setDescription}
       setDiscount={setDiscount}
       setDropdownOpen={setDropdownOpen}
-      setItemId={setItemId}
       setItemName={setItemName}
       setCategory={setCategory}
       setPrice={setPrice}
       dropdownOpen={dropdownOpen}
       uploading={uploading}
+      uploadProgress={uploadProgress}
       handleAddItem={handleAddItem}
       handleDragOver={handleDragOver}
       handleDrop={handleDrop}
       handleFileChange={handleFileChange}
+      clearImage={clearImage}
       itemId={itemId}
       itemName={itemName}
       itemType={itemType}
@@ -157,6 +205,11 @@ const AddItem = () => {
       category={category}
       description={description}
       setItemType={setItemType}
+      submitBtn="Add menu item"
+      fieldErrors={fieldErrors}
+      formError={formError}
+      formSuccess={formSuccess}
+      mode="add"
     />
   );
 };

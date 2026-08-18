@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { AuthProvider } from "./AuthContext";
 import Loading from "./components/Loading";
 import { BookingsProvider } from "./context/BookingsProvider";
@@ -15,10 +15,22 @@ import {
   RestaDetails,
   RestaDetailsView,
   RestaurantReqDet,
+  RestaurantStatsFinance,
+  RestaurantStatsList,
+  RestaurantStatsManage,
+  RestaurantStatsOrders,
+  RestaurantStatsReservations,
+  RestaurantStatsShell,
+  MonitorOrderView,
   RestRequests,
+  Riders,
   TableBookings,
   TodayOrders,
 } from "./masterAdmin/pages";
+import OurKitchenLayout from "./masterAdmin/pages/platform/OurKitchenLayout";
+import OurKitchenHome from "./masterAdmin/pages/platform/OurKitchenHome";
+import OurKitchenOrders from "./masterAdmin/pages/platform/OurKitchenOrders";
+import OurOrdersLayout from "./masterAdmin/pages/platform/OurOrdersLayout";
 import {
   AuthPage,
   LogOutPage,
@@ -27,6 +39,7 @@ import {
   Stat,
   Unauthorized,
 } from "./restaurantAdmin/component";
+import LegacyPartnerRedirect from "./restaurantAdmin/component/LegacyPartnerRedirect";
 import {
   AddItem,
   Addrestaurant,
@@ -36,11 +49,14 @@ import {
   Home,
   ManageOrder,
   OrderView,
+  OwnerOnboarding,
+  PublicApply,
   RestaInformation,
   Restaurant,
   ResturantAdminHome,
   TableBooking,
 } from "./restaurantAdmin/pages";
+import { PARTNER_BASE } from "./utils/partnerRoutes";
 
 const App = () => {
   return (
@@ -49,17 +65,44 @@ const App = () => {
         <NotificationsProvider>
           <BookingsProvider>
             <BrowserRouter>
+              <Suspense
+                fallback={
+                  <div className="min-h-screen w-full flex items-center justify-center bg-page-gradient">
+                    <Loading />
+                  </div>
+                }
+              >
               <Routes>
                 <Route path="/auth" element={<AuthPage />} />
+                <Route path="/apply" element={<PublicApply />} />
                 <Route path="/" element={<Home />} />
 
-                {/* Protected routes for each restaurant admin */}
+                {/* Restaurant owner onboarding (non-admin users) */}
+                <Route
+                  element={<PrivateRoute allowedRoles={["onboarding"]} />}
+                >
+                  <Route
+                    path="/onboarding"
+                    element={
+                      <Suspense
+                        fallback={
+                          <div className="w-screen h-[100vh] flex items-center">
+                            <Loading />
+                          </div>
+                        }
+                      >
+                        <OwnerOnboarding />
+                      </Suspense>
+                    }
+                  />
+                </Route>
+
+                {/* Protected routes for restaurant owners — no UIDs in the URL */}
                 <Route
                   element={<PrivateRoute allowedRoles={["restaurantAdmin"]} />}
                 >
-                  {/* Dynamic restaurant admin routes using `:id` */}
                   <Route
-                    path="/:id"
+                    path={PARTNER_BASE}
                     element={
                       <Suspense
                         fallback={
@@ -75,8 +118,33 @@ const App = () => {
                     <Route index element={<Stat />} />
                     <Route path="manageOrder" element={<ManageOrder />} />
                     <Route
-                      path="manageOrder/orderView"
+                      path="manageOrder/orderView/:orderId"
                       element={<OrderView />}
+                    />
+                    {/* Legacy section URLs → single orders page */}
+                    <Route
+                      path="manageOrder/new"
+                      element={
+                        <Navigate to={`${PARTNER_BASE}/manageOrder`} replace />
+                      }
+                    />
+                    <Route
+                      path="manageOrder/in-progress"
+                      element={
+                        <Navigate to={`${PARTNER_BASE}/manageOrder`} replace />
+                      }
+                    />
+                    <Route
+                      path="manageOrder/completed"
+                      element={
+                        <Navigate to={`${PARTNER_BASE}/manageOrder`} replace />
+                      }
+                    />
+                    <Route
+                      path="manageOrder/rejected"
+                      element={
+                        <Navigate to={`${PARTNER_BASE}/manageOrder`} replace />
+                      }
                     />
                     <Route path="tableReservation" element={<TableBooking />} />
                     <Route path="foodItem" element={<FoodItem />} />
@@ -87,7 +155,7 @@ const App = () => {
                     />
                     <Route path="restaurant" element={<Restaurant />} />
                     <Route
-                      path="restaurant/:restaId/edit"
+                      path="restaurant/edit"
                       element={<EditRestaurant />}
                     />
                     <Route
@@ -99,7 +167,13 @@ const App = () => {
                       element={<RestaInformation />}
                     />
                   </Route>
-                  <Route path="/:id/logOutPage" element={<LogOutPage />} />
+                  <Route
+                    path={`${PARTNER_BASE}/logOutPage`}
+                    element={<LogOutPage />}
+                  />
+                  {/* Legacy /{firebaseUid}/... bookmarks → /partner/... */}
+                  <Route path="/:legacyUid/*" element={<LegacyPartnerRedirect />} />
+                  <Route path="/:legacyUid" element={<LegacyPartnerRedirect />} />
                 </Route>
 
                 {/* Master admin routes */}
@@ -136,8 +210,58 @@ const App = () => {
                       path="restaDetails/:restaId/edit"
                       element={<EditRestaurantAdmin />}
                     />
+                    <Route
+                      path="restaurantStats"
+                      element={<RestaurantStatsList />}
+                    />
+                    <Route
+                      path="restaurantStats/:ownerId"
+                      element={<RestaurantStatsShell />}
+                    >
+                      <Route index element={<RestaurantStatsManage />} />
+                      <Route
+                        path="manage"
+                        element={<Navigate to=".." relative="path" replace />}
+                      />
+                      <Route
+                        path="orders"
+                        element={<RestaurantStatsOrders />}
+                      />
+                      <Route
+                        path="orders/:orderId"
+                        element={<MonitorOrderView />}
+                      />
+                      <Route
+                        path="reservations"
+                        element={<RestaurantStatsReservations />}
+                      />
+                      <Route
+                        path="finance"
+                        element={<RestaurantStatsFinance />}
+                      />
+                    </Route>
                     <Route path="bookings-record" element={<TodayOrders />} />
                     <Route path="ordersDetails" element={<OrdersDetails />} />
+                    <Route path="ourKitchen" element={<OurKitchenLayout />}>
+                      <Route index element={<OurKitchenHome />} />
+                      <Route path="menu" element={<FoodItem />} />
+                      <Route path="menu/addItem" element={<AddItem />} />
+                      <Route
+                        path="menu/edit/:itemId"
+                        element={<EditFoodItem />}
+                      />
+                      <Route
+                        path="orders"
+                        element={
+                          <Navigate to="/foodAdmin/ourOrders" replace />
+                        }
+                      />
+                    </Route>
+                    <Route path="ourOrders" element={<OurOrdersLayout />}>
+                      <Route index element={<OurKitchenOrders />} />
+                      <Route path=":orderId" element={<OrderView />} />
+                    </Route>
+                    <Route path="riders" element={<Riders />} />
                     <Route
                       path="tableReservation"
                       element={<TableBookings />}
@@ -154,6 +278,7 @@ const App = () => {
 
                 <Route path="*" element={<NotFound />} />
               </Routes>
+              </Suspense>
             </BrowserRouter>
           </BookingsProvider>
         </NotificationsProvider>

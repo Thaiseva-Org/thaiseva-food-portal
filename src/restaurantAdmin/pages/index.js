@@ -14,6 +14,8 @@ const ManageOrder = lazy(() => import("./ManageOrder"));
 const Restaurant = lazy(() => import("./Restaurant"));
 const ResturantAdminHome = lazy(() => import("./ResturantAdminHome"));
 const TableBooking = lazy(() => import("./TableBooking"));
+const OwnerOnboarding = lazy(() => import("./onboarding/OwnerOnboarding"));
+const PublicApply = lazy(() => import("./onboarding/PublicApply"));
 
 export {
   AddItem,
@@ -28,4 +30,6 @@ export {
   Restaurant,
   ResturantAdminHome,
   TableBooking,
+  OwnerOnboarding,
+  PublicApply,
 };

@@ -1,30 +1,29 @@
-import {
-  arrayUnion,
-  doc,
-  getDoc,
-  increment,
-  Timestamp,
-  updateDoc,
-} from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, orderBy, query, Timestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import { db } from "../../../../firebaseConfig";
 import Loading from "../../../components/Loading";
-import { useNotifications } from "../../../context/NotificationsProvider";
-import {
-  updateHourlyEarnings,
-  updateMonthlyEarnings,
-} from "../../../services/Earning";
+import { markOrderDelivered } from "../../../api";
+
+const riderLabel = (rider) => {
+  if (!rider || rider === "N/A") return "";
+  if (typeof rider === "string") return rider;
+  const bits = [rider.name, rider.phone, rider.vehicleType, rider.vehicleNumber]
+    .filter(Boolean);
+  return bits.join(" · ");
+};
 
 const OrdersDetView = () => {
   const navigate = useNavigate();
-  const { CreateNewNotification, CreateNewNotificationToUser } =
-    useNotifications();
   const [orderDetails, setOrderDetails] = useState([]);
   const [restaurantDetails, setRestaurantDetails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const [completeOrderDetails, setCompleteOrderDetails] = useState({});
+  const [riders, setRiders] = useState([]);
+  const [ridersError, setRidersError] = useState(null);
+  const [selectedRiderId, setSelectedRiderId] = useState("");
   const itemidParam = useParams();
   const id = decodeURIComponent(itemidParam["orderId"]);
 
@@ -35,7 +34,7 @@ const OrdersDetView = () => {
         const orderDetailsRef = doc(db, `orders/${id}`);
         const orderDetailsSnapshot = await getDoc(orderDetailsRef);
         if (!orderDetailsSnapshot.exists()) {
-          console.error("Order not found!");
+          setError("Order not found.");
           return;
         }
         const orderData = orderDetailsSnapshot.data();
@@ -49,23 +48,27 @@ const OrdersDetView = () => {
         const restData = restDetailsSnapshot.data();
         setRestaurantDetails(restData);
 
-        // Fetch the last status and its timestamp
-        const statusArray = orderData.Status || [];
-        const lastStatus = statusArray[statusArray.length - 1]; // Get the last status
-        const status = lastStatus ? lastStatus.status : "Unknown"; // Default to 'Unknown' if empty
-        const date = orderData.timestamp.toDate().toLocaleString(); // formatting date
+        const statusArray = Array.isArray(orderData.Status)
+          ? orderData.Status
+          : [];
+        const lastStatus = statusArray[statusArray.length - 1];
+        const status =
+          orderData.currentStatus || lastStatus?.status || "Unknown";
+        const date = orderData.timestamp?.toDate
+          ? orderData.timestamp.toDate().toLocaleString()
+          : "N/A";
         setCompleteOrderDetails({
           OrderID: id,
-          Date: date, // Date of the last status
+          Date: date,
           CustomerDetails: orderData.Receiver || "N/A",
           DeliveryPartner: orderData.DeliveryPartner || "N/A",
           Location: orderData.Location || "N/A",
           Amount: orderData.Amount || "0.00",
-          CurrentStatus: status, // Current status from the last entry
-          Status: orderData.Status,
+          CurrentStatus: status,
+          Status: statusArray,
           Items: orderData.Items,
-          resId: orderData.Restaurant.id,
-          ownerId: orderData.Restaurant.ownerId,
+          resId: orderData.Restaurant?.id,
+          ownerId: orderData.Restaurant?.ownerId,
         });
         setOrderDetails(orderData.Items);
       } catch (error) {
@@ -77,6 +80,33 @@ const OrdersDetView = () => {
 
     fetchOrders();
   }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRiders = async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, "foodRiders"), orderBy("name"))
+        );
+        if (cancelled) return;
+        setRiders(
+          snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((rider) => rider.active !== false)
+        );
+        setRidersError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setRidersError(err.message || "Could not load riders.");
+          setRiders([]);
+        }
+      }
+    };
+    loadRiders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const formatDate = (timestamp) => {
     if (timestamp === "N/A") return;
@@ -95,96 +125,28 @@ const OrdersDetView = () => {
     return fullDate;
   };
 
-  const updateItemSoldCount = async () => {
-    try {
-      const updatePromises = orderDetails.map((item) => {
-        const itemRef = doc(
-          db,
-          `food_items/${completeOrderDetails?.resId}/items/${item.ItemId}`
-        );
-        return updateDoc(itemRef, {
-          count: increment(1),
-          earning: increment(item?.Price),
-        });
-      });
-      await Promise.all(updatePromises);
-    } catch (error) {
-      console.error(error);
+  const canVerifyDelivered =
+    completeOrderDetails?.CurrentStatus === "Out for Delivery";
+
+  const handleVerifyDelivered = async () => {
+    if (!canVerifyDelivered || actionLoading) return;
+    if (!selectedRiderId) {
+      alert("Choose the rider who delivered this order.");
+      return;
     }
-  };
-
-  const updateTotalSalesData = async () => {
     try {
-      const resRef = doc(db, `restaurants/${completeOrderDetails?.ownerId}`);
-      return updateDoc(resRef, {
-        lifetimeEarning: increment(completeOrderDetails?.Amount),
-        orderCount: increment(1),
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleOrderStatusChange = async (value) => {
-    try {
-      const orderRef = doc(db, `orders/${id}`);
-
-      const statusEntry = {
-        status: value,
-        timestamp: new Date(),
-      };
-
-      await updateDoc(orderRef, {
-        Status: arrayUnion(statusEntry),
-        currentStatus: value,
-      });
-
-      if (value === "Delivered") {
-        await updateHourlyEarnings(completeOrderDetails?.Amount);
-        await updateHourlyEarnings(
-          completeOrderDetails?.Amount,
-          restaurantDetails?.ownerId
-        );
-        await updateMonthlyEarnings(completeOrderDetails?.Amount);
-        await updateMonthlyEarnings(
-          completeOrderDetails?.Amount,
-          restaurantDetails?.ownerId
-        );
-        await updateItemSoldCount();
-        await updateTotalSalesData();
-      }
-      const notData = getNotificationData(value);
-      await CreateNewNotificationToUser(
-        notData.title,
-        notData.desc,
-        notData.type,
-        completeOrderDetails?.CustomerDetails?.id
-      );
-      await CreateNewNotification(
-        `Order delivered!`,
-        `#${completeOrderDetails?.OrderID} order has been delivered!.`,
-        "completed",
-        restaurantDetails.ownerId,
-        "partner"
-      );
+      setActionLoading(true);
+      await markOrderDelivered({ orderId: id, riderId: selectedRiderId });
       navigate(`/foodAdmin/ordersDetails`);
-    } catch (error) {
-      console.error("Error updating status history:", error);
+    } catch (err) {
+      console.error("Error verifying delivery:", err);
+      alert(
+        err.message ||
+          "Failed to verify delivered. Deploy Cloud Functions first."
+      );
+    } finally {
+      setActionLoading(false);
     }
-  };
-
-  const getNotificationData = (status) => {
-    return status === "Delivered"
-      ? {
-          title: "Enjoy your meal!",
-          desc: `Hey ${completeOrderDetails?.CustomerDetails?.name}! your order has been delivered. Enjoy your meal!.`,
-          type: "completed",
-        }
-      : "";
-  };
-
-  const getOrderStatus = (status) => {
-    return status === "Out for Delivery" ? "Delivered" : "";
   };
 
   // if (loading) return <p>Loading...</p>;
@@ -306,6 +268,17 @@ const OrdersDetView = () => {
               </div>
             </div>
 
+            {riderLabel(completeOrderDetails?.DeliveryPartner) && (
+              <div className="bg-white mt-5 rounded-lg w-full">
+                <div className="rounded-lg p-5">
+                  <p className="font-bold text-[1.25rem]">Rider</p>
+                  <p className="mt-2 text-sm font-medium">
+                    {riderLabel(completeOrderDetails.DeliveryPartner)}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-5 rounded-lg bg-white w-full p-5">
               <p className="font-bold text-[1.25rem] mb-3">
                 Order Status History
@@ -324,17 +297,60 @@ const OrdersDetView = () => {
                   </li>
                 ))}
               </ol>
-              {completeOrderDetails?.CurrentStatus === "Out for Delivery" ? (
-                <button
-                  className="w-full py-2 mt-5 font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:shadow-outline"
-                  type="button"
-                  value={getOrderStatus(completeOrderDetails?.CurrentStatus)}
-                  onClick={(e) => handleOrderStatusChange(e.target.value)}
-                >
-                  {getOrderStatus(completeOrderDetails?.CurrentStatus)}
-                </button>
+              {canVerifyDelivered ? (
+                <div className="mt-5 space-y-3">
+                  <div>
+                    <label
+                      htmlFor="delivery-rider"
+                      className="block text-sm font-semibold text-ink"
+                    >
+                      Rider who delivered
+                    </label>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Rider details are added on the Riders page. Choose one
+                      here, then confirm delivery.
+                    </p>
+                    <select
+                      id="delivery-rider"
+                      className="modern-select mt-2"
+                      value={selectedRiderId}
+                      onChange={(e) => setSelectedRiderId(e.target.value)}
+                      disabled={actionLoading || riders.length === 0}
+                    >
+                      <option value="">
+                        {riders.length ? "Select a rider" : "No active riders"}
+                      </option>
+                      {riders.map((rider) => (
+                        <option key={rider.id} value={rider.id}>
+                          {riderLabel(rider)}
+                        </option>
+                      ))}
+                    </select>
+                    {ridersError && (
+                      <p className="mt-1 text-xs text-danger-600">{ridersError}</p>
+                    )}
+                    <Link
+                      to="/foodAdmin/riders"
+                      className="mt-2 inline-flex text-sm font-semibold text-brand-600 hover:text-brand-700"
+                    >
+                      {riders.length ? "Manage riders" : "Add a rider first"}
+                    </Link>
+                  </div>
+                  <button
+                    className="w-full py-2 font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:shadow-outline disabled:opacity-60"
+                    type="button"
+                    disabled={actionLoading || !selectedRiderId}
+                    onClick={handleVerifyDelivered}
+                  >
+                    {actionLoading ? "Confirming…" : "Confirm delivery"}
+                  </button>
+                </div>
               ) : (
-                <></>
+                <p className="mt-5 text-sm text-slate-500">
+                  {completeOrderDetails?.CurrentStatus === "Delivered"
+                    ? "This order is already delivered."
+                    : "Restaurants move kitchen steps. Confirm delivery only when the order is Out for delivery."}
+                </p>
               )}
             </div>
           </div>

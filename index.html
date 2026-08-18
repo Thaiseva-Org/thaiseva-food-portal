@@ -7,10 +7,21 @@
   <link rel="shortcut icon" href="./favicon.png" type="image/x-icon">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Thaiseva | Food Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
-<body>
-  <div id="root"></div>
+<body class="antialiased" style="margin:0;background:#f8fafc;">
+  <div id="root">
+    <!-- Visible before JS/auth bootstraps (avoids pure white flash) -->
+    <div id="boot-splash" style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#64748b;">
+      <div style="text-align:center">
+        <div style="width:2rem;height:2rem;margin:0 auto 0.75rem;border:3px solid #e2e8f0;border-top-color:#0d9488;border-radius:50%;animation:boot-spin .7s linear infinite"></div>
+        <p style="margin:0;font-size:0.875rem">Loading Food Portal…</p>
+      </div>
+    </div>
+    <style>@keyframes boot-spin{to{transform:rotate(360deg)}}</style>
+  </div>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 

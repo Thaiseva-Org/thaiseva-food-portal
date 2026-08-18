@@ -5,11 +5,10 @@ import {
   where,
   getCountFromServer,
   limit,
-  startAfter,
   getDocs,
 } from "firebase/firestore";
 import { db } from "../../../firebaseConfig";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
 import Loading from "../../components/Loading";
 import { Pagination } from "@mui/material";
@@ -30,7 +29,7 @@ const RestRequests = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [lastDocs, setLastDocs] = useState([]);
+  const [, setLastDocs] = useState([]);
 
   useEffect(() => {
     document.title = "Thaiseva | Food Admin - Requested Restaurants";
@@ -40,37 +39,47 @@ const RestRequests = () => {
 
   const fetchTotalPages = async () => {
     const status = toggle ? "Pending" : "Rejected";
-    let q = query(restaurantCollection, where("status", "==", status));
-    const pages = await getCountFromServer(q);
-    setTotalPages(Math.ceil(pages.data().count / 10));
+    const [apps, legacy] = await Promise.all([
+      getCountFromServer(
+        query(collection(db, "restaurantApplications"), where("status", "==", status))
+      ),
+      getCountFromServer(
+        query(restaurantCollection, where("status", "==", status))
+      ),
+    ]);
+    setTotalPages(Math.max(1, Math.ceil((apps.data().count + legacy.data().count) / 10)));
   };
 
   const fetchRestaurants = async () => {
     const status = toggle ? "Pending" : "Rejected";
     try {
-      let q = query(
-        restaurantCollection,
-        where("status", "==", status),
-        limit(10)
-      );
-      if (page > 0 && lastDocs[page - 1]) {
-        q = query(
-          restaurantCollection,
-          where("status", "==", status),
-          startAfter(lastDocs[page - 1]),
-          limit(10)
-        );
-      }
-      const res = await getDocs(q);
-      const list = res.docs.map((doc) => doc.data());
-      const lastDoc =
-        res.docs.length > 0 ? res.docs[res.docs.length - 1] : null;
-      setLastDocs((prev) => {
-        const updated = [...prev];
-        updated[page] = lastDoc;
-        return updated;
-      });
-      setRestaurants(list);
+      const [appsSnap, restSnap] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, "restaurantApplications"),
+            where("status", "==", status),
+            limit(20)
+          )
+        ),
+        getDocs(
+          query(restaurantCollection, where("status", "==", status), limit(20))
+        ),
+      ]);
+      const apps = appsSnap.docs
+        .filter((d) => d.data()?.status === status)
+        .map((d) => ({
+          ...d.data(),
+          applicationId: d.id,
+          ownerId: d.data().ownerUid || d.id,
+          requestKind: "application",
+        }));
+      const legacy = restSnap.docs.map((d) => ({
+        ...d.data(),
+        ownerId: d.data().ownerId || d.id,
+        requestKind: "restaurant",
+      }));
+      setRestaurants([...apps, ...legacy]);
+      setLastDocs([]);
     } catch (error) {
       console.error("Error fetching restaurants:", error);
       setRestaurants([]);
@@ -86,7 +95,7 @@ const RestRequests = () => {
   useEffect(() => {
     isMasterAdmin && fetchTotalPages();
     isMasterAdmin && fetchRestaurants();
-  }, [isMasterAdmin, page, toggle]);
+  }, [isMasterAdmin, page, toggle]); // eslint-disable-line react-hooks/exhaustive-deps -- fetch helpers intentionally follow these pagination controls
 
   if (loading)
     return (
@@ -187,8 +196,11 @@ const RestRequests = () => {
                 <div className="lg:col-span-2 md:col-span-4 col-span-4 md:col-start-10">
                   <div className="py-4 mt-3">
                     <Link
-                      to={`/foodAdmin/restaRequest/restaurantReqDet/${item.id}`}
-                      state={{ ownerId: item.ownerId }}
+                      to={
+                        item.requestKind === "application"
+                          ? `/foodAdmin/restaRequest/restaurantReqDet/${item.applicationId}`
+                          : `/foodAdmin/restaRequest/restaurantReqDet/${item.ownerId}`
+                      }
                       className="font-medium text-blue-600 dark:text-blue-500 hover:underline border-blue-400 border p-1 px-2 rounded-lg"
                     >
                       <i className="bi bi-eye-fill"></i>View Details

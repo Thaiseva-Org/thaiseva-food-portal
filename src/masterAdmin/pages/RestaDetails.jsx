@@ -9,7 +9,7 @@ import {
 } from "firebase/firestore";
 import { Pagination } from "@mui/material";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { db } from "../../../firebaseConfig";
 import Loading from "../../components/Loading";
 import { useAuth } from "../../AuthContext";
@@ -81,7 +81,7 @@ const RestaDetails = () => {
   useEffect(() => {
     isMasterAdmin && fetchTotalPages();
     isMasterAdmin && fetchRestaurants();
-  }, [isMasterAdmin, page, toggle]);
+  }, [isMasterAdmin, page, toggle]); // eslint-disable-line react-hooks/exhaustive-deps -- fetch helpers intentionally follow these pagination controls
 
   if (loading)
     return (
@@ -175,8 +175,7 @@ const RestaDetails = () => {
                   <div className="lg:col-span-2 md:col-span-4 col-span-4 md:col-start-8 ">
                     <div className="md:ps-6 py-4 mt-3">
                       <Link
-                        to={`/foodAdmin/restaDetails/restaDetailsView/${item.id}`}
-                        state={{ ownerId: item.ownerId }}
+                        to={`/foodAdmin/restaDetails/restaDetailsView/${item.ownerId}`}
                         className="font-medium  text-blue-600 dark:text-blue-500 hover:underline border-blue-400 border p-1 px-2 rounded-lg"
                       >
                         <i className="bi bi-eye-fill"></i> View Details

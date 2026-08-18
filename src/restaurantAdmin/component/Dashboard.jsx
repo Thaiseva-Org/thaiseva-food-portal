@@ -1,48 +1,75 @@
-import { Suspense, useEffect, useRef, useState } from "react";
-import { Outlet, useParams } from "react-router-dom";
-import { format } from "timeago.js";
+import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
+import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
+import LocalCafeRoundedIcon from "@mui/icons-material/LocalCafeRounded";
+import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
+import ShoppingBagRoundedIcon from "@mui/icons-material/ShoppingBagRounded";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Outlet } from "react-router";
 import "../../../src/index.css";
 import { useAuth } from "../../AuthContext";
-import DataBoxes from "../../components/DataBoxes";
+import DateRangeFilter from "../../components/DateRangeFilter";
 import Loading from "../../components/Loading";
+import NotificationMenu from "../../components/NotificationMenu";
+import {
+  DashboardTheme,
+  DashSection,
+  KpiStatCard,
+  RankRowList,
+} from "../../components/dashboard";
 import { useNotifications } from "../../context/NotificationsProvider";
 import {
   fetchPartnerOrdersData,
   fetchTopItem,
 } from "../../services/DashboardData";
-import Addrestaurant from "../pages/restaurantPages/Addrestaurant";
-import ChartPage from "./ChartPage";
-import ChartTwo from "./ChartTwo";
-import FoodStats from "./FoodStats";
 import { useBookings } from "../../context/BookingsProvider";
+import { formatCount, formatMoney } from "../../utils/format";
 
-const Dashboard = ({ toggle }) => {
+// Heavy chart libs (chart.js / apexcharts) — load after shell paints
+const ChartPage = lazy(() => import("./ChartPage"));
+const ChartTwo = lazy(() => import("./ChartTwo"));
+const FoodStats = lazy(() => import("./FoodStats"));
+const Addrestaurant = lazy(() =>
+  import("../pages/restaurantPages/Addrestaurant")
+);
+
+const Dashboard = ({ toggle, show }) => {
   useEffect(() => {
     document.title = "Thaiseva | Dashboard";
   }, []);
   return (
-    <>
-      <div className="w-full h-screen">
-        <TopNav toggle={toggle} />
-        <div className="w-full h-[calc(100vh-5rem)] overflow-scroll">
-          <Suspense
-            fallback={
-              <div className="h-full flex items-center">
-                <Loading />
-              </div>
-            }
-          >
+    <div className="w-full min-w-0 flex-1 h-screen flex flex-col">
+      <TopNav toggle={toggle} show={show} />
+      <div className="content-scroll">
+        <Suspense
+          fallback={
+            <div className="h-full flex items-center justify-center">
+              <Loading />
+            </div>
+          }
+        >
+          <div className="animate-fade-in">
             <Outlet />
-          </Suspense>
-        </div>
+          </div>
+        </Suspense>
       </div>
-    </>
+    </div>
   );
 };
 
-const TopNav = ({ toggle }) => {
+const TopNav = ({ toggle, show }) => {
   const { currentUser, roleData } = useAuth();
-  const { notifications } = useNotifications();
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAllAsRead,
+  } = useNotifications();
   const [profileToggle, setProfileToggle] = useState(false);
   const [notification, setNotification] = useState(false);
   const parentRef = useRef(); // Ref to the parent element
@@ -68,154 +95,105 @@ const TopNav = ({ toggle }) => {
   }, []);
 
   return (
-    <>
-      <div className="sticky z-10 w-full py-2 bg-white">
-        <div className="flex items-center justify-between p-2">
-          <div className="flex  md:mx-5  w-[50%] ">
-            <button onClick={toggle} className="">
-              <i className="text-2xl bi bi-list"></i>
-            </button>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-              }}
-              className="w-full lg:ms-14 ms-4"
-            >
-              <label
-                htmlFor="default-search"
-                className="text-sm font-medium text-gray-900 sr-only dark:text-white"
-              >
-                Search
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 flex items-center pointer-events-none start-0 ps-3">
-                  <svg
-                    className="w-4 h-4 text-gray-500 dark:text-gray-400"
-                    aria-hidden="true"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"
-                    />
-                  </svg>
-                </div>
-                <input
-                  type="search"
-                  id="default-search"
-                  className="block w-full p-2 text-sm text-gray-900 border border-gray-500 rounded-lg ps-10 bg-gray-50 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Search here..."
-                  autoComplete="off"
-                  required
-                />
-              </div>
-            </form>
-          </div>
-          <div
-            className="flex gap-16 items-center my-2 w-[30%] justify-end"
-            ref={parentRef}
+    <header className="topnav">
+      <div className="topnav-inner" ref={parentRef}>
+        <div className="flex items-center gap-3 md:gap-5 flex-1 min-w-0">
+          <button
+            onClick={toggle}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-white text-brand-700 shadow-sm hover:bg-brand-50 transition-colors duration-fast focus-ring"
+            aria-label="Toggle sidebar"
+            aria-controls="partner-sidebar"
+            aria-expanded={show}
           >
-            <div
+            <i className="text-xl bi bi-list" />
+          </button>
+
+          <form
+            onSubmit={(e) => e.preventDefault()}
+            className="hidden sm:block w-full max-w-md"
+          >
+            <label htmlFor="partner-search" className="sr-only">
+              Search
+            </label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3 text-ink-subtle">
+                <i className="bi bi-search text-sm" />
+              </div>
+              <input
+                type="search"
+                id="partner-search"
+                className="modern-input ps-9"
+                placeholder="Search here..."
+                autoComplete="off"
+              />
+            </div>
+          </form>
+        </div>
+
+        <div className="flex items-center gap-3 md:gap-5 shrink-0">
+          <NotificationMenu
+            notifications={notifications}
+            unreadCount={unreadCount}
+            loading={notificationsLoading}
+            error={notificationsError}
+            markAllAsRead={markAllAsRead}
+            isOpen={notification}
+            onToggle={() => {
+              setNotification((isOpen) => !isOpen);
+              setProfileToggle(false);
+            }}
+            onClose={() => setNotification(false)}
+          />
+
+          <div className="relative">
+            <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setNotification(!notification);
-                setProfileToggle(false);
+                setProfileToggle(!profileToggle);
+                setNotification(false);
               }}
+              className="avatar-chip focus-ring"
+              aria-label="Profile"
             >
-              <i
-                className={`relative text-2xl text-blue-700 cursor-pointer bi bi-bell-fill lg:me-10 ${
-                  notifications.length > 0 &&
-                  "drop-shadow-[0px_0px_10px_rgba(239,68,68,0.5)]"
-                }`}
-              >
-                {notifications?.length > 0 && (
-                  <div className="bg-red-500 absolute text-sm flex justify-center items-center w-[0.6rem] h-[0.6rem] text-white rounded-full top-1 right-0 shadow shadow-red-500"></div>
-                )}
-              </i>
-              <div
-                className={`p-3 z-10 py-4 top-20 right-20 bg-slate-50 rounded-xl shadow-2xl max-h-[400px] no-scrollbar overflow-auto w-[23rem] absolute  ${
-                  !notification ? "hidden" : "block"
-                }`}
-              >
-                <div className="flex items-center justify-between w-full h-8">
-                  <p className="m-auto font-semibold text-slate-600">
-                    {notifications?.length > 0
-                      ? "Notification"
-                      : "No Notifications"}
-                  </p>
-                </div>
-                {notifications.map((item, index) => (
-                  <div key={index} className="flex gap-4 mt-6">
-                    <img
-                      src={`${item.image || item.imageUrl}`}
-                      className="h-[4rem] w-[4rem] object-cover rounded-md"
-                      alt=""
-                    />
-                    <div className="w-[calc(100%-5rem)]">
-                      <p className="text-xl text-slate-800">{item.title}</p>
-                      <p className="mt-1 text-slate-500">{item.desc}</p>
-                      <p className="mt-1 text-sm text-end text-slate-500">
-                        {format(item?.timestamp?.toDate())}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+              {roleData?.name?.charAt(0) ||
+                currentUser?.displayName?.charAt(0) ||
+                "U"}
+            </button>
 
-            <div>
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setProfileToggle(!profileToggle);
-                  setNotification(false);
-                }}
-                className="relative flex items-center gap-2 bg-blue-200 rounded-lg cursor-pointer rounded-e-2xl"
-              >
-                <p className="absolute right-0 flex items-center justify-center w-8 h-8 text-lg font-semibold text-white bg-blue-700 rounded-full md:h-12 md:w-12 md:text-3xl">
-                  {roleData?.name?.charAt(0) ||
-                    currentUser?.displayName?.charAt(0)}
+            {profileToggle && (
+              <div className="profile-panel">
+                <h2 className="mb-3 text-lg font-semibold text-ink-heading">
+                  User profile
+                </h2>
+                <p className="mb-2 text-sm text-ink-muted break-all">
+                  <span className="font-semibold text-ink">Email:</span>{" "}
+                  {currentUser.email}
+                </p>
+                <p className="text-xs text-ink-subtle">
+                  Signed in as restaurant partner
                 </p>
               </div>
-
-              <div
-                className={`z-10 right-10 w-[18rem]  flex justify-center absolute ${
-                  !profileToggle ? "hidden" : "block"
-                }  `}
-              >
-                <div className="max-w-md p-6 mx-auto mt-10 bg-white rounded-lg shadow-lg">
-                  <h2 className="mb-4 text-2xl font-semibold text-gray-800">
-                    User Profile
-                  </h2>
-                  <p className="mb-2 text-gray-600">
-                    <strong>Email:</strong> {currentUser.email}
-                  </p>
-                  <p className="mb-2 text-gray-600">
-                    <strong>UID:</strong> {currentUser.uid}
-                  </p>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
-    </>
+    </header>
   );
 };
 
 export const Stat = () => {
-  const { isRestaurantAdmin, roleData } = useAuth();
-  const { orders } = useBookings();
-  const resId = roleData.restaurantId;
-  const restaurantIdInit = useParams();
-  const restaurantId = restaurantIdInit["id"];
-  const [loading, setLoading] = useState(false);
+  const { isRestaurantAdmin, roleData, currentUser, resData } = useAuth();
+  const { orders, ordersLoading } = useBookings();
+  // Prefer owner uid for menu paths; restaurantId field may be publicId
+  // Tenant from auth only — never from the URL
+  const resId =
+    roleData?.restaurantOwnerUid ||
+    currentUser?.uid ||
+    roleData?.restaurantId ||
+    "";
+  const restaurantId = currentUser?.uid;
+  const [statsReady, setStatsReady] = useState(false);
   const [error, setError] = useState(null);
   const [totalOrder, setTotalOrder] = useState(0);
   const [delivered, setDelivered] = useState(0);
@@ -224,330 +202,316 @@ export const Stat = () => {
   const [completeOrder, setCompleteOrder] = useState(0);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [selectGraphType, SetSelectGraphType] = useState("today");
-  const [selectDonutType, SetSelectDonutType] = useState("today");
   const [topItems, setTopItems] = useState([]);
+  const [rangeLoading, setRangeLoading] = useState(false);
 
   useEffect(() => {
     document.title = "Thaiseva | Dashboard";
   }, []);
 
+  const ordersCount = orders.length;
+  const latestOrderId = orders[0]?.OrderID ?? null;
+
+  // Derive box stats from realtime orders without blanking the whole page.
+  // Do not depend on full orders array identity for a loading spinner.
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
+    if (!isRestaurantAdmin || !restaurantId) {
+      setStatsReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
       try {
-        if (isRestaurantAdmin) {
-          await fetchPartnerOrdersData(
-            restaurantId,
-            "",
-            "",
-            setTotalOrder,
-            setCountCustomer,
-            setCompleteOrder,
-            setDelivered,
-            setCanceled,
-            setError,
-            resId,
-            orders
-          );
-          await fetchTopItem(resId, setTopItems);
-        }
-      } catch (error) {
-        console.error("Error in fetching data:", error);
-        setError(error);
+        setError(null);
+        await fetchPartnerOrdersData(
+          restaurantId,
+          "",
+          "",
+          setTotalOrder,
+          setCountCustomer,
+          setCompleteOrder,
+          setDelivered,
+          setCanceled,
+          setError,
+          resId,
+          orders
+        );
+        // Top items is secondary — do not block shell paint
+        fetchTopItem(resId, setTopItems).catch((err) =>
+          console.error("Top items:", err)
+        );
+      } catch (err) {
+        console.error("Error in fetching data:", err);
+        if (!cancelled) setError(err?.message || String(err));
       } finally {
-        setLoading(false);
+        if (!cancelled) setStatsReady(true);
       }
     };
 
-    if (restaurantId && resId) {
-      fetchData();
+    // Wait briefly for first orders snapshot; never hang the dashboard forever
+    if (ordersLoading && ordersCount === 0) {
+      const timeoutId = setTimeout(() => {
+        if (!cancelled) run();
+      }, 4000);
+      return () => {
+        cancelled = true;
+        clearTimeout(timeoutId);
+      };
     }
-  }, [restaurantId, resId, isRestaurantAdmin]);
 
-  const handleDateRangeSubmit = (event) => {
-    event.preventDefault();
-    if (endDate == "") {
-      alert("Please select both start and end!!");
-      return;
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // orders / latestOrderId refresh stats without depending on array identity each render
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- orders used for stats payload; identity intentionally omitted
+  }, [
+    restaurantId,
+    resId,
+    isRestaurantAdmin,
+    ordersLoading,
+    ordersCount,
+    latestOrderId,
+  ]);
+
+  const applyDateRange = async (nextStart = startDate, nextEnd = endDate) => {
+    setRangeLoading(true);
+    try {
+      await fetchPartnerOrdersData(
+        restaurantId,
+        nextStart,
+        nextEnd,
+        setTotalOrder,
+        setCountCustomer,
+        setCompleteOrder,
+        setDelivered,
+        setCanceled,
+        setError,
+        resId,
+        orders
+      );
+    } finally {
+      setRangeLoading(false);
     }
-    fetchPartnerOrdersData(
-      restaurantId,
-      startDate,
-      endDate,
-      setTotalOrder,
-      setCountCustomer,
-      setCompleteOrder,
-      setDelivered,
-      setCanceled,
-      setError,
-      resId,
-      orders
-    );
+  };
+
+  const resetDateRange = async () => {
     setStartDate("");
     setEndDate("");
+    await applyDateRange("", "");
   };
 
   const boxesData = [
     {
       data: totalOrder,
       title: "Total Orders",
-      icon: "bi-file-person",
-      color: "yellow",
+      icon: <AssignmentTurnedInRoundedIcon />,
+      tone: "yellow",
     },
     {
       data: delivered,
-      title: "Order Complete",
-      icon: "bi-clipboard2-check",
-      color: "green",
+      title: "Orders Complete",
+      icon: <ShoppingBagRoundedIcon />,
+      tone: "green",
     },
     {
       data: canceled,
-      title: "Order Cancel",
-      icon: "bi-hourglass-top",
-      color: "red",
+      title: "Orders Cancelled",
+      icon: <CancelRoundedIcon />,
+      tone: "red",
     },
     {
       data: countCustomer,
-      title: "Total Customers",
-      icon: "bi-person",
-      color: "purple",
+      title: "Customers",
+      icon: <PeopleAltRoundedIcon />,
+      tone: "purple",
     },
     {
       data: completeOrder,
       title: "Items Sold",
-      icon: "bi-cup",
-      color: "blue",
+      icon: <LocalCafeRoundedIcon />,
+      tone: "blue",
     },
   ];
 
-  if (loading)
-    return (
-      <div className="h-full flex items-center">
-        <Loading />
-      </div>
-    );
-  if (error)
-    return (
-      <>
-        <div className="px-8 pt-10 h-[80vh]">
-          <div className="bg-white py-28 mb-20 h-[80%] rounded-lg shadow-blue-900 flex items-center justify-center mt-10">
-            <div className="text-center">
-              <p className="mb-6 text-lg text-slate-500">{error}</p>
-            </div>
-          </div>
-        </div>
-      </>
-    );
+  const rangeLabel =
+    startDate && endDate ? `${startDate} → ${endDate}` : "All time";
+
+  // Only block the shell for true non-owners (onboarding card). Stats use soft load.
   if (!isRestaurantAdmin) {
     return (
-      <>
-        <div className="px-8 py-10">
+      <div className="page-shell w-full px-4 py-8 md:px-6 md:py-10">
+        <Suspense
+          fallback={
+            <div className="h-40 flex items-center justify-center">
+              <Loading />
+            </div>
+          }
+        >
           <Addrestaurant />
-        </div>
-      </>
+        </Suspense>
+      </div>
     );
   }
 
+  const showInitialSpinner = !statsReady && ordersLoading;
+
   return (
-    <>
-      <div className="px-8 pt-10">
-        <div className="flex items-center justify-between">
-          <p className="font-bold text-[var(--main-headings-color)] lg:text-4xl md:text-2xl">
-            Dashboard
-          </p>
-          <form
-            onSubmit={(e) => {
-              handleDateRangeSubmit(e);
+    <DashboardTheme>
+      <Box className="page-shell w-full px-4 py-6 md:px-6 md:py-8">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          justifyContent="space-between"
+          alignItems={{ sm: "flex-end" }}
+          gap={1.5}
+        >
+          <Box minWidth={0}>
+            <Typography variant="h4">Dashboard</Typography>
+            <Typography variant="body2" color="text.secondary" mt={0.5}>
+              {resData?.name
+                ? `${resData.name} — orders, earnings, and menu performance`
+                : "Orders, earnings, and menu performance"}
+            </Typography>
+          </Box>
+          <Chip size="small" color="primary" variant="outlined" label={rangeLabel} />
+        </Stack>
+
+        {error ? (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {typeof error === "string"
+              ? error
+              : error?.message || "Could not load some stats."}
+          </Alert>
+        ) : null}
+
+        {showInitialSpinner ? (
+          <Box display="flex" justifyContent="center" py={8}>
+            <Loading />
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              mt: 2.5,
+              display: "grid",
+              gap: 2,
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "1fr 1fr",
+                xl: "repeat(5, minmax(0, 1fr))",
+              },
             }}
-            className="flex items-end justify-between"
           >
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">Start</legend>
-              <input
-                type="date"
-                className="bg-gray-100 date-input w-[7.5rem]" // Apply your Tailwind and custom classes here
-                placeholder="Select date"
-                value={startDate}
-                onChange={(event) => {
-                  setStartDate(event.target.value);
-                }}
-              />
-            </fieldset>
-            <p className="px-2 pt-1 m-auto"> to </p>
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">End</legend>
-              <input
-                type="date"
-                className="bg-gray-100 date-input w-[7.5rem]" // Apply your Tailwind and custom classes here
-                placeholder="Select date"
-                value={endDate}
-                onChange={(event) => {
-                  if (startDate == "") {
-                    alert("Please Select Start Date First!!");
-                    return;
-                  }
-                  setEndDate(event.target.value);
-                }}
-                min={startDate}
-                max={new Date().toISOString().split("T")[0]}
-              />
-            </fieldset>
-
-            <button
-              type="submit"
-              className="w-24 py-2 mb-1 ml-2 text-sm font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:shadow-outline"
-            >
-              Apply
-            </button>
-          </form>
-        </div>
-
-        <div className="flex-col gap-4 lg:flex mt-14">
-          <div className="flex flex-wrap items-center gap-4 justify-evenly">
-            {boxesData.map((item, index) => (
-              <DataBoxes
-                key={index}
-                data={item.data}
+            {boxesData.map((item) => (
+              <KpiStatCard
+                key={item.title}
                 title={item.title}
+                value={item.data}
                 icon={item.icon}
-                color={item.color}
+                tone={item.tone}
               />
             ))}
-          </div>
-        </div>
+          </Box>
+        )}
 
-        <div className="grid grid-cols-12 gap-6 mt-10 max-xl:grid-cols-6">
-          <div className="col-span-12 p-6 bg-white rounded-lg lg:col-span-6 shadow-md">
-            <p className="text-xl font-bold">Orders Summary</p>
-            <div
-              className="inline-flex my-6 bg-gray-200 rounded-md shadow-sm"
-              role="group"
-            >
-              <button
-                type="button"
-                onClick={() => SetSelectDonutType("monthly")}
-                className={`px-4 py-2 text-sm font-semibold text-blue-700 border border-gray-200 rounded-s-lg ${
-                  selectDonutType === "monthly"
-                    ? "bg-white text-gray-900"
-                    : "hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                onClick={() => SetSelectDonutType("weekly")}
-                className={`px-4 py-2 text-sm font-semibold text-blue-700 border border-gray-200 ${
-                  selectDonutType === "weekly"
-                    ? "bg-white text-gray-900"
-                    : "hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                Weekly
-              </button>
-              <button
-                type="button"
-                onClick={() => SetSelectDonutType("today")}
-                className={`px-4 py-2 text-sm font-semibold text-blue-700 border border-gray-200 rounded-e-lg  ${
-                  selectDonutType === "today"
-                    ? "bg-white text-gray-900"
-                    : "hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                Today
-              </button>
-            </div>
+        <Box mt={2}>
+          <DateRangeFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={setStartDate}
+            onEndDateChange={setEndDate}
+            onApply={applyDateRange}
+            onReset={resetDateRange}
+            resetLabel="Reset"
+            loading={rangeLoading}
+          />
+        </Box>
 
-            <ChartPage
-              selectedView={selectDonutType}
-              restaurantId={restaurantId}
-            />
-          </div>
-          <div className="col-span-12 p-4 pb-8 bg-white rounded-lg lg:col-span-6 shadow-md">
-            <p className="text-xl font-bold">Earning & Platform Charge</p>
-            <div
-              className="inline-flex my-6 bg-gray-200 rounded-md shadow-sm"
-              role="group"
+        <Box
+          sx={{
+            mt: 2.5,
+            display: "grid",
+            gap: 2,
+            gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" },
+          }}
+        >
+          <DashSection
+            title="Orders summary"
+            subtitle="Kitchen mix from ThaiSeva"
+          >
+            <Suspense
+              fallback={
+                <Box display="flex" justifyContent="center" py={6}>
+                  <Loading />
+                </Box>
+              }
             >
-              <button
-                type="button"
-                onClick={() => SetSelectGraphType("monthly")}
-                className={`px-4 py-2 text-sm font-semibold text-blue-700 border border-gray-200 rounded-s-lg ${
-                  selectGraphType === "monthly"
-                    ? "bg-white text-gray-900"
-                    : "hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                onClick={() => SetSelectGraphType("weekly")}
-                className={`px-4 py-2 text-sm font-semibold text-blue-700 border border-gray-200 ${
-                  selectGraphType === "weekly"
-                    ? "bg-white text-gray-900"
-                    : "hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                Weekly
-              </button>
-              <button
-                type="button"
-                onClick={() => SetSelectGraphType("today")}
-                className={`px-4 py-2 text-sm font-semibold text-blue-700 border border-gray-200 rounded-e-lg  ${
-                  selectGraphType === "today"
-                    ? "bg-white text-gray-900"
-                    : "hover:bg-gray-100 hover:text-gray-900"
-                }`}
-              >
-                Today
-              </button>
-            </div>
-            <div>
+              <ChartPage
+                restaurantId={restaurantId}
+                startDate={startDate}
+                endDate={endDate}
+              />
+            </Suspense>
+          </DashSection>
+
+          <DashSection
+            title="Earning & platform charge"
+            subtitle="Your share after commission"
+          >
+            <Suspense
+              fallback={
+                <Box display="flex" justifyContent="center" py={6}>
+                  <Loading />
+                </Box>
+              }
+            >
               <ChartTwo
                 restaurantId={restaurantId}
-                selectedView={selectGraphType}
+                startDate={startDate}
+                endDate={endDate}
               />
-            </div>
-          </div>
-        </div>
+            </Suspense>
+          </DashSection>
+        </Box>
 
-        <div className="grid grid-cols-12 gap-6 pb-20 mt-10">
-          <FoodStats />
+        <Box
+          sx={{
+            mt: 2.5,
+            pb: 4,
+            display: "grid",
+            gap: 2,
+            gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" },
+          }}
+        >
+          <Suspense
+            fallback={
+              <Box display="flex" justifyContent="center" py={6}>
+                <Loading />
+              </Box>
+            }
+          >
+            <FoodStats />
+          </Suspense>
 
-          <div className="col-span-12 p-4 pb-8 bg-white rounded-lg lg:col-span-6  shadow-md">
-            <p className="text-xl font-bold">Top Selling items</p>
-
-            {topItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between mt-3 "
-              >
-                <div className="flex items-center w-full gap-3">
-                  <img
-                    src={item.imageUrl}
-                    className="h-12 w-[15%] object-cover rounded-md"
-                    alt=""
-                  />
-                  <div className="w-[50%]">
-                    <p className="text-lg font-semibold truncate ">
-                      {item.itemName}
-                    </p>
-                    <p className="text-sm text-blue-700 truncate">
-                      Ordered {item.count} times
-                    </p>
-                  </div>
-                  <p className="text-black/75 font-semibold w-[35%] text-end pr-4">
-                    <span>&#3647;</span> {Number(item.earning).toFixed(2) || 0}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </>
+          <DashSection
+            title="Top selling items"
+            subtitle="Best performers by order count"
+          >
+            <RankRowList
+              emptyLabel="No sales data yet."
+              items={topItems.map((item) => ({
+                id: item.id,
+                image: item.imageUrl,
+                title: item.itemName,
+                subtitle: `Ordered ${formatCount(item.count)} times`,
+                value: formatMoney(item.earning || 0),
+                valueTitle: formatMoney(item.earning || 0),
+              }))}
+            />
+          </DashSection>
+        </Box>
+      </Box>
+    </DashboardTheme>
   );
 };
 

@@ -1,50 +1,82 @@
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DoneRoundedIcon from "@mui/icons-material/DoneRounded";
 import { Pagination } from "@mui/material";
-import { doc, updateDoc } from "firebase/firestore";
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { db } from "../../../firebaseConfig";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../AuthContext";
+import { setDineInBookingStatus } from "../../api";
+import DataBoxes from "../../components/DataBoxes";
+import DateRangeFilter from "../../components/DateRangeFilter";
+import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
+import StatusBadge from "../../components/StatusBadge";
 import { useBookings } from "../../context/BookingsProvider";
-import { useNotifications } from "../../context/NotificationsProvider";
 import {
   fetchReservations,
   fetchReservationsTotalPages,
 } from "../../services/GetOrders";
+import {
+  BOOKING_STATUS_FILTERS,
+  bookingMatchesStatusFilter,
+  countBookingsByStatus,
+  displayBookingStatus,
+  normalizeBookingStatus,
+  sortBookingsByStatus,
+} from "../../utils/bookingStatus";
+
+/** All · Pending · Accepted · Rejected */
+const STATUS_FILTERS = BOOKING_STATUS_FILTERS;
+
+const matchesSearch = (item, query) => {
+  if (!query) return true;
+  const haystack = [
+    item.CustomerName,
+    item.CustomerNo,
+    item.Date,
+    item.Booking,
+    displayBookingStatus(item.status),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+};
 
 const TableBookings = () => {
-  const { isRestaurantAdmin } = useAuth();
-  const { bookings } = useBookings();
-  const restaurantIdInit = useParams();
-  const { CreateNewNotificationToUser } = useNotifications();
-  const restaurantId = restaurantIdInit["id"];
+  const { isRestaurantAdmin, currentUser } = useAuth();
+  const { bookings, bookingsLoading, bookingsError } = useBookings();
+  const restaurantId = currentUser?.uid;
   const [orderDetailsRecord, setOrderDetailsRecord] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [isRealTime, setIsRealTime] = useState(true);
+  const [isRealTime, setIsRealTime] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [lastDocs, setLastDocs] = useState([]);
   const [refetch, setRefetch] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [actionBusyId, setActionBusyId] = useState(null);
 
   useEffect(() => {
     document.title = "Thaiseva | Reservations";
   }, []);
 
-  const handleDateRangeSubmit = (event) => {
-    event.preventDefault();
-    if (endDate == "") {
-      alert("Please select both start and end!!");
-      return;
-    }
+  const applyDateRange = () => {
     setPage(1);
     setLastDocs([]);
     setIsRealTime(false);
     setRefetch((p) => !p);
+  };
+
+  const resetToLive = () => {
+    setIsRealTime(true);
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
+    setLastDocs([]);
+    setError(null);
   };
 
   useEffect(() => {
@@ -69,277 +101,405 @@ const TableBookings = () => {
           setLastDocs
         );
     }
-  }, [isRestaurantAdmin, page, isRealTime, refetch]);
+  }, [isRestaurantAdmin, page, isRealTime, refetch]); // eslint-disable-line react-hooks/exhaustive-deps -- date values and cursors are applied only by explicit submit/page triggers
 
   const handleChangePage = (_, newPage) => {
     setPage(newPage);
   };
 
-  const handleConfirmTableBooking = async (id, value, name, userId) => {
+  const handleConfirmTableBooking = async (id, value) => {
+    const label = value === "Canceled" ? "Rejected" : value;
     const confirmStatus = window.confirm(
-      `Are you sure you ${value} this booking?`
+      `Are you sure you want to mark this booking as ${label}?`
     );
-    if (confirmStatus) {
-      try {
-        const orderRef = doc(db, `dineInBookings/${id}`);
-
-        await updateDoc(orderRef, {
-          status: value,
-        });
-
-        const notData = getNotificationData(value, name);
-        await CreateNewNotificationToUser(
-          notData.title,
-          notData.desc,
-          notData.type,
-          userId
-        );
-      } catch (error) {
-        console.error("Error updating status history:", error);
-      }
+    if (!confirmStatus) return;
+    setActionBusyId(id);
+    try {
+      // API still stores Accepted | Canceled
+      await setDineInBookingStatus({ bookingId: id, status: value });
+    } catch (err) {
+      console.error("Error updating status history:", err);
+      window.alert(err?.message || "Could not update booking status.");
+    } finally {
+      setActionBusyId(null);
     }
   };
-  const getNotificationData = (status, name) => {
-    return status === "Accepted"
-      ? {
-          title: "Dine in booking Confirmed",
-          desc: `Hey ${name}! your dine in booking has been confirmed.`,
-          type: "confirmed",
-        }
-      : status === "confirmed"
-      ? {
-          title: "Unfortunately, your dine in booking has been rejected.",
-          desc: `Hey ${name}! we regret to inform you that your dine in booking has been rejected.`,
-          type: "canceled",
-        }
-      : "";
+
+  const sourceRows = isRealTime ? bookings : orderDetailsRecord;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  const stats = useMemo(
+    () => countBookingsByStatus(sourceRows || []),
+    [sourceRows]
+  );
+
+  const filteredRows = useMemo(() => {
+    const matched = (sourceRows || []).filter(
+      (item) =>
+        bookingMatchesStatusFilter(item.status, statusFilter) &&
+        matchesSearch(item, normalizedQuery)
+    );
+    // All view: Pending → Accepted → Rejected
+    return statusFilter === "all" ? sortBookingsByStatus(matched) : matched;
+  }, [sourceRows, statusFilter, normalizedQuery]);
+
+  const pageError = error || (isRealTime ? bookingsError : null);
+  const pageLoading = loading || (isRealTime && bookingsLoading);
+
+  const canAct = (item) => {
+    if (!isRealTime || actionBusyId === item.OrderID) return false;
+    return normalizeBookingStatus(item.status) === "pending";
   };
 
-  if (loading)
-    return (
-      <div className="py-10">
-        <Loading />
-      </div>
-    );
-  if (error) {
-    return (
-      <>
-        <div className="px-8 pt-10 h-[80vh]">
-          <div className="bg-white py-28 mb-20 h-[80%] rounded-lg shadow-blue-900 flex items-center justify-center mt-10">
-            <div className="text-center">
-              <p className="text-slate-500 mb-6 text-lg">{error}</p>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
+  const statusCount = (key) => {
+    if (key === "pending") return stats.pending;
+    if (key === "accepted") return stats.accepted;
+    if (key === "rejected") return stats.rejected;
+    return stats.total;
+  };
+
   return (
-    <div className="px-6 py-10">
-      <div className="flex justify-between items-center">
-        <p className="lg:text-3xl md:text-2xl font-bold text-[var(--main-headings-color)]">
-          Table Reservations
-        </p>
-        <div className="flex gap-2 flex-wrap">
-          <form
-            onSubmit={(e) => {
-              handleDateRangeSubmit(e);
-            }}
-            className="flex items-end justify-between"
-          >
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">Start</legend>
-              <input
-                type="date"
-                className="date-input w-[7.5rem] outline-none"
-                placeholder="Select date"
-                value={startDate}
-                onChange={(event) => {
-                  setStartDate(event.target.value);
-                }}
-                max={new Date().toISOString().split("T")[0]}
-              />
-            </fieldset>
-            <p className="px-2 pt-1 m-auto"> to </p>
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">End</legend>
-              <input
-                type="date"
-                className="date-input w-[7.5rem] outline-none"
-                placeholder="Select date"
-                value={endDate}
-                onChange={(event) => {
-                  if (startDate == "") {
-                    alert("Please Select Start Date First!!");
-                    return;
-                  }
-                  setEndDate(event.target.value);
-                }}
-                min={startDate}
-                max={new Date().toISOString().split("T")[0]}
-              />
-            </fieldset>
+    <div className="px-4 py-8 md:px-6 md:py-10">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="page-header">Table Reservations</h1>
+            {isRealTime ? (
+              <span className="badge-primary inline-flex items-center gap-1.5">
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                Live
+              </span>
+            ) : (
+              <span className="badge-neutral">
+                {startDate && endDate ? `${startDate} → ${endDate}` : "All time"}
+              </span>
+            )}
+          </div>
+          <p className="page-subtext mt-1">
+            Review guest bookings, filter by status or date, and accept or
+            decline requests.
+          </p>
+        </div>
+      </div>
 
-            <button
-              type="submit"
-              className="w-24 py-2 mb-1 ml-2 text-sm font-semibold text-white bg-orange-400 rounded hover:bg-orange-500 focus:outline-none focus:shadow-outline"
-            >
-              Apply
-            </button>
-          </form>
-          <div className="mb-1 flex items-end">
-            <button
-              className={` py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none focus:shadow-outline text-sm`}
-              onClick={() => {
-                setIsRealTime(true), setStartDate(""), setEndDate("");
-              }}
-            >
-              Show Realtime
-            </button>
+      {/* Summary — click a card to filter that status */}
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            statusFilter === "all" ? "ring-2 ring-brand-400" : ""
+          }`}
+          onClick={() => setStatusFilter("all")}
+          aria-pressed={statusFilter === "all"}
+        >
+          <DataBoxes
+            data={stats.total}
+            title="All"
+            icon="bi-calendar2-check"
+            color="blue"
+          />
+        </button>
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            statusFilter === "pending" ? "ring-2 ring-warning-500" : ""
+          }`}
+          onClick={() => setStatusFilter("pending")}
+          aria-pressed={statusFilter === "pending"}
+        >
+          <DataBoxes
+            data={stats.pending}
+            title="Pending"
+            icon="bi-hourglass-split"
+            color="yellow"
+          />
+        </button>
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            statusFilter === "accepted" ? "ring-2 ring-success-500" : ""
+          }`}
+          onClick={() => setStatusFilter("accepted")}
+          aria-pressed={statusFilter === "accepted"}
+        >
+          <DataBoxes
+            data={stats.accepted}
+            title="Accepted"
+            icon="bi-check-circle"
+            color="green"
+          />
+        </button>
+        <button
+          type="button"
+          className={`text-left rounded-2xl focus-ring ${
+            statusFilter === "rejected" ? "ring-2 ring-danger-500" : ""
+          }`}
+          onClick={() => setStatusFilter("rejected")}
+          aria-pressed={statusFilter === "rejected"}
+        >
+          <DataBoxes
+            data={stats.rejected}
+            title="Rejected"
+            icon="bi-x-circle"
+            color="red"
+          />
+        </button>
+      </div>
+
+      {/* Date range */}
+      <div className="mt-4">
+        <DateRangeFilter
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+          onApply={applyDateRange}
+          onReset={resetToLive}
+          loading={loading}
+          resetLabel="Live"
+        />
+      </div>
+
+      {/* Search strip */}
+      <div className="panel mt-4 !py-3 !px-3.5 sm:!px-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative min-w-0 flex-1 max-w-md">
+            <i
+              className="bi bi-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search guest name or phone…"
+              className="modern-input !pl-9 !py-2"
+              aria-label="Search reservations"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <p className="text-xs text-ink-muted">
+              Showing{" "}
+              <strong className="text-ink tabular-nums">
+                {filteredRows.length}
+              </strong>
+              {statusFilter !== "all" && (
+                <>
+                  {" "}
+                  <strong className="text-ink">
+                    {statusFilter === "pending"
+                      ? "Pending"
+                      : statusFilter === "accepted"
+                        ? "Accepted"
+                        : "Rejected"}
+                  </strong>
+                </>
+              )}{" "}
+              of{" "}
+              <strong className="text-ink tabular-nums">{stats.total}</strong>
+              {isRealTime ? " live" : " loaded"} bookings
+            </p>
+            {(searchQuery || statusFilter !== "pending") && (
+              <button
+                type="button"
+                className="btn-ghost !min-h-0 !px-2.5 !py-1 text-xs"
+                onClick={() => {
+                  setSearchQuery("");
+                  setStatusFilter("pending");
+                }}
+              >
+                Reset to Pending
+              </button>
+            )}
           </div>
         </div>
+        {!isRealTime && (
+          <p className="mt-2 border-t border-neutral-100 pt-2 text-xs text-ink-muted">
+            Accept / reject actions are available in live mode only. Status and
+            search filters apply to the currently loaded page.
+          </p>
+        )}
       </div>
 
-      <div className="flex justify-around my-8">
-        <div className="overflow-auto w-[35rem] lg:w-full bg-white rounded-lg shadow-md">
-          {(isRealTime ? bookings : orderDetailsRecord).length > 0 ? (
-            <div>
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs uppercase bg-white">
-                  <tr>
-                    <th scope="col" className="px-3 py-3">
-                      Order ID
-                    </th>
-                    <th scope="col" className="px-6 py-3">
-                      Reservation Date
-                    </th>
-                    <th scope="col" className="px-6 py-3">
-                      Name
-                    </th>
-                    <th scope="col" className="px-6 py-3">
-                      Contact
-                    </th>
-                    <th scope="col" className="px-2 py-3">
-                      Adult / Children
-                    </th>
-                    <th scope="col" className="px-3 py-3">
-                      Booking Date
-                    </th>
-                    <th scope="col" className="px-6 py-3">
-                      Status
-                    </th>
-                    <th scope="col" className="px-8 py-3">
-                      Action
-                    </th>
+      {/* Error */}
+      {pageError && (
+        <div className="mt-4">
+          <InfoMessage type="error" message={pageError} />
+        </div>
+      )}
+
+      {/* Status tabs + table */}
+      <div className="table-shell mt-4 w-full overflow-hidden">
+        <div
+          className="filter-tabs bg-white px-1 sm:px-2"
+          role="tablist"
+          aria-label="Filter by status"
+        >
+          {STATUS_FILTERS.map((opt) => {
+            const active = statusFilter === opt.value;
+            const count = statusCount(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setStatusFilter(opt.value)}
+                className={`filter-tab ${active ? "filter-tab-active" : ""}`}
+              >
+                {opt.label}
+                <span className="filter-tab-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="w-full overflow-auto">
+        {pageLoading ? (
+          <div className="py-16">
+            <Loading />
+          </div>
+        ) : filteredRows.length > 0 ? (
+          <table className="w-full min-w-[820px] text-left text-sm">
+            <thead className="table-head text-xs uppercase tracking-wide">
+              <tr>
+                <th scope="col" className="px-4 py-3.5">
+                  Reservation
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Guest
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Party size
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Booked on
+                </th>
+                <th scope="col" className="px-4 py-3.5">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-3.5 text-center">
+                  Action
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {filteredRows.map((item) => {
+                const actionable = canAct(item);
+                const busy = actionBusyId === item.OrderID;
+                const guestLabel = item.CustomerName || "guest";
+                const adults = Number(item.Adults) || 0;
+                const children = Number(item.Childrens) || 0;
+                const totalPeople = adults + children;
+                return (
+                  <tr
+                    key={item.OrderID}
+                    className="bg-white transition-colors hover:bg-brand-50/40"
+                  >
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-ink">{item.Date}</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-ink">
+                        {item.CustomerName}
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-muted tabular-nums">
+                        {item.CustomerNo}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="space-y-1.5">
+                        <p className="font-semibold text-ink tabular-nums">
+                          {totalPeople}{" "}
+                          <span className="font-medium text-ink-muted">
+                            {totalPeople === 1 ? "person" : "people"}
+                          </span>
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="badge-neutral">
+                            {adults} adult{adults === 1 ? "" : "s"}
+                          </span>
+                          <span className="badge-neutral">
+                            {children} child{children === 1 ? "" : "ren"}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-ink-muted">{item.Booking}</td>
+                    <td className="px-4 py-4">
+                      <StatusBadge status={displayBookingStatus(item.status)} />
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleConfirmTableBooking(item.OrderID, "Accepted")
+                          }
+                          disabled={!actionable || busy}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-success-500 text-white shadow-sm transition hover:bg-success-600 disabled:cursor-not-allowed disabled:opacity-30"
+                          title="Accept booking"
+                          aria-label={`Accept reservation for ${guestLabel}`}
+                        >
+                          <DoneRoundedIcon fontSize="small" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleConfirmTableBooking(item.OrderID, "Canceled")
+                          }
+                          disabled={!actionable || busy}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-danger-500 text-white shadow-sm transition hover:bg-danger-600 disabled:cursor-not-allowed disabled:opacity-30"
+                          title="Reject booking"
+                          aria-label={`Reject reservation for ${guestLabel}`}
+                        >
+                          <CloseRoundedIcon fontSize="small" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="text-center">
-                  {(isRealTime ? bookings : orderDetailsRecord).map((item) => (
-                    <tr
-                      key={item.OrderID}
-                      className="bg-white hover:bg-slate-100"
-                    >
-                      <td className="px-3 py-4">{`#${item.OrderID}`}</td>
-                      {/* Add '#' back for display */}
-                      <td className="px-6 py-4">{item.Date}</td>
-                      <td className="px-6 py-4">{item.CustomerName}</td>
-                      <td className="px-2 py-4">{item.CustomerNo}</td>
-                      <td className="px-3 py-4">
-                        {item.Adults} / {item.Childrens}
-                      </td>
-                      <td className="px-3 py-4">{item.Booking}</td>
-                      <td className="px-3 py-4">
-                        <div>
-                          <p
-                            className={`border p-1 text-center rounded-md 
-                              ${
-                                item.status === "Pending"
-                                  ? "border-orange-500 text-orange-500"
-                                  : ""
-                              } 
-                              ${
-                                item.status === "Canceled"
-                                  ? "border-red-600 text-red-600"
-                                  : ""
-                              } 
-                              ${
-                                item.status === "Accepted"
-                                  ? "border-green-600 text-green-600 font-bold"
-                                  : ""
-                              }`}
-                          >
-                            {item.status}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-1 py-4">
-                        <div className="flex gap-1 justify-center">
-                          <button
-                            onClick={() =>
-                              isRealTime &&
-                              handleConfirmTableBooking(
-                                item.OrderID,
-                                "Accepted",
-                                item.CustomerName,
-                                item.userId
-                              )
-                            }
-                            disabled={
-                              !isRealTime ||
-                              item.status === "Canceled" ||
-                              item.status === "Accepted"
-                            }
-                            className={`bg-[var(--accept-button-bg-color)] text-white p-1 rounded-full ${
-                              !isRealTime ||
-                              item.status === "Canceled" ||
-                              item.status === "Accepted"
-                                ? "opacity-30 cursor-not-allowed"
-                                : ""
-                            }`}
-                          >
-                            <DoneRoundedIcon className="scale-90 stroke-white stroke-2" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              isRealTime &&
-                              handleConfirmTableBooking(
-                                item.OrderID,
-                                "Canceled",
-                                item.CustomerName,
-                                item.userId
-                              )
-                            }
-                            disabled={
-                              !isRealTime ||
-                              item.status === "Canceled" ||
-                              item.status === "Accepted"
-                            }
-                            className={`bg-[var(--reject-button-bg-color)] text-white p-1 rounded-full ${
-                              !isRealTime ||
-                              item.status === "Canceled" ||
-                              item.status === "Accepted"
-                                ? "opacity-30 cursor-not-allowed"
-                                : ""
-                            }`}
-                          >
-                            <CloseRoundedIcon className="scale-90 stroke-white stroke-2" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-center py-4 w-full light-text">
-              No Reservations Found
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <div className="empty-state py-14">
+            <i
+              className="bi bi-calendar2-x text-4xl text-brand-300"
+              aria-hidden="true"
+            />
+            <p className="mt-3 text-base font-semibold text-ink">
+              No reservations found
             </p>
-          )}
+            <p className="mt-1 max-w-sm text-sm">
+              {searchQuery || statusFilter !== "all"
+                ? "No bookings for this status. Try All, another status, or a different date range."
+                : isRealTime
+                  ? "No table bookings in the last 24 hours. Use the date filters to search history."
+                  : "No bookings match this date range."}
+            </p>
+            {statusFilter !== "all" && (
+              <button
+                type="button"
+                className="btn-ghost mt-4"
+                onClick={() => {
+                  setSearchQuery("");
+                  setStatusFilter("all");
+                }}
+              >
+                Show all statuses
+              </button>
+            )}
+          </div>
+        )}
         </div>
       </div>
+
       {!isRealTime && totalPages > 0 && (
-        <div className="w-full flex justify-center">
+        <div className="mt-6 flex w-full justify-center">
           <Pagination
             count={totalPages}
             page={page}

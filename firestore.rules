@@ -1,0 +1,846 @@
+rules_version = '2';
+// =============================================================================
+// SHARED multi-app Firestore rules (website + hotel/travel/cars + food portal).
+//
+// DO NOT change hotel / travel / car / van / chat / catalog / contact blocks
+// or the body of isAdmin() for food-only needs — that breaks other products.
+//
+// Food portal changes ONLY:
+//   - helpers under "FOOD PORTAL HELPERS ONLY"
+//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders, dineInBookings,
+//     restaurants, restaurantApplications, foodRiders, food_items items, food notifications, Earnings, auditLogs,
+//     users food signup, settings/categories)
+//
+// Policy + checklist: FIRESTORE_RULES_NOTES.md
+// Guard test:        tests/firestoreRulesIsolation.test.cjs
+// =============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Safe role lookup — never call get().data on a missing doc (that errors and
+    // denies the whole rule, even when OR'd with true).
+    function userRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+        : (
+          exists(/databases/$(database)/documents/Users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/Users/$(request.auth.uid)).data.get('role', '')
+            : ''
+        );
+    }
+
+    // FROZEN for food-portal PRs: do not add foodRole / isMasterAdmin / claims here.
+    // Food masters use isFoodAdmin() on food paths only. See FIRESTORE_RULES_NOTES.md.
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in [
+          "admin@gmail.com",
+          "thaiseva_admin@gmail.com"
+        ] ||
+        request.auth.token.admin == true ||
+        userRole() in ["Admin", "admin", "Sub Admin"]
+      );
+    }
+
+    function isOwner(userIdField) {
+      return isAuthenticated() && (
+        resource == null ||
+        resource.data[userIdField] == request.auth.uid ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.authUid == request.auth.uid ||
+        resource.data.uid == request.auth.uid ||
+        resource.data.providerUid == request.auth.uid ||
+        resource.data.hotelUid == request.auth.uid ||
+        resource.data.restaurantUid == request.auth.uid
+      );
+    }
+
+    function ownsIncoming(userIdField) {
+      return isAuthenticated() && (
+        request.resource.data[userIdField] == request.auth.uid ||
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.authUid == request.auth.uid ||
+        request.resource.data.uid == request.auth.uid ||
+        request.resource.data.providerUid == request.auth.uid ||
+        request.resource.data.hotelUid == request.auth.uid ||
+        request.resource.data.restaurantUid == request.auth.uid
+      );
+    }
+
+    function isSafeUserCreate() {
+      return request.resource.data.role == "Partner" &&
+        request.resource.data.status == "Pending" &&
+        request.resource.data.isSuspended != true;
+    }
+
+    function isSafeUserUpdate(userId) {
+      return request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.isSuspended == resource.data.isSuspended;
+    }
+
+    function isSafeUserSelfUpdate(userId) {
+      return request.auth.uid == userId &&
+        request.resource.data.get('role', resource.data.get('role', '')) == resource.data.get('role', '') &&
+        request.resource.data.get('status', resource.data.get('status', '')) == resource.data.get('status', '') &&
+        request.resource.data.get('isSuspended', resource.data.get('isSuspended', false)) == resource.data.get('isSuspended', false);
+    }
+
+    function isSafeWebsiteUserCreate() {
+      return !request.resource.data.keys().hasAny(['role', 'status', 'isSuspended', 'admin']);
+    }
+
+    // Client booking creates must not forge paid / accepted / inventory / Stripe
+    function isSafeBookingCreate() {
+      return ownsIncoming('userId') &&
+        request.resource.data.get('isPaymentDone', false) == false &&
+        request.resource.data.get('isPaymentClear', false) == false &&
+        request.resource.data.get('isBookingConfirmed', false) == false &&
+        request.resource.data.get('autoAccepted', false) == false &&
+        request.resource.data.get('inventoryReserved', false) == false &&
+        request.resource.data.get('paymentVerificationStatus', 'PENDING') != 'VERIFIED' &&
+        // Block client-forged Stripe / paid markers
+        !request.resource.data.keys().hasAny([
+          'stripeSessionId', 'stripePaymentIntentId', 'stripeChargeAmount',
+          'paidAt', 'paymentConfirmation', 'possibleDoublePayment'
+        ]) &&
+        !(request.resource.data.get('bookingStatus', 'PENDING') in [
+          'CONFIRMED', 'confirmed', 'COMPLETED', 'completed',
+          'PAID', 'paid', 'ACCEPTED', 'Accepted',
+          'PAYMENT_PENDING_VERIFICATION'
+        ]) &&
+        !(request.resource.data.get('status', 'Pending') in [
+          'Accepted', 'Confirmed', 'Completed', 'Paid', 'Pending Verification'
+        ]);
+    }
+
+    function paymentFieldsUnchanged() {
+      return request.resource.data.get('isPaymentDone', false) == resource.data.get('isPaymentDone', false) &&
+        request.resource.data.get('isPaymentClear', false) == resource.data.get('isPaymentClear', false) &&
+        request.resource.data.get('paymentVerificationStatus', '') == resource.data.get('paymentVerificationStatus', '') &&
+        request.resource.data.get('amountTHB', 0) == resource.data.get('amountTHB', 0) &&
+        request.resource.data.get('subtotal', 0) == resource.data.get('subtotal', 0);
+    }
+
+    function inventoryFieldsUnchanged() {
+      return request.resource.data.get('inventoryReserved', false) == resource.data.get('inventoryReserved', false) &&
+        request.resource.data.get('inventoryReleased', false) == resource.data.get('inventoryReleased', false) &&
+        request.resource.data.get('autoAccepted', false) == resource.data.get('autoAccepted', false) &&
+        request.resource.data.get('isBookingConfirmed', false) == resource.data.get('isBookingConfirmed', false);
+    }
+
+    function identityFieldsUnchanged() {
+      return request.resource.data.userId == resource.data.userId &&
+        request.resource.data.get('authUid', resource.data.get('authUid', '')) ==
+          resource.data.get('authUid', resource.data.get('authUid', ''));
+    }
+
+    // Owner may cancel only (limited fields; no payment/inventory forgery)
+    function isOwnerCancelOnly() {
+      return isOwner('userId') &&
+        identityFieldsUnchanged() &&
+        paymentFieldsUnchanged() &&
+        inventoryFieldsUnchanged() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status', 'bookingStatus', 'updatedAt',
+            'canceledAt', 'cancelledAt', 'cancellationReason',
+            'cancelReason', 'canceledBy', 'cancelledBy'
+          ]) &&
+        (
+          request.resource.data.get('bookingStatus', '') in ['CANCELED', 'CANCELLED', 'Canceled', 'Cancelled'] ||
+          request.resource.data.get('status', '') in ['Canceled', 'Cancelled', 'CANCELED', 'CANCELLED']
+        );
+    }
+
+    function isEmailOwner() {
+      return isAuthenticated() && request.auth.token.email != null && (
+        resource.data.get('email', '') == request.auth.token.email ||
+        resource.data.get('guestEmail', '') == request.auth.token.email ||
+        resource.data.get('userEmail', '') == request.auth.token.email
+      );
+    }
+
+    function isChatParticipant() {
+      return isAuthenticated() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('authUid', '') == request.auth.uid ||
+        resource.data.get('senderId', '') == request.auth.uid ||
+        resource.data.get('receiverId', '') == request.auth.uid ||
+        resource.data.get('createdBy', '') == request.auth.uid ||
+        resource.data.get('customerId', '') == request.auth.uid ||
+        resource.data.get('partnerId', '') == request.auth.uid ||
+        resource.data.get('hotelUid', '') == request.auth.uid ||
+        resource.data.get('driverId', '') == request.auth.uid ||
+        (resource.data.keys().hasAny(['participants']) &&
+          request.auth.uid in resource.data.participants)
+      );
+    }
+
+    function chatCreateSelf() {
+      return isAuthenticated() && (
+        request.resource.data.get('userId', '') == request.auth.uid ||
+        request.resource.data.get('senderId', '') == request.auth.uid ||
+        request.resource.data.get('createdBy', '') == request.auth.uid ||
+        request.resource.data.get('customerId', '') == request.auth.uid ||
+        (request.resource.data.keys().hasAny(['participants']) &&
+          request.auth.uid in request.resource.data.participants)
+      );
+    }
+
+    // ============================================================
+    // FOOD PORTAL HELPERS ONLY (do not use outside food collections)
+    // isAdmin() above is intentionally unchanged for hotel/travel/etc.
+    // ============================================================
+
+    // Claim-based food master + same email as AuthContext / Cloud Functions.
+    // Used only on food paths so other apps keep the original isAdmin() contract.
+    function isFoodAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in ["admin@gmail.com"] ||
+        request.auth.token.get('admin', false) == true ||
+        request.auth.token.get('foodRole', '') == 'masterAdmin' ||
+        request.auth.token.get('foodMasterAdmin', false) == true ||
+        request.auth.token.get('role', '') == 'masterAdmin' ||
+        request.auth.token.get('masterAdmin', false) == true
+      );
+    }
+
+    function isFoodOrderRestaurantOwner() {
+      return isAuthenticated()
+        && resource.data.keys().hasAny(['Restaurant'])
+        && resource.data.Restaurant.keys().hasAny(['ownerId'])
+        && resource.data.Restaurant.ownerId == request.auth.uid;
+    }
+
+    function isFoodOrderReceiver() {
+      return isAuthenticated()
+        && resource.data.keys().hasAny(['Receiver'])
+        && resource.data.Receiver.keys().hasAny(['id'])
+        && resource.data.Receiver.id == request.auth.uid;
+    }
+
+    function isFoodOrderSender() {
+      return isAuthenticated()
+        && resource.data.keys().hasAny(['Sender'])
+        && resource.data.Sender.keys().hasAny(['id'])
+        && resource.data.Sender.id == request.auth.uid;
+    }
+
+    // Restaurant-owner self-signup (never self-grant admin flags)
+    function isSafeFoodPortalUserCreate() {
+      return request.resource.data.get('isMasterAdmin', false) == false
+        && request.resource.data.get('isRestaurantAdmin', false) == false
+        && request.resource.data.get('role', 'restaurantOwner') in [
+          'Partner', 'restaurantOwner', 'customer', 'Customer'
+        ]
+        && !request.resource.data.keys().hasAny([
+          'admin', 'isAdmin', 'masterAdmin', 'restaurantOwner'
+        ]);
+    }
+
+    // Food restaurant: partners cannot change money / verification fields
+    function restaurantLockedFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny([
+          'comission', 'lifetimeEarning', 'orderCount',
+          'status', 'ownerId', 'id', 'publicId'
+        ]);
+    }
+
+    // ============================================================
+    // PUBLIC CATALOG (read-only for clients)
+    // ============================================================
+
+    match /{collection}/{docId} {
+      allow read: if collection in [
+        'BlogDB', 'ServiceDB', 'HotelDB', 'sightseeingPackages',
+        'sightseeingPackagesDetails', 'hotelPackages', 'hotelPackageDetails',
+        'TestimonialDB', 'FaqDB', 'OfferDB', 'ContentDB', 'localServices',
+        'restaurants', 'carDetails', 'foodMenu', 'coupons', 'partners',
+        'TourDB', 'travelServices', 'Thaiseva_terms', 'food_items', 'packages'
+      ];
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      // categories is food portal only; all other settings keep production isAdmin
+      allow write: if isAdmin() || (docId == 'categories' && isFoodAdmin());
+    }
+
+    match /FaqDB/{faqId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /TestimonialDB/{testimonialId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /self_drive_conditions_and_documents/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ============================================================
+    // USERS
+    // ============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isFoodAdmin());
+      allow create: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        (isSafeWebsiteUserCreate() || isSafeFoodPortalUserCreate());
+      // Self-update: keep production role/status locks; also block self-grant of food admin flags
+      allow update: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated() && isSafeUserSelfUpdate(userId) &&
+          request.resource.data.get('isMasterAdmin', resource.data.get('isMasterAdmin', false)) ==
+            resource.data.get('isMasterAdmin', false) &&
+          request.resource.data.get('isRestaurantAdmin', resource.data.get('isRestaurantAdmin', false)) ==
+            resource.data.get('isRestaurantAdmin', false));
+      allow delete: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == userId);
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if isAuthenticated() &&
+          (request.auth.uid == userId || isAdmin() || isFoodAdmin());
+        allow create: if isAdmin() || isFoodAdmin() ||
+          (isAuthenticated() && request.auth.uid == userId);
+      }
+    }
+
+    match /Users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == userId && isSafeUserCreate());
+      allow update: if isAdmin() ||
+        (isAuthenticated() && isSafeUserUpdate(userId));
+      allow delete: if isAdmin();
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if isAuthenticated() &&
+          (request.auth.uid == userId || isAdmin());
+        allow create: if isAdmin() ||
+          (isAuthenticated() && request.auth.uid == userId);
+      }
+    }
+
+    match /DeletionRequests/{docId} {
+      allow create: if isAuthenticated() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email &&
+        !('password' in request.resource.data);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // BOOKINGS — one rule set per collection (no open OR duplicates)
+    // ============================================================
+
+    match /hotelBookingData/{bookingId} {
+      // Creates only via Cloud Functions (Admin SDK). No client create.
+      allow create: if false;
+      allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
+      allow update: if isAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /travelBookingDetails/{bookingId} {
+      allow create: if isAuthenticated() && isSafeBookingCreate();
+      allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
+      allow update: if isAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /car_bookings/{bookingId} {
+      allow create: if isAuthenticated() && isSafeBookingCreate();
+      allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
+      allow update: if isAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /self_driving_bookings/{bookingId} {
+      allow create: if isAuthenticated() && isSafeBookingCreate();
+      allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
+      allow update: if isAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /vanBookings/{bookingId} {
+      allow create: if isAuthenticated() && isSafeBookingCreate();
+      allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
+      allow update: if isAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /bookings/{bookingId} {
+      allow create: if isAuthenticated() && isSafeBookingCreate();
+      allow read: if isAdmin() || isOwner('uid') || isOwner('userId');
+      allow update: if isAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin();
+    }
+
+    // Food portal dine-in: restaurant owner is ownerId (production fields unchanged)
+    match /dineInBookings/{bookingId} {
+      allow create: if isAuthenticated() && isSafeBookingCreate();
+      allow read: if isAdmin() || isFoodAdmin()
+        || isOwner('uid')
+        || isOwner('userId')
+        || isOwner('ownerId');
+      // Status transitions for food owners go through Cloud Functions (Admin SDK).
+      // Production customer cancel path kept as-is.
+      allow update: if isAdmin() || isFoodAdmin() || isOwnerCancelOnly();
+      allow delete: if isAdmin() || isFoodAdmin();
+    }
+
+    // Soft holds (legacy) — Functions only
+    match /hotelBookingHolds/{holdId} {
+      allow read: if isAdmin() ||
+        (isAuthenticated() &&
+          (resource.data.userId == request.auth.uid ||
+           resource.data.authUid == request.auth.uid));
+      allow create, update, delete: if false;
+    }
+
+    // Simple stock locks — Functions write only
+    match /hotelLocks/{lockId} {
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // FOOD / ORDERS / CART
+    // ============================================================
+
+    // Production order rules kept; food schema adds Restaurant.ownerId / Receiver / Sender.
+    match /orders/{orderId} {
+      allow create: if isAuthenticated() && (
+        ownsIncoming('uid') || ownsIncoming('userId')
+        || (
+          request.resource.data.keys().hasAny(['Receiver'])
+          && request.resource.data.Receiver.keys().hasAny(['id'])
+          && request.resource.data.Receiver.id == request.auth.uid
+        )
+      ) &&
+        request.resource.data.get('isPaymentDone', false) == false;
+      // Recent-orders list for restaurant admins filters Restaurant.ownerId == uid
+      allow read: if isAdmin() || isFoodAdmin()
+        || isOwner('uid')
+        || isOwner('userId')
+        || isFoodOrderRestaurantOwner()
+        || isFoodOrderReceiver()
+        || isFoodOrderSender();
+      allow update: if isAdmin() || isFoodAdmin() || (
+        (isOwner('uid') || isOwner('userId') || isFoodOrderReceiver() || isFoodOrderSender()) &&
+        paymentFieldsUnchanged() &&
+        (
+          request.resource.data.get('status', '') in ['Canceled', 'Cancelled', 'CANCELED'] ||
+          request.resource.data.get('orderStatus', '') in ['Canceled', 'Cancelled', 'CANCELED'] ||
+          request.resource.data.get('currentStatus', '') in ['Cancelled', 'Canceled', 'CANCELED']
+        )
+      );
+      // Money / delivery / earnings: Cloud Functions (Admin SDK) only
+      allow delete: if isAdmin() || isFoodAdmin();
+    }
+
+    match /cart/{cartId} {
+      allow read, write: if isAuthenticated() &&
+        (request.auth.uid == cartId || isAdmin());
+    }
+
+    match /food_items/{restaurantId} {
+      allow read: if true;
+      allow write: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == restaurantId);
+    }
+
+    // Food portal menu mutations go through Cloud Functions (Admin SDK)
+    match /food_items/{restaurantId}/items/{itemId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /foodMenu/{menuId} {
+      allow read: if true;
+      allow create: if isAdmin() || ownsIncoming('restaurantUid');
+      allow update, delete: if isAdmin() || isOwner('restaurantUid');
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (
+        request.resource.data.get('uid', request.resource.data.get('userId', '')) == request.auth.uid
+      );
+      allow update, delete: if isAdmin() || isOwner('uid') || isOwner('userId');
+    }
+
+    match /feedbackandratings/{docId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // PARTNERS / HOTELS / RESTAURANTS
+    // ============================================================
+
+    match /partners/{partnerId} {
+      allow read: if true;
+      allow create, update: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == partnerId);
+      allow delete: if isAdmin();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == driverId);
+      allow create, update: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == driverId);
+      allow delete: if isAdmin();
+    }
+
+    match /HotelDB/{hotelId} {
+      allow read: if true;
+      allow create, update: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == hotelId);
+      allow delete: if isAdmin();
+    }
+
+    match /HotelDB/{hotelId}/rooms/{roomId} {
+      allow read: if true;
+      allow write: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == hotelId);
+    }
+
+    match /HotelDB/{hotelId}/availability/{availabilityId} {
+      // Public read (do not call isAdmin() here — missing users/{uid} must not deny)
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Food portal restaurants/{ownerUid}: owners cannot self-set commission / verify
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+      allow create: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == restaurantId);
+      allow update: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated()
+          && request.auth.uid == restaurantId
+          && restaurantLockedFieldsUnchanged());
+      allow delete: if isAdmin() || isFoodAdmin();
+    }
+
+    match /restaurants/{ownerId}/restaurantDetails/{restaurantId} {
+      allow read: if true;
+      allow write: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == ownerId);
+    }
+
+    // Public apply-first inbox. Clients never write; Cloud Functions (Admin SDK) only.
+    match /restaurantApplications/{applicationId} {
+      allow read: if isAdmin() || isFoodAdmin();
+      allow write: if false;
+    }
+
+    // Food delivery riders. Master fills details here; assign on confirm delivery.
+    match /foodRiders/{riderId} {
+      allow read: if isAdmin() || isFoodAdmin();
+      allow write: if false;
+    }
+
+    match /localServices/{serviceId} {
+      allow read: if true;
+      allow create: if isAdmin() || ownsIncoming('providerUid');
+      allow update, delete: if isAdmin() || isOwner('providerUid');
+    }
+
+    match /hotelPackageDetails/{packageId} {
+      allow read: if true;
+      allow create: if isAdmin() || ownsIncoming('hotelUid');
+      allow update, delete: if isAdmin() || isOwner('hotelUid');
+    }
+
+    match /hotelPackages/{packageId} {
+      allow read: if true;
+      allow create: if isAdmin() || ownsIncoming('hotelUid');
+      allow update, delete: if isAdmin() || isOwner('hotelUid');
+    }
+
+    match /allRequirements/{requirementId} {
+      allow read: if isAdmin() || isOwner('providerUid');
+      allow create: if isAdmin() || ownsIncoming('providerUid');
+      allow update, delete: if isAdmin() || isOwner('providerUid');
+    }
+
+    match /travelRequirements/{requirementId} {
+      allow read: if isAdmin() || isOwner('providerUid');
+      allow create: if isAdmin() || ownsIncoming('providerUid');
+      allow update, delete: if isAdmin() || isOwner('providerUid');
+    }
+
+    // ============================================================
+    // HOTEL STOCK (numbers: free = total - locked - booked)
+    // ============================================================
+
+    match /hotelStock/{stockId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /nights/{date} {
+        allow read: if true;
+        // Writes only via Cloud Functions (lock/unlock/manage)
+        allow write: if false;
+      }
+    }
+
+    // Legacy ledger (read-only archive)
+    match /hotelRoomInventory/{inventoryId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /nights/{date} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    match /hotelAvailabilityAdjustments/{adjustmentId} {
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.hotelUid == request.auth.uid);
+      allow create: if false;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /hotelInventoryAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // One immutable/idempotent source allocation per hold or booking reserve.
+    // Only Cloud Functions may mutate these records.
+    match /hotelInventoryAllocations/{allocationId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // SHOPS / CLUBS — admin write, auth read
+    // ============================================================
+
+    match /shops/{shopId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ============================================================
+    // NOTIFICATIONS
+    // ============================================================
+
+    match /notifications/admin/messages/{messageId} {
+      allow read, write, delete: if isAdmin();
+    }
+
+    match /notifications/users/{userId}/{messageId} {
+      allow read, update, delete: if isAuthenticated() &&
+        (request.auth.uid == userId || isAdmin());
+      // Only admin or the same user may create into their inbox
+      allow create: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == userId);
+    }
+
+    // Food portal: notifications/restaurants/{ownerUid|RestAdmin}/{id}
+    match /notifications/{type}/{restaurantId}/{notificationId} {
+      allow create: if (isAdmin() || isFoodAdmin()) && restaurantId != 'Admin';
+      allow read: if isAuthenticated() && (
+        isAdmin() || isFoodAdmin() || request.auth.uid == restaurantId
+      );
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() || isFoodAdmin() || request.auth.uid == restaurantId
+      );
+    }
+
+    match /notifications/{docId} {
+      allow read, write, delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin();
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // ============================================================
+    // CONTACT (authenticated create with size limits; admin manage)
+    // ============================================================
+
+    match /ContactMessages/{docId} {
+      // Public contact form allowed; size-capped to reduce spam payloads
+      allow create: if
+        request.resource.data.get('message', '').size() > 0 &&
+        request.resource.data.get('message', '').size() <= 2000 &&
+        request.resource.data.get('email', '').size() <= 200 &&
+        request.resource.data.get('name', '').size() <= 120 &&
+        !request.resource.data.keys().hasAny(['role', 'admin', 'isAdmin', 'isPaymentDone']);
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // CHAT / CALLS — participant scoped (not global)
+    // ============================================================
+
+    match /chatRooms/{roomId} {
+      allow read: if isAdmin() || isChatParticipant();
+      allow create: if isAdmin() || chatCreateSelf();
+      allow update: if isAdmin() || isChatParticipant();
+      allow delete: if isAdmin();
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAdmin() || isChatParticipant();
+      allow create: if isAdmin() || chatCreateSelf();
+      allow update: if isAdmin() || isChatParticipant();
+      allow delete: if isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAdmin() || isChatParticipant() || (
+        isAuthenticated() &&
+        resource.data.get('senderId', resource.data.get('userId', '')) == request.auth.uid
+      );
+      // Must claim self as sender; text size capped to reduce spam
+      allow create: if isAuthenticated() &&
+        request.resource.data.get('senderId', request.resource.data.get('userId', '')) == request.auth.uid &&
+        request.resource.data.get('text', request.resource.data.get('message', '')).size() <= 4000;
+      allow update, delete: if isAdmin() || (
+        isAuthenticated() &&
+        resource.data.get('senderId', resource.data.get('userId', '')) == request.auth.uid
+      );
+    }
+
+    match /calls/{callId} {
+      allow read: if isAdmin() || isChatParticipant();
+      allow create: if isAdmin() || chatCreateSelf();
+      allow update: if isAdmin() || isChatParticipant();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================================
+    // EARNINGS / ADMIN OPS
+    // ============================================================
+
+    match /MasterEarnings/Admin/{type}/Earnings/{earningsType}/{docId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin();
+    }
+
+    match /MasterEarnings/{type}/{partnerId}/Earnings/{earningsType}/{docId} {
+      allow read: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == partnerId);
+      allow create, update: if isAdmin();
+    }
+
+    // Food portal earnings (Cloud Functions / Admin SDK write only)
+    match /Earnings/{targetId}/{subcollection}/{docId} {
+      allow read: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == targetId);
+      allow write: if false;
+    }
+
+    // Food portal audit trail (Admin SDK write only)
+    match /auditLogs/{logId} {
+      allow read: if isAdmin() || isFoodAdmin();
+      allow write: if false;
+    }
+
+    match /general_partners/{partnerId}/assignedPackages/{assignmentId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /counters/{counterId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /acceptedRestaurants/{restaurantId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /restroRequests/{restaurantId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /agents/{agentId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /RestAdmin/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /T2T_world/{docId}/{subPath=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /partner_invoices/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /manage_partners/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /vanCompanies/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /statistics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /hotel_statistics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ============================================================
+    // DEFAULT DENY
+    // ============================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    
+    // APP ISSUE Permission
+     match /chats/{chatId} {
+
+      // Customer support chat ID:
+      // {uid}_CustomerSupport
+      allow read, write: if request.auth != null
+        && chatId == request.auth.uid + "_CustomerSupport";
+
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null
+          && chatId == request.auth.uid + "_CustomerSupport";
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { RestaImg } from "../../assets";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 const AddResta = () => {
   useEffect(() => {

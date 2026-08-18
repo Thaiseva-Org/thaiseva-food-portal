@@ -1,19 +1,46 @@
 import { useState, useEffect } from "react";
 import { RestaImg } from "../../assets";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router";
 import { db } from "../../../firebaseConfig";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import Addrestaurant from "./restaurantPages/Addrestaurant";
 import Loading from "../../components/Loading";
+import StatusBadge from "../../components/StatusBadge";
 import { useAuth } from "../../AuthContext";
+import { setRestaurantOpenState } from "../../api";
+import { partnerPath } from "../../utils/partnerRoutes";
+
+const InfoTile = ({ icon, label, value, title }) => (
+  <div className="min-w-0 rounded-xl border border-neutral-100 bg-neutral-50/80 p-3.5 sm:p-4">
+    <div className="flex items-start gap-3 min-w-0">
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 text-lg"
+        aria-hidden="true"
+      >
+        <i className={`bi ${icon}`} />
+      </span>
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+          {label}
+        </p>
+        <p
+          className="mt-1 text-sm sm:text-base font-semibold text-ink break-words"
+          title={title || (typeof value === "string" ? value : undefined)}
+        >
+          {value || "—"}
+        </p>
+      </div>
+    </div>
+  </div>
+);
 
 const Restaurant = () => {
-  const { isRestaurantAdmin } = useAuth();
-  const currentUserParam = useParams();
-  const currentUser = currentUserParam["id"];
+  const { isRestaurantAdmin, currentUser: authUser, roleData } = useAuth();
+  const currentUser = authUser?.uid;
   const [toggle, setToggle] = useState(false);
   const [restaurantData, setRestaurantData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
     document.title = "Thaiseva | My Restaurant";
@@ -27,7 +54,7 @@ const Restaurant = () => {
         const data = querySnapshot.data();
         if (data) {
           const restaurant = { ...data };
-          setToggle(restaurant?.active);
+          setToggle(Boolean(restaurant?.active));
           setRestaurantData(restaurant);
         } else {
           setRestaurantData(null);
@@ -39,157 +66,307 @@ const Restaurant = () => {
       }
     };
 
-    if (isRestaurantAdmin && currentUser) {
+    // Load for verified owners OR applicants (pending) so status is visible
+    if (
+      currentUser &&
+      (isRestaurantAdmin ||
+        roleData?.restaurantId ||
+        roleData?.applicationStatus)
+    ) {
       fetchRestaurantData();
     }
-  }, [currentUser, isRestaurantAdmin]);
+  }, [currentUser, isRestaurantAdmin, roleData]);
 
   const handleToggle = async () => {
+    if (toggling) return;
+    const previous = toggle;
+    const newActiveState = !toggle;
     try {
-      const newActiveState = !toggle;
+      setToggling(true);
       setToggle(newActiveState);
-
-      const restaurantDocRef = doc(db, "restaurants", currentUser);
-
-      await updateDoc(restaurantDocRef, {
+      await setRestaurantOpenState({
+        ownerUid: authUser?.uid || currentUser,
         active: newActiveState,
       });
     } catch (error) {
       console.error("Error updating active state:", error);
+      setToggle(previous);
+      alert(error.message || "Failed to update open/closed state.");
+    } finally {
+      setToggling(false);
     }
   };
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="py-10">
-        <Loading />
+      <div className="page-shell w-full px-4 py-8 md:px-6 md:py-10">
+        <div className="h-48 flex items-center justify-center">
+          <Loading />
+        </div>
       </div>
     );
+  }
+
+  if (!restaurantData) {
+    return (
+      <div className="page-shell w-full px-4 py-8 md:px-6 md:py-10">
+        <Addrestaurant />
+      </div>
+    );
+  }
+
+  const isVerified = restaurantData.status === "Verified";
+  const phoneDisplay = restaurantData.phoneNumber
+    ? `+66 ${restaurantData.phoneNumber}`
+    : "—";
+  const commission = restaurantData.comission ?? restaurantData.commission ?? 0;
 
   return (
-    <div className="px-8 py-10">
-      {restaurantData ? (
-        <>
-          <div className="flex justify-between items-center">
-            <p className="lg:text-3xl md:text-2xl font-bold text-[var(--main-headings-color)]">
-              My Restaurant
-            </p>
-            {restaurantData.status === "Verified" && (
-              <div className="flex gap-4 items-center">
-                <label className="flex items-center relative w-max cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={toggle} // Reflects the active state
-                    onChange={handleToggle}
-                    className="appearance-none transition-colors cursor-pointer w-14 h-6 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-blue-500 bg-red-500"
-                  />
-                  <span className="absolute font-medium text-xs uppercase right-1 text-white">
-                    OFF
-                  </span>
-                  <span className="absolute font-medium text-xs uppercase right-8 text-white">
-                    ON
-                  </span>
-                  <span className="w-7 h-6 right-7 absolute rounded-full transform transition-transform bg-white" />
-                </label>
-                {!toggle ? (
-                  <p className="font-semibold">Restaurant Closed</p>
-                ) : (
-                  <p className="font-semibold">Restaurant Open</p>
-                )}
-              </div>
-            )}
-          </div>
+    <div className="page-shell w-full px-4 py-8 md:px-6 md:py-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between min-w-0">
+        <div className="min-w-0">
+          <h1 className="page-header">My Restaurant</h1>
+          <p className="page-subtext mt-1">
+            Profile, verification status, and store availability
+          </p>
+        </div>
 
-          <div className="grid grid-cols-12 bg-white p-6 gap-4 mt-10 rounded-lg shadow-md">
-            <div className="col-span-12 md:col-span-5 p-2">
+        {isVerified && (
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <span
+              className={`badge ${
+                toggle ? "badge-success" : "badge-danger"
+              }`}
+            >
+              {toggle ? "Open for orders" : "Closed"}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={toggle}
+              aria-label={
+                toggle ? "Close restaurant for orders" : "Open restaurant for orders"
+              }
+              disabled={toggling}
+              onClick={handleToggle}
+              className={`relative inline-flex h-9 w-[4.25rem] shrink-0 items-center rounded-full border transition-colors duration-fast focus-ring disabled:opacity-60 ${
+                toggle
+                  ? "bg-success-500 border-success-600"
+                  : "bg-danger-500 border-danger-600"
+              }`}
+            >
+              <span className="sr-only">{toggle ? "Open" : "Closed"}</span>
+              <span
+                className={`absolute left-1.5 text-[10px] font-bold uppercase tracking-wide text-white transition-opacity ${
+                  toggle ? "opacity-100" : "opacity-0"
+                }`}
+              >
+                On
+              </span>
+              <span
+                className={`absolute right-1.5 text-[10px] font-bold uppercase tracking-wide text-white transition-opacity ${
+                  toggle ? "opacity-0" : "opacity-100"
+                }`}
+              >
+                Off
+              </span>
+              <span
+                className={`pointer-events-none absolute top-0.5 h-7 w-7 rounded-full bg-white shadow-md transition-transform duration-fast ${
+                  toggle ? "translate-x-[2.15rem]" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Status callout for non-verified */}
+      {!isVerified && (
+        <div
+          className={`mt-6 rounded-xl border px-4 py-3 text-sm font-medium min-w-0 ${
+            restaurantData.status === "Rejected"
+              ? "border-danger-100 bg-danger-50 text-danger-700"
+              : "border-warning-100 bg-warning-50 text-warning-700"
+          }`}
+          role="status"
+        >
+          {restaurantData.status === "Rejected"
+            ? "Your application was rejected. Update your details or contact support."
+            : "Your restaurant is pending verification. You can still review the profile below."}
+        </div>
+      )}
+
+      {/* Profile card */}
+      <section className="panel mt-6 sm:mt-8 animate-slide-up">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 min-w-0">
+          {/* Cover image */}
+          <div className="lg:col-span-5 min-w-0">
+            <div className="relative overflow-hidden rounded-2xl border border-neutral-100 bg-neutral-100 shadow-sm">
               <img
                 src={restaurantData.imageUrl || RestaImg}
-                alt={restaurantData.name}
-                className="h-[18rem] w-[26rem] object-cover object-top rounded-lg"
+                alt={restaurantData.name || "Restaurant"}
+                className="h-56 sm:h-64 lg:h-[20rem] w-full object-cover object-center"
               />
-            </div>
-            <div className="col-span-12 md:col-span-7 p-2">
-              <div className="flex justify-between">
-                <div>
-                  <span
-                    className={`bg-green-100 ${
-                      restaurantData.status === "Verified"
-                        ? "bg-green-900 text-green-300"
-                        : restaurantData.status === "Rejected"
-                        ? "bg-red-700 text-red-200"
-                        : "bg-yellow-700 text-yellow-200"
-                    }  text-xs font-medium me-2 px-3 py-1 rounded-full `}
-                  >
-                    {restaurantData.status}
-                  </span>
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-brand-950/70 via-brand-950/20 to-transparent p-4 pt-16">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={restaurantData.status} />
+                  {isVerified && (
+                    <span
+                      className={`badge ${
+                        toggle ? "badge-success" : "badge-neutral"
+                      } bg-white/95`}
+                    >
+                      {toggle ? "Accepting orders" : "Not accepting"}
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <p className="text-slate-700 font-semibold">Restaurant ID</p>
-                  <p className="text-xl text-blue-700 font-semibold">
-                    {restaurantData.id}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-2 text-slate-800 text-3xl font-bold">
-                {restaurantData.name}
-              </p>
-              <p className="mt-1 text-slate-500 text-sm">
-                {restaurantData.foodType}
-              </p>
-              <p className="mt-6 text-slate-800 text-xl font-semibold">
-                Description
-              </p>
-              <p className="text-slate-500 mt-2 text-lg">
-                {restaurantData.description}
-              </p>
-              <p className="mt-6 text-slate-800 text-xl font-semibold">
-                Location
-              </p>
-              <p className="text-slate-500 mt-2 text-lg">
-                {restaurantData.location}
-              </p>
-              <div className="grid grid-cols-11 gap-2 mt-6">
-                <div className="lg:col-span-3 col-span-12 ">
-                  <p className=" text-slate-800 text-xl font-semibold">
-                    Phone Number
-                  </p>
-                  <p className="text-slate-500 mt-1 text-lg">
-                    +66 {restaurantData.phoneNumber}
-                  </p>
-                </div>
-                <div className="col-span-1 border-s hidden lg:block mx-auto border-slate-400"></div>
-                <div className="lg:col-span-3 col-span-12">
-                  <p className=" text-slate-800 text-xl font-semibold">
-                    Email ID
-                  </p>
-                  <p className="text-slate-500 mt-1 text-lg truncate">
-                    {restaurantData.emailId}
-                  </p>
-                </div>
-                <div className="col-span-1 border-s hidden lg:block mx-auto border-slate-400"></div>
-                <div className="lg:col-span-3 col-span-12">
-                  <p className=" text-slate-800 text-xl font-semibold">
-                    Comission
-                  </p>
-                  <p className="text-slate-500 mt-1 text-lg">
-                    {restaurantData.comission || 0} % per order
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end mt-10">
-                <Link
-                  to={`/${currentUser}/restaurant/${restaurantData.id}/edit`}
-                  className="bg-blue-700 px-3 p-2 text-xl text-white font-semibold rounded-lg"
-                >
-                  <i className="bi bi-pencil mx-2"></i> Edit Restaurant info
-                </Link>
               </div>
             </div>
           </div>
-        </>
-      ) : (
-        <Addrestaurant />
-      )}
+
+          {/* Details */}
+          <div className="lg:col-span-7 min-w-0 flex flex-col">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <StatusBadge status={restaurantData.status} />
+                {restaurantData.foodType ? (
+                  <span className="badge-primary">{restaurantData.foodType}</span>
+                ) : null}
+              </div>
+              <h2
+                className="text-2xl sm:text-3xl font-bold text-ink tracking-tight break-words"
+                title={restaurantData.name}
+              >
+                {restaurantData.name || "Unnamed restaurant"}
+              </h2>
+            </div>
+
+            <div className="mt-5 min-w-0">
+              <h3 className="section-title text-base">Description</h3>
+              <p className="mt-1.5 text-sm sm:text-base text-ink-muted leading-relaxed break-words whitespace-pre-wrap">
+                {restaurantData.description || "No description provided."}
+              </p>
+            </div>
+
+            <div className="mt-5 min-w-0">
+              <h3 className="section-title text-base flex items-center gap-2">
+                <i className="bi bi-geo-alt text-brand-500" aria-hidden="true" />
+                Location
+              </h3>
+              <p
+                className="mt-1.5 text-sm sm:text-base text-ink-muted leading-relaxed break-words"
+                title={restaurantData.location}
+              >
+                {restaurantData.location || "—"}
+              </p>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 min-w-0">
+              {restaurantData.ownerName ? (
+                <InfoTile
+                  icon="bi-person-badge"
+                  label="Owner"
+                  value={restaurantData.ownerName}
+                />
+              ) : null}
+              <InfoTile
+                icon="bi-telephone"
+                label="Phone"
+                value={phoneDisplay}
+              />
+              <InfoTile
+                icon="bi-envelope"
+                label="Email"
+                value={restaurantData.emailId}
+                title={restaurantData.emailId}
+              />
+              {restaurantData.serviceType ? (
+                <InfoTile
+                  icon="bi-bicycle"
+                  label="Service"
+                  value={restaurantData.serviceType}
+                />
+              ) : null}
+              {restaurantData.openingHours ? (
+                <InfoTile
+                  icon="bi-clock"
+                  label="Hours"
+                  value={restaurantData.openingHours}
+                />
+              ) : null}
+              <InfoTile
+                icon="bi-percent"
+                label="Commission"
+                value={`${commission}% per order`}
+              />
+              {restaurantData.businessRegistrationNumber ? (
+                <InfoTile
+                  icon="bi-building"
+                  label="Registration #"
+                  value={restaurantData.businessRegistrationNumber}
+                />
+              ) : null}
+            </div>
+
+            {(restaurantData.businessLicenseUrl ||
+              restaurantData.ownerIdDocUrl ||
+              restaurantData.documents) && (
+              <div className="mt-6 min-w-0">
+                <h3 className="section-title text-base mb-3">Documents on file</h3>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    {
+                      label: "Business license",
+                      url:
+                        restaurantData.businessLicenseUrl ||
+                        restaurantData.documents?.businessLicense?.url,
+                    },
+                    {
+                      label: "Owner ID",
+                      url:
+                        restaurantData.ownerIdDocUrl ||
+                        restaurantData.documents?.ownerId?.url,
+                    },
+                    {
+                      label: "Food safety cert",
+                      url:
+                        restaurantData.foodSafetyCertUrl ||
+                        restaurantData.documents?.foodSafetyCert?.url,
+                    },
+                  ]
+                    .filter((d) => d.url)
+                    .map((d) => (
+                      <a
+                        key={d.label}
+                        href={d.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-ghost text-xs py-1.5 px-3"
+                      >
+                        <i className="bi bi-file-earmark-text" aria-hidden="true" />
+                        {d.label}
+                      </a>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-auto pt-8 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+              <Link to={partnerPath()} className="btn-outline w-full sm:w-auto">
+                <i className="bi bi-speedometer2" aria-hidden="true" />
+                Dashboard
+              </Link>
+              <Link
+                to={partnerPath("restaurant", "edit")}
+                className="btn-edit w-full sm:w-auto"
+              >
+                <i className="bi bi-pencil" aria-hidden="true" />
+                Edit restaurant info
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };

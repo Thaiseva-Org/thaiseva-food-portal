@@ -1,32 +1,25 @@
-// Unauthorized.js
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 const Unauthorized = () => {
   const navigate = useNavigate();
 
-  const goBack = () => {
-    navigate("/"); // Navigates back to the previous page
-  };
-
   return (
-    <>
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
-        <div className="bg-white p-8 rounded-lg shadow-lg text-center">
-          <h1 className="text-3xl font-bold text-red-600">Unauthorized</h1>
-          <p className="mt-4 text-gray-600">
-            You do not have permission to view this page.
-          </p>
-          <div className="mt-6">
-            <button
-              onClick={goBack}
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-            >
-              Go Back
-            </button>
-          </div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-page-gradient px-4">
+      <div className="modern-card p-8 md:p-10 text-center max-w-md w-full animate-scale-in shadow-glow">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-danger-100 text-danger-600 text-2xl">
+          <i className="bi bi-shield-lock" />
         </div>
+        <h1 className="text-2xl md:text-3xl font-bold text-ink-heading">
+          Unauthorized
+        </h1>
+        <p className="mt-3 text-ink-muted">
+          You do not have permission to view this page.
+        </p>
+        <button onClick={() => navigate("/")} className="btn-primary mt-6">
+          Go back home
+        </button>
       </div>
-    </>
+    </div>
   );
 };
 

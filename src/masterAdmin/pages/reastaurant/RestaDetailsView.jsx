@@ -1,12 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  updateDoc,
-} from "firebase/firestore";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useParams, useNavigate } from "react-router";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "../../../../firebaseConfig";
 import ViewFoodItem from "../../component/ViewItem";
 import MasterApexChart from "../../component/ChartTwo";
@@ -15,9 +9,8 @@ import Loading from "../../../components/Loading";
 
 const RestaDetailsView = () => {
   const { resId } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
-  const { ownerId } = location.state;
+  const ownerId = resId;
   const [toggle, setToggle] = useState(false);
   const [active, setActive] = useState(false);
   const [restaurants, setRestaurants] = useState([]);
@@ -27,7 +20,7 @@ const RestaDetailsView = () => {
   const [selectGraphType, SetSelectGraphType] = useState("today");
   const [todayEarning, SetTodayEarning] = useState(0);
 
-  const fetchRestaurant = async () => {
+  const fetchRestaurant = useCallback(async () => {
     try {
       const restaurantRef = doc(db, "restaurants", ownerId); // Use doc to get the document reference
       const docSnapshot = await getDoc(restaurantRef); // Fetch the document data
@@ -42,7 +35,7 @@ const RestaDetailsView = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [ownerId]);
 
   const changeActiveStatus = async () => {
     const userResponse = window.confirm(
@@ -51,15 +44,17 @@ const RestaDetailsView = () => {
       }.`
     );
 
-    // Check if the user confirmed the action
     if (userResponse) {
       try {
-        const restaurantRef = doc(db, "restaurants", ownerId);
-        await updateDoc(restaurantRef, { active: !active ? true : false });
+        const { setRestaurantOpenState } = await import("../../../api");
+        await setRestaurantOpenState({
+          ownerUid: ownerId,
+          active: !active,
+        });
         setActive(!active);
         alert("Restaurant updated!");
       } catch (error) {
-        alert("Error updating restaurant!");
+        alert(error.message || "Error updating restaurant!");
         console.error("Error updating restaurant:", error);
       }
     } else {
@@ -75,7 +70,7 @@ const RestaDetailsView = () => {
     };
 
     fetchEarnings();
-  }, [ownerId]);
+  }, [fetchRestaurant, ownerId]);
 
   const fetchFoodItem = async () => {
     setLoading(true);
@@ -156,6 +151,16 @@ const RestaDetailsView = () => {
               <button
                 onClick={() => {
                   navigate(
+                    `/foodAdmin/restaurantStats/${restaurants.ownerId}`
+                  );
+                }}
+                className="py-2 text-slate-800 font-semibold"
+              >
+                Open workspace
+              </button>
+              <button
+                onClick={() => {
+                  navigate(
                     `/foodAdmin/restaDetails/${restaurants.ownerId}/edit`
                   );
                 }}
@@ -176,7 +181,7 @@ const RestaDetailsView = () => {
           {showMenu && (
             <ViewFoodItem
               items={items}
-              resId={restaurants.id}
+              ownerId={ownerId}
               onClose={() => setShowMenu(false)}
             />
           )}

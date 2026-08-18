@@ -1,45 +1,49 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
 import { useAuth } from "../../AuthContext";
 import Loading from "../../components/Loading";
+import { resolvePostLoginPath } from "../../utils/authRouting";
 
+/**
+ * Smart landing after auth:
+ * - Master (backend-only) → /foodAdmin
+ * - Restaurant owner without / pending / rejected app → /onboarding
+ * - Verified owner → /{uid}
+ */
 const Home = () => {
-  const [show, setShow] = useState(false);
   const navigate = useNavigate();
-  const { currentUser, isMasterAdmin, isRestaurantAdmin } = useAuth();
+  const { currentUser, loading } = useAuth();
 
   useEffect(() => {
     document.title = "Thaiseva";
   }, []);
 
-  // Redirect to /auth if not logged in or to /{userId} if logged in
   useEffect(() => {
-    if (!currentUser) {
-      navigate("/auth");
-    }
+    let cancelled = false;
 
-    if (isMasterAdmin) {
-      navigate(`/foodAdmin`);
-    } else {
-      navigate(`/${currentUser?.uid}`); // Assuming uid is the user ID
-    }
-  }, [currentUser, navigate, isMasterAdmin, isRestaurantAdmin]);
-
-  useEffect(() => {
-    const handleOutsideClick = (event) => {
-      if (show && !event.target.closest(".modal")) {
-        setShow(false);
+    const route = async () => {
+      if (loading) return;
+      if (!currentUser) {
+        navigate("/auth", { replace: true });
+        return;
+      }
+      try {
+        const path = await resolvePostLoginPath(currentUser);
+        if (!cancelled) navigate(path, { replace: true });
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) navigate("/onboarding", { replace: true });
       }
     };
 
-    document.addEventListener("mousedown", handleOutsideClick);
+    route();
     return () => {
-      document.removeEventListener("mousedown", handleOutsideClick);
+      cancelled = true;
     };
-  }, [show]);
+  }, [currentUser, loading, navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center bg-page-gradient">
       <Loading />
     </div>
   );

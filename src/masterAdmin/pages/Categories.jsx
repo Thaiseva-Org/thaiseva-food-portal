@@ -16,6 +16,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import Loading from "../../components/Loading";
+import InfoMessage from "../../components/InfoMessage";
 import { useAuth } from "../../AuthContext";
 
 const Categories = () => {
@@ -24,6 +25,8 @@ const Categories = () => {
   const [newCategory, setNewCategory] = useState("");
   const [openModal, setOpenModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState(null);
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -34,7 +37,8 @@ const Categories = () => {
           setCategories(categories);
         }
       } catch (e) {
-        console.log(e);
+        console.error("Error loading categories:", e);
+        setFeedback({ type: "error", message: "Categories could not be loaded." });
       } finally {
         setLoading(false);
       }
@@ -42,23 +46,34 @@ const Categories = () => {
     isMasterAdmin && fetchCategories();
   }, [isMasterAdmin]);
   const addCategory = async (value) => {
-    if (categories.includes(value.trim())) {
-      alert("This category already exists!");
+    const cleanValue = value.trim();
+    if (!cleanValue) {
+      setFeedback({ type: "error", message: "Enter a category name." });
       return;
     }
-    if (confirm(`Are you sure you want to add the category: ${value}?`)) {
-      const updatedCategories = [...categories, value];
-      setCategories(updatedCategories);
-      try {
-        const docRef = doc(db, "settings", "categories");
-        await setDoc(docRef, { data: updatedCategories });
-        alert(`Category "${value}" added successfully.`);
-      } catch (e) {
-        console.log(e);
-      }
+    if (
+      categories.some(
+        (category) => category.toLowerCase() === cleanValue.toLowerCase()
+      )
+    ) {
+      setFeedback({ type: "warning", message: "That category already exists." });
+      return;
     }
-    setOpenModal(false);
-    setNewCategory("");
+    const updatedCategories = [...categories, cleanValue];
+    setSaving(true);
+    try {
+      const docRef = doc(db, "settings", "categories");
+      await setDoc(docRef, { data: updatedCategories });
+      setCategories(updatedCategories);
+      setFeedback({ type: "success", message: `Category “${cleanValue}” added.` });
+      setOpenModal(false);
+      setNewCategory("");
+    } catch (error) {
+      console.error("Error adding category:", error);
+      setFeedback({ type: "error", message: "The category could not be added." });
+    } finally {
+      setSaving(false);
+    }
   };
   const deleteCategory = async (categoryToDelete) => {
     if (
@@ -69,14 +84,20 @@ const Categories = () => {
       const updatedCategories = categories.filter(
         (category) => category !== categoryToDelete
       );
-      setCategories(updatedCategories);
-
+      setSaving(true);
       try {
         const docRef = doc(db, "settings", "categories");
         await setDoc(docRef, { data: updatedCategories });
-        alert(`Category "${categoryToDelete}" deleted successfully.`);
+        setCategories(updatedCategories);
+        setFeedback({
+          type: "success",
+          message: `Category “${categoryToDelete}” deleted.`,
+        });
       } catch (error) {
         console.error("Error deleting category:", error);
+        setFeedback({ type: "error", message: "The category could not be deleted." });
+      } finally {
+        setSaving(false);
       }
     }
   };
@@ -97,33 +118,47 @@ const Categories = () => {
     );
   return (
     <>
-      <div className="px-6 pt-10 pb-20">
+      <div className="px-4 pt-8 pb-20 md:px-6 md:pt-10">
         <div>
-          <p className="lg:text-3xl md:text-2xl font-bold text-[var(--main-headings-color)]">
+          <h1 className="page-header">
             Categories
-          </p>
+          </h1>
+          <p className="page-subtext mt-1">Manage the menu categories available to restaurants.</p>
         </div>
 
-        <div className="bg-white shadow-md p-4 py-10 mt-10 rounded-lg">
+        {feedback && (
+          <div className="mt-5 max-w-xl">
+            <InfoMessage type={feedback.type} message={feedback.message} />
+          </div>
+        )}
+
+        <div className="modern-card mt-8 p-5 md:p-8">
           <div className="flex flex-wrap gap-5">
-            {categories.map((category, index) => (
-              <div key={index} className="flex">
-                <p className="bg-gray-300 rounded-l-xl shadow-sm pl-5 pr-3 font-medium py-2">
+            {categories.map((category) => (
+              <div key={category} className="flex">
+                <p className="rounded-l-xl border border-r-0 border-neutral-200 bg-neutral-50 py-2 pl-4 pr-3 font-medium text-ink">
                   {category}
                 </p>
-                <div
-                  className="bg-red-400 hover:bg-red-500 rounded-r-xl text-white cursor-pointer shadow-sm px-3 font-medium py-2"
+                <button
+                  type="button"
+                  className="rounded-r-xl bg-danger-500 px-3 py-2 font-medium text-white shadow-sm hover:bg-danger-600 focus-ring disabled:opacity-50"
                   onClick={() => deleteCategory(category)}
+                  disabled={saving}
+                  aria-label={`Delete ${category}`}
                 >
                   <DeleteForeverIcon />
-                </div>
+                </button>
               </div>
             ))}
+            {categories.length === 0 && (
+              <p className="text-sm text-ink-muted">No categories have been added.</p>
+            )}
             <button
               onClick={handleOpenModal}
-              className="bg-blue-500 hover:bg-blue-700 text-white rounded-xl shadow-sm px-5 font-bold py-2"
+              className="btn-primary"
+              aria-label="Add category"
             >
-              <AddIcon fontSize="medium" />
+              <AddIcon fontSize="small" /> Add category
             </button>
           </div>
         </div>
@@ -168,7 +203,7 @@ const Categories = () => {
                   type="text"
                   placeholder="Provide a name"
                   value={newCategory}
-                  onChange={(e) => setNewCategory(() => e.target.value)}
+                  onChange={(e) => setNewCategory(e.target.value)}
                   fullWidth
                   autoComplete="off"
                 />
@@ -185,10 +220,10 @@ const Categories = () => {
                 color: "white",
                 hover: "none",
               }}
-              disabled={newCategory === ""}
+              disabled={!newCategory.trim() || saving}
               className="cursor-pointer"
             >
-              Add
+              {saving ? "Adding…" : "Add"}
             </Button>
           </DialogActions>
         </Box>

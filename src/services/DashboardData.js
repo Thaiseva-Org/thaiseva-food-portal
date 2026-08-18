@@ -9,9 +9,6 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 
-const now = new Date();
-const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
 const fetchRestroRequests = async (
   startDate,
   endDate,
@@ -41,6 +38,21 @@ const fetchRestroRequests = async (
           );
     const pendingCountSnapshot = await getCountFromServer(pendingQuery);
 
+    let applicationPending = 0;
+    if (startDate === "" && endDate === "") {
+      try {
+        const appsSnap = await getCountFromServer(
+          query(
+            collection(db, "restaurantApplications"),
+            where("status", "==", "Pending")
+          )
+        );
+        applicationPending = appsSnap.data().count;
+      } catch {
+        applicationPending = 0;
+      }
+    }
+
     // Count query for Verified
     const verifiedQuery =
       startDate === "" && endDate === ""
@@ -57,7 +69,7 @@ const fetchRestroRequests = async (
     const totalres = await getCountFromServer(totalQuery);
     const totalCount = totalres.data().count;
 
-    setReqData(pendingCountSnapshot.data().count);
+    setReqData(pendingCountSnapshot.data().count + applicationPending);
     setTotalRes(verifiedCountSnapshot.data().count);
 
     if (setActiveRes !== "" && setInactiveRes !== "") {
@@ -92,63 +104,38 @@ const fetchOrdersData = async (
   orders = []
 ) => {
   try {
-    if (startDate === "" && endDate === "") {
-      let delivered = 0;
-      const uniqueCustomers = new Set();
-      orders.map((item) => {
-        if (item.Status === "Delivered") {
-          delivered++;
-        }
-        const customerId = item.CustomerId;
-        if (customerId) uniqueCustomers.add(customerId);
-      });
-
-      setOrderCount(orders.length);
-      setTotalCus(uniqueCustomers.size);
-      setSoldCount(delivered);
-      return;
-    }
-    const startTimestamp = startDate
-      ? new Date(new Date(startDate).setHours(0, 0, 0, 0))
-      : null;
-    const endTimestamp = endDate
-      ? new Date(new Date(endDate).setHours(23, 59, 59, 999))
-      : null;
-
     const reqRef = collection(db, "orders");
+    const ranged = Boolean(startDate && endDate);
+    const range = ranged
+      ? [
+          where(
+            "timestamp",
+            ">=",
+            new Date(new Date(startDate).setHours(0, 0, 0, 0))
+          ),
+          where(
+            "timestamp",
+            "<=",
+            new Date(new Date(endDate).setHours(23, 59, 59, 999))
+          ),
+        ]
+      : [];
 
-    // Total Orders Count
-    const countOrderQuery =
-      startDate && endDate
-        ? query(
-            reqRef,
-            where("timestamp", ">=", startTimestamp),
-            where("timestamp", "<=", endTimestamp)
-          )
-        : query(reqRef);
+    const [orderCountSnapshot, deliveredSnap] = await Promise.all([
+      getCountFromServer(query(reqRef, ...range)),
+      getCountFromServer(
+        query(reqRef, where("currentStatus", "==", "Delivered"), ...range)
+      ),
+    ]);
 
-    const orderCountSnapshot = await getCountFromServer(countOrderQuery);
     setOrderCount(orderCountSnapshot.data().count);
+    setSoldCount(deliveredSnap.data().count);
 
-    const orderSnapshot = await getDocs(countOrderQuery);
-
-    let soldCount = 0;
     const uniqueCustomers = new Set();
-
-    // Process each document
-    orderSnapshot.forEach((doc) => {
-      const orderData = doc.data();
-      const currentStatus = orderData?.currentStatus;
-      if (currentStatus === "Payment Done" || currentStatus === "Delivered")
-        soldCount++;
-
-      // Track unique customers
-      const customerId = orderData?.Receiver?.id || orderData?.CustomerId;
-      if (customerId) uniqueCustomers.add(customerId);
+    (orders || []).forEach((item) => {
+      if (item.CustomerId) uniqueCustomers.add(item.CustomerId);
     });
-
     setTotalCus(uniqueCustomers.size);
-    setSoldCount(soldCount);
   } catch (error) {
     console.error("Error fetching orders data: ", error);
   }
@@ -168,87 +155,57 @@ const fetchPartnerOrdersData = async (
   orders = []
 ) => {
   try {
-    if (startDate === "" && endDate === "") {
-      let delivered = 0,
-        cancelled = 0;
-      const uniqueCustomers = new Set();
-      orders.map((item) => {
-        if (item.Status === "Delivered") {
-          delivered++;
-        } else if (item.Status === "Cancelled") cancelled++;
-        const customerId = item.CustomerId;
-        if (customerId) uniqueCustomers.add(customerId);
-      });
-
-      const itemsRef = collection(db, `food_items/${resId}/items`);
-      const q = query(itemsRef, where("count", ">", 0));
-      const soldCount = await getCountFromServer(q);
-      setSoldCount(soldCount.data().count);
-
-      setOrderCount(orders.length);
-      setTotalCus(uniqueCustomers.size);
-      setDelivered(delivered);
-      setCanceled(cancelled);
-      return;
-    }
-    const startTimestamp = startDate
+    const reqRef = collection(db, "orders");
+    const ranged = Boolean(startDate && endDate);
+    const startTimestamp = ranged
       ? new Date(new Date(startDate).setHours(0, 0, 0, 0))
       : null;
-    const endTimestamp = endDate
+    const endTimestamp = ranged
       ? new Date(new Date(endDate).setHours(23, 59, 59, 999))
       : null;
 
-    const reqRef = collection(db, "orders");
+    const owner = where("Restaurant.ownerId", "==", restaurantId);
+    const rangeClauses = ranged
+      ? [
+          where("timestamp", ">=", startTimestamp),
+          where("timestamp", "<=", endTimestamp),
+        ]
+      : [];
 
-    // Total Orders Count
-    const countOrderQuery =
-      startDate && endDate
-        ? query(
-            reqRef,
-            where("Restaurant.ownerId", "==", restaurantId),
-            where("timestamp", ">=", startTimestamp),
-            where("timestamp", "<=", endTimestamp),
-            orderBy("timestamp", "desc")
-          )
-        : query(
-            reqRef,
-            where("Restaurant.ownerId", "==", restaurantId),
-            where("timestamp", ">=", last24Hours),
-            orderBy("timestamp", "desc")
-          );
-
-    const orderCountSnapshot = await getCountFromServer(countOrderQuery);
-    setOrderCount(orderCountSnapshot.data().count);
+    const totalQuery = query(reqRef, owner, ...rangeClauses);
+    const deliveredQuery = query(
+      reqRef,
+      owner,
+      ...rangeClauses,
+      where("currentStatus", "==", "Delivered")
+    );
+    const cancelledQuery = query(
+      reqRef,
+      owner,
+      ...rangeClauses,
+      where("currentStatus", "==", "Cancelled")
+    );
 
     const itemsRef = collection(db, `food_items/${resId}/items`);
-    const q = query(itemsRef, where("count", ">", 0));
-    const soldCount = await getCountFromServer(q);
-    setSoldCount(soldCount.data().count);
+    const soldQuery = query(itemsRef, where("count", ">", 0));
 
-    const orderSnapshot = await getDocs(countOrderQuery);
+    const [totalSnap, deliveredSnap, cancelledSnap, soldSnap] =
+      await Promise.all([
+        getCountFromServer(totalQuery),
+        getCountFromServer(deliveredQuery),
+        getCountFromServer(cancelledQuery),
+        getCountFromServer(soldQuery),
+      ]);
 
-    let countDelivered = 0;
-    let countCancel = 0;
+    setOrderCount(totalSnap.data().count);
+    setDelivered(deliveredSnap.data().count);
+    setCanceled(cancelledSnap.data().count);
+    setSoldCount(soldSnap.data().count);
+
     const uniqueCustomers = new Set();
-
-    // Process each document
-    orderSnapshot.forEach((doc) => {
-      const orderData = doc.data();
-      const statusArray = orderData.Status || [];
-      const lastStatus = statusArray[statusArray.length - 1]; // Get the last status
-      const status = lastStatus ? lastStatus.status : "Unknown"; // Get status or default to 'Unknown'
-      const currentStatus = orderData?.currentStatus || status;
-      if (currentStatus === "Delivered") countDelivered++;
-      if (currentStatus === "Cancelled") countCancel++;
-
-      // Track unique customers
-      const customerId = orderData?.Receiver?.id || orderData?.CustomerId;
-      if (customerId) uniqueCustomers.add(customerId);
+    (orders || []).forEach((item) => {
+      if (item.CustomerId) uniqueCustomers.add(item.CustomerId);
     });
-
-    // Update state with calculated values
-    setDelivered(countDelivered);
-    setCanceled(countCancel);
     setTotalCus(uniqueCustomers.size);
   } catch (error) {
     setError(error);
@@ -256,212 +213,120 @@ const fetchPartnerOrdersData = async (
   }
 };
 
-const fetchOrdersDoughnutData = async (selectedType = "today", orders = []) => {
+const fetchOrdersDoughnutData = async (startDate = "", endDate = "") => {
   try {
-    if (selectedType === "today") {
-      let delivered = 0,
-        cancelled = 0;
-      orders.map((item) => {
-        if (item.Status === "Delivered") {
-          delivered++;
-        } else if (item.Status === "Cancelled") {
-          cancelled++;
-        }
-      });
-      const returndata = {
-        total: orders.length,
-        delivered: delivered,
-        cancelled: cancelled,
-      };
-      return returndata;
-    }
-    const startTimestamp =
-      selectedType === "today"
-        ? new Date(new Date().setHours(0, 0, 0, 0))
-        : selectedType === "weekly"
-        ? new Date(
-            new Date(new Date().setDate(new Date().getDate() - 7)).setHours(
-              0,
-              0,
-              0,
-              0
-            )
-          )
-        : selectedType === "monthly"
-        ? new Date(
-            new Date(new Date().setDate(new Date().getDate() - 30)).setHours(
-              0,
-              0,
-              0,
-              0
-            )
-          )
-        : null;
-    const endTimestamp = new Date(new Date().setHours(23, 59, 59, 999));
-
     const reqRef = collection(db, "orders");
+    const ranged = Boolean(startDate && endDate);
+    const range = ranged
+      ? [
+          where(
+            "timestamp",
+            ">=",
+            new Date(new Date(startDate).setHours(0, 0, 0, 0))
+          ),
+          where(
+            "timestamp",
+            "<=",
+            new Date(new Date(endDate).setHours(23, 59, 59, 999))
+          ),
+        ]
+      : [];
 
-    // Query for order details
-    const totalorderQuery = query(
-      reqRef,
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      orderBy("timestamp", "desc")
-    );
+    const [totalSnap, deliveredSnap, cancelledSnap] = await Promise.all([
+      getCountFromServer(query(reqRef, ...range)),
+      getCountFromServer(
+        query(reqRef, where("currentStatus", "==", "Delivered"), ...range)
+      ),
+      getCountFromServer(
+        query(reqRef, where("currentStatus", "==", "Cancelled"), ...range)
+      ),
+    ]);
 
-    const deliveredorderQuery = query(
-      reqRef,
-      where("currentStatus", "==", "Delivered"),
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      orderBy("timestamp", "desc")
-    );
-
-    const cancelledorderQuery = query(
-      reqRef,
-      where("currentStatus", "==", "Cancelled"),
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      orderBy("timestamp", "desc")
-    );
-
-    const totalorderSnapshot = await getCountFromServer(totalorderQuery);
-    const deliveredorderSnapshot = await getCountFromServer(
-      deliveredorderQuery
-    );
-    const cancelledorderSnapshot = await getCountFromServer(
-      cancelledorderQuery
-    );
-
-    // Update state with calculated values
-    const returndata = {
-      total: totalorderSnapshot.data().count,
-      delivered: deliveredorderSnapshot.data().count,
-      cancelled: cancelledorderSnapshot.data().count,
+    return {
+      total: totalSnap.data().count,
+      delivered: deliveredSnap.data().count,
+      cancelled: cancelledSnap.data().count,
     };
-    return returndata;
   } catch (error) {
     console.error("Error fetching orders data: ", error);
+    return { total: 0, delivered: 0, cancelled: 0 };
   }
 };
 
+function rangeBounds(startDate, endDate) {
+  if (!startDate || !endDate) return null;
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
 const fetchPartnerOrdersDoughnutData = async (
   restaurantId,
-  selectedType = "today",
-  orders = []
+  startDate = "",
+  endDate = ""
 ) => {
   try {
-    if (selectedType === "today") {
-      let delivered = 0,
-        inprocess = 0,
-        cancelled = 0,
-        newOrder = 0;
-      orders.map((item) => {
-        if (item.Status === "Delivered") {
-          delivered++;
-        } else if (item.Status === "Cancelled") {
-          cancelled++;
-        } else if (item.Status === "New Order") {
-          newOrder++;
-        } else {
-          inprocess++;
-        }
-      });
-      const returndata = {
-        total: orders.length,
-        delivered: delivered,
-        inprocess: inprocess,
-        cancelled: cancelled,
-        newOrder: newOrder,
-      };
-      return returndata;
-    }
-    const startTimestamp =
-      selectedType === "today"
-        ? new Date(new Date().setHours(0, 0, 0, 0))
-        : selectedType === "weekly"
-        ? new Date(
-            new Date(new Date().setDate(new Date().getDate() - 7)).setHours(
-              0,
-              0,
-              0,
-              0
-            )
-          )
-        : selectedType === "monthly"
-        ? new Date(
-            new Date(new Date().setDate(new Date().getDate() - 30)).setHours(
-              0,
-              0,
-              0,
-              0
-            )
-          )
-        : null;
-    const endTimestamp = new Date(new Date().setHours(23, 59, 59, 999));
-
     const reqRef = collection(db, "orders");
+    const owner = where("Restaurant.ownerId", "==", restaurantId);
+    const bounds = rangeBounds(startDate, endDate);
+    const rangeClauses = bounds
+      ? [
+          where("timestamp", ">=", bounds.start),
+          where("timestamp", "<=", bounds.end),
+        ]
+      : [];
 
-    const totalorderQuery = query(
-      reqRef,
-      where("Restaurant.ownerId", "==", restaurantId),
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      orderBy("timestamp", "desc")
-    );
+    const [totalSnap, deliveredSnap, cancelledSnap, newSnap] =
+      await Promise.all([
+        getCountFromServer(query(reqRef, owner, ...rangeClauses)),
+        getCountFromServer(
+          query(
+            reqRef,
+            owner,
+            ...rangeClauses,
+            where("currentStatus", "==", "Delivered")
+          )
+        ),
+        getCountFromServer(
+          query(
+            reqRef,
+            owner,
+            ...rangeClauses,
+            where("currentStatus", "==", "Cancelled")
+          )
+        ),
+        getCountFromServer(
+          query(
+            reqRef,
+            owner,
+            ...rangeClauses,
+            where("currentStatus", "==", "New Order")
+          )
+        ),
+      ]);
 
-    const deliveredorderQuery = query(
-      reqRef,
-      where("Restaurant.ownerId", "==", restaurantId),
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      where("currentStatus", "==", "Delivered"),
-      orderBy("timestamp", "desc")
-    );
-
-    const cancelledorderQuery = query(
-      reqRef,
-      where("Restaurant.ownerId", "==", restaurantId),
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      where("currentStatus", "==", "Cancelled"),
-      orderBy("timestamp", "desc")
-    );
-
-    const neworderQuery = query(
-      reqRef,
-      where("Restaurant.ownerId", "==", restaurantId),
-      where("timestamp", ">=", startTimestamp),
-      where("timestamp", "<=", endTimestamp),
-      where("currentStatus", "==", "New Order"),
-      orderBy("timestamp", "desc")
-    );
-
-    const totalorderSnapshot = await getCountFromServer(totalorderQuery);
-    const deliveredorderSnapshot = await getCountFromServer(
-      deliveredorderQuery
-    );
-    const cancelledorderSnapshot = await getCountFromServer(
-      cancelledorderQuery
-    );
-    const neworderSnapshot = await getCountFromServer(neworderQuery);
-
-    // Update state with calculated values
-    let total = totalorderSnapshot.data().count,
-      newOrder = neworderSnapshot.data().count,
-      delivered = deliveredorderSnapshot.data().count,
-      cancelled = cancelledorderSnapshot.data().count;
-    const returndata = {
-      total: total,
-      inprocess: total - newOrder - delivered - cancelled,
-      newOrder: newOrder,
-      delivered: delivered,
-      cancelled: cancelled,
+    const total = totalSnap.data().count;
+    const delivered = deliveredSnap.data().count;
+    const cancelled = cancelledSnap.data().count;
+    const newOrder = newSnap.data().count;
+    return {
+      total,
+      delivered,
+      cancelled,
+      newOrder,
+      inprocess: Math.max(0, total - newOrder - delivered - cancelled),
     };
-    console.log(returndata);
-    return returndata;
   } catch (error) {
     console.error("Error fetching orders data: ", error);
+    return {
+      total: 0,
+      delivered: 0,
+      cancelled: 0,
+      newOrder: 0,
+      inprocess: 0,
+    };
   }
 };
 

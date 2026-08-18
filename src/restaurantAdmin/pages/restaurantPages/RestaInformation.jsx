@@ -1,13 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
-import {
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { MdFileUpload, MdLocationOn } from "react-icons/md";
 import axios from "axios";
@@ -15,47 +9,26 @@ import { useAuth } from "../../../AuthContext";
 import { FaImages, FaRegImage } from "react-icons/fa";
 import InfoMessage from "../../../components/InfoMessage";
 import AddressAutocomplete from "../../../components/AddressAutoComplete";
-import { useNotifications } from "../../../context/NotificationsProvider";
+import { submitRestaurantApplication } from "../../../api";
+import { getGoogleMapsApiKey } from "../../../utils/tenant";
 
 const RestaInformation = () => {
-  const { id } = useParams();
-  const { roleData } = useAuth();
-  const { CreateNewNotification } = useNotifications();
+  const { roleData, refreshAuthProfile } = useAuth();
   const [restaurantName, setRestaurantName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [emailId, setEmailId] = useState(roleData?.email);
   const [foodType, setFoodType] = useState("");
   const [location, setLocation] = useState("");
-  const [comission, setComission] = useState(0);
   const [description, setDescription] = useState("");
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { currentUser } = useAuth();
   const modalRef = useRef(null);
   const navigate = useNavigate();
 
-  const GOOGLE_API_KEY = "AIzaSyDwTBiBiGtJLrlbaiKzVN5BBCj8He1l5Zc";
-
-  const generateUniqueId = () => {
-    const timestamp = Date.now().toString();
-    const randomPart = Math.floor(Math.random() * 1000);
-    return (timestamp + randomPart).slice(-5);
-  };
-
-  async function generateUniqueRestaurantId() {
-    let restaurantId;
-    let docRef;
-    let docSnap;
-
-    do {
-      restaurantId = generateUniqueId();
-      docRef = doc(db, "restaurants", restaurantId);
-      docSnap = await getDoc(docRef);
-    } while (docSnap.exists());
-
-    return restaurantId;
-  }
+  const GOOGLE_API_KEY = getGoogleMapsApiKey();
 
   const handleSubmit = async () => {
     if (restaurantName.trim() === "") {
@@ -93,65 +66,33 @@ const RestaInformation = () => {
       return;
     }
 
-    const querySnapshot = await getDoc(doc(db, "restaurants", id));
+    const querySnapshot = await getDoc(doc(db, "restaurants", currentUser.uid));
     if (querySnapshot.exists()) {
       alert("Restaurant already exists!!");
       return;
     }
 
     if (confirm("Are you sure you want to add this restaurant?")) {
-      const restaurantId = await generateUniqueRestaurantId();
       try {
-        // Add to the 'restaurants' collection (with a specific restaurantId)
-        await setDoc(doc(db, "restaurants", currentUser.uid), {
-          id: restaurantId,
+        setSubmitting(true);
+        // Server creates pending restaurant, commission=0, no self-admin grant
+        await submitRestaurantApplication({
           name: restaurantName,
           phoneNumber,
           emailId,
           foodType,
           location,
           description,
-          active: false,
-          orderCount: 0,
           imageUrl: image,
-          comission: Number(comission) || 0,
-          status: "Pending",
-          ownerId: currentUser.uid,
-          timestamp: serverTimestamp(),
         });
-        await updateDoc(doc(db, "users", currentUser.uid), {
-          isRestaurantAdmin: true,
-          restaurantId: restaurantId,
-        });
-        alert("Restaurant information saved successfully");
-        await CreateNewNotification(
-          `New Request`,
-          `${restaurantName} wants to become our partner.`,
-          "resreq",
-          "",
-          "admin",
-          image
-        );
-        await CreateNewNotification(
-          `Request Sent`,
-          `Your application has been sent for verification.`,
-          "resreq",
-          currentUser?.uid,
-          "partner",
-          image
-        );
-
-        setRestaurantName("");
-        setPhoneNumber("");
-        setEmailId("");
-        setFoodType("");
-        setLocation("");
-        setDescription("");
-        setImage("");
-        setUploading(false);
-        navigate(`/${currentUser.uid}/restaurant`);
+        if (refreshAuthProfile) await refreshAuthProfile();
+        alert("Restaurant application submitted for verification.");
+        navigate("/onboarding");
       } catch (error) {
         console.error("Error adding document: ", error);
+        alert(error.message || "Failed to submit application. Deploy Cloud Functions first.");
+      } finally {
+        setSubmitting(false);
       }
     }
   };
@@ -203,13 +144,25 @@ const RestaInformation = () => {
 
   const handleImageUpload = async (file) => {
     try {
+      if (!file?.type?.startsWith("image/")) {
+        alert("Only image files are allowed.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image must be under 5MB.");
+        return;
+      }
       setUploading(true);
-      const storageRef = ref(storage, `restaurantImages/${file.name}`);
+      const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const storageRef = ref(
+        storage,
+        `restaurants/${currentUser.uid}/profile/${safeName}`
+      );
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
-      setImage(url); // Set the uploaded image URL
+      setImage(url);
       setUploading(false);
-      setDropdownOpen(false); // Close the dropdown after image selection
+      setDropdownOpen(false);
     } catch (error) {
       console.error("Error uploading image: ", error);
       setUploading(false);
@@ -440,38 +393,9 @@ const RestaInformation = () => {
                     />
                   </div>
 
-                  <div className="mb-4">
-                    <label
-                      className="block text-gray-700 text-sm font-bold mb-2"
-                      htmlFor="email-id"
-                    >
-                      Comission
-                    </label>
-                    <input
-                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                      id="email-id"
-                      placeholder="0 - 100"
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={comission}
-                      onWheel={(e) => e.target.blur()}
-                      onChange={(e) => {
-                        let inputValue = e.target.value;
-                        if (
-                          /^\d{0,3}$/.test(inputValue) &&
-                          Number(inputValue) >= 0 &&
-                          Number(inputValue) <= 100
-                        ) {
-                          setComission(inputValue);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (["+", "-", "e", "/"].includes(e.key)) {
-                          e.preventDefault();
-                        }
-                      }}
-                    />
+                  <div className="mb-4 rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                    Commission is set by the platform admin after verification.
+                    You cannot set it yourself.
                   </div>
 
                   <div className="mb-4">
@@ -544,10 +468,11 @@ const RestaInformation = () => {
                   <div className="flex items-center justify-between">
                     <button
                       onClick={handleSubmit}
+                      disabled={submitting || uploading}
                       className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
                       type="button"
                     >
-                      Save your Restaurant info
+                      {submitting ? "Saving..." : "Save your Restaurant info"}
                     </button>
                   </div>
                 </form>

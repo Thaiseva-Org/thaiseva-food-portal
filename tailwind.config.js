@@ -1,12 +1,192 @@
 /** @type {import('tailwindcss').Config} */
+/**
+ * Source of truth for design tokens (with src/index.css).
+ */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: {
+          50: "#eff6ff",
+          100: "#dbeafe",
+          200: "#bfdbfe",
+          300: "#93c5fd",
+          400: "#60a5fa",
+          500: "#3b82f6",
+          600: "#2563eb",
+          700: "#1d4ed8",
+          800: "#1e40af",
+          900: "#1e3a8a",
+          950: "#172554",
+        },
+        secondary: {
+          50: "#fff7ed",
+          100: "#ffedd5",
+          200: "#fed7aa",
+          300: "#fdba74",
+          400: "#fb923c",
+          500: "#f97316",
+          600: "#ea580c",
+          700: "#c2410c",
+          800: "#9a3412",
+          900: "#7c2d12",
+        },
+        accent: {
+          50: "#fdf4ff",
+          100: "#fae8ff",
+          200: "#f5d0fe",
+          300: "#f0abfc",
+          400: "#e879f9",
+          500: "#d946ef",
+          600: "#c026d3",
+          700: "#a21caf",
+          800: "#86198f",
+          900: "#701a75",
+        },
+        success: {
+          DEFAULT: "#22c55e",
+          hover: "#16a34a",
+          dark: "#15803d",
+          50: "#f0fdf4",
+          100: "#dcfce7",
+          500: "#22c55e",
+          600: "#16a34a",
+          700: "#15803d",
+        },
+        warning: {
+          DEFAULT: "#f59e0b",
+          hover: "#d97706",
+          dark: "#b45309",
+          50: "#fffbeb",
+          100: "#fef3c7",
+          500: "#f59e0b",
+          600: "#d97706",
+          700: "#b45309",
+        },
+        danger: {
+          DEFAULT: "#ef4444",
+          hover: "#dc2626",
+          dark: "#b91c1c",
+          50: "#fef2f2",
+          100: "#fee2e2",
+          500: "#ef4444",
+          600: "#dc2626",
+          700: "#b91c1c",
+        },
+        surface: {
+          page: "#f8fafc",
+          muted: "#f1f5f9",
+          card: "#ffffff",
+          border: "#e5e5e5",
+        },
+        ink: {
+          DEFAULT: "#171717",
+          muted: "#525252",
+          subtle: "#737373",
+          heading: "#1e3a8a",
+        },
+        sidebar: {
+          heading: "#1e3a8a",
+          active: "#2563eb",
+          inactive: "#64748b",
+          icon: "#3b82f6",
+          hover: "#dbeafe",
+        },
+      },
+      fontFamily: {
+        sans: [
+          "Inter",
+          "Roboto",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif",
+        ],
+        display: ["Roboto", "Inter", "system-ui", "sans-serif"],
+      },
+      fontSize: {
+        xs: ["0.75rem", { lineHeight: "1rem" }],
+        sm: ["0.875rem", { lineHeight: "1.25rem" }],
+        base: ["1rem", { lineHeight: "1.5rem" }],
+        lg: ["1.125rem", { lineHeight: "1.75rem" }],
+        xl: ["1.25rem", { lineHeight: "1.75rem" }],
+        "2xl": ["1.5rem", { lineHeight: "2rem" }],
+        "3xl": ["1.875rem", { lineHeight: "2.25rem" }],
+        "4xl": ["2.25rem", { lineHeight: "2.5rem" }],
+        "5xl": ["3rem", { lineHeight: "1.15" }],
+      },
+      borderRadius: {
+        sm: "0.375rem",
+        md: "0.5rem",
+        lg: "0.75rem",
+        xl: "1rem",
+        "2xl": "1.5rem",
+        "3xl": "1.75rem",
+        "4xl": "2rem",
+        "5xl": "2.5rem",
+      },
+      boxShadow: {
+        sm: "0 1px 2px rgba(0,0,0,0.05)",
+        md: "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.06)",
+        lg: "0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.08)",
+        xl: "0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.08)",
+        glow: "0 0 0 3px rgba(59, 130, 246, 0.25), 0 8px 24px rgba(37, 99, 235, 0.18)",
+        "glow-lg":
+          "0 0 0 4px rgba(59, 130, 246, 0.2), 0 16px 40px rgba(37, 99, 235, 0.25)",
+        card: "0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 16px rgba(15, 23, 42, 0.04)",
+        "card-hover":
+          "0 8px 24px rgba(15, 23, 42, 0.1), 0 2px 8px rgba(37, 99, 235, 0.08)",
+      },
+      transitionDuration: {
+        fast: "150ms",
+        base: "200ms",
+        slow: "300ms",
+      },
+      transitionTimingFunction: {
+        soft: "cubic-bezier(0.4, 0, 0.2, 1)",
+      },
+      backgroundImage: {
+        "page-gradient":
+          "linear-gradient(160deg, #f8fafc 0%, #f1f5f9 45%, #eff6ff 100%)",
+        "brand-gradient": "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+        "brand-soft": "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
+        "secondary-gradient":
+          "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
+        "success-gradient": "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+        "danger-gradient": "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+        "sidebar-active": "linear-gradient(90deg, #eff6ff 0%, #dbeafe 100%)",
+      },
+      keyframes: {
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "slide-up": {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "scale-in": {
+          "0%": { opacity: "0", transform: "scale(0.96)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "bounce-subtle": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-3px)" },
+        },
+        "pulse-subtle": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.72" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 200ms ease both",
+        "slide-up": "slide-up 300ms ease both",
+        "scale-in": "scale-in 200ms ease both",
+        "bounce-subtle": "bounce-subtle 1.2s ease-in-out infinite",
+        "pulse-subtle": "pulse-subtle 2s ease-in-out infinite",
+      },
+    },
   },
   plugins: [],
-}
-
+};

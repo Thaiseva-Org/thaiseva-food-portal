@@ -16,13 +16,13 @@ The Master Admin dashboard oversees the entire platform's operations:
 * **Global Table Reservations:** Monitor table bookings and reservation schedules globally.
 * **Invoicing System:** Generate and export PDF invoices for billing and audits.
 
-### 🍳 Restaurant Admin Portal (`/:id`)
+### 🍳 Restaurant Admin Portal (`/partner`)
 Designed for individual restaurant owners to manage their day-to-day operations:
 * **Restaurant Dashboard:** Visual statistics on sales performance, customer trends, and order counts.
 * **Order Management:** View incoming orders, update dispatch/preparation statuses, and handle order logs in real-time.
 * **Menu Management:** Add, edit, or remove menu items, set prices, write descriptions, and update dish photos.
 * **Restaurant Profile:** Manage operational hours, contact information, descriptions, and address integration.
-* **Table Reservations:** Manage table layouts, accept/modify reservations, and track booking availability.
+* **Table Reservations:** Review guest requests and accept or reject them. Customer apps create bookings through Cloud Functions (see `APP_BOOKING_API.md`).
 
 ---
 
@@ -55,10 +55,13 @@ Designed for individual restaurant owners to manage their day-to-day operations:
 │   ├── restaurantAdmin/   # Pages, components, and routing specific to Restaurant Admins
 │   │   ├── component/     # Chart components, Sidebar, and Auth pages
 │   │   └── pages/         # Menu items management, order tracking, reservations
+│   ├── api/               # HTTPS callable wrappers (orders, bookings, menu)
 │   ├── App.jsx            # Main app router & component tree configuration
 │   ├── AuthContext.jsx    # Authentication state provider
 │   ├── index.css          # Global Tailwind CSS and fonts configuration
 │   └── main.jsx           # App entry point
+├── functions/             # Cloud Functions (trusted API, region asia-southeast1)
+├── APP_BOOKING_API.md     # Customer-app booking implementation contract
 ├── firebaseConfig.js      # Firebase SDK client initialization
 ├── tailwind.config.js     # Tailwind CSS theme customization
 └── vite.config.js         # Vite dev-server and build configs
@@ -69,7 +72,7 @@ Designed for individual restaurant owners to manage their day-to-day operations:
 ## ⚙️ Getting Started
 
 ### Prerequisites
-Make sure you have [Node.js](https://nodejs.org/) installed (v18+ recommended) along with `npm` or `yarn`.
+Use Node.js 22 (the same runtime configured for Cloud Functions) with npm.
 
 ### Installation
 1. Clone the repository:
@@ -83,28 +86,11 @@ Make sure you have [Node.js](https://nodejs.org/) installed (v18+ recommended) a
    ```
 
 ### Configuration
-1. Create a `firebaseConfig.js` file in the root directory (if not already present).
-2. Add your Firebase credentials:
-   ```javascript
-   import { initializeApp } from "firebase/app";
-   import { getAuth } from "firebase/auth";
-   import { getFirestore } from "firebase/firestore";
-   import { getStorage } from "firebase/storage";
-
-   const firebaseConfig = {
-     apiKey: "YOUR_API_KEY",
-     authDomain: "YOUR_AUTH_DOMAIN",
-     projectId: "YOUR_PROJECT_ID",
-     storageBucket: "YOUR_STORAGE_BUCKET",
-     messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-     appId: "YOUR_APP_ID"
-   };
-
-   const app = initializeApp(firebaseConfig);
-   export const auth = getAuth(app);
-   export const db = getFirestore(app);
-   export const storage = getStorage(app);
-   ```
+Copy `.env.example` to `.env.local` and fill every required `VITE_FIREBASE_*`
+value. Production builds intentionally fail when Firebase configuration is
+missing, so they cannot silently target a fallback project. Configure
+`VITE_FIREBASE_APPCHECK_SITE_KEY` with a Firebase App Check reCAPTCHA
+Enterprise site key before deploying.
 
 ### Running the Application
 
@@ -129,3 +115,17 @@ Make sure you have [Node.js](https://nodejs.org/) installed (v18+ recommended) a
   ```bash
   npm run lint
   ```
+
+---
+
+## 📚 Documentation
+
+| Doc | What it covers |
+|-----|----------------|
+| [`APP_BOOKING_API.md`](APP_BOOKING_API.md) | **Customer app** dine-in booking callables — implement create / list / get / update / cancel |
+| [`HOW_BOTH_PANELS_WORK.md`](HOW_BOTH_PANELS_WORK.md) | Master vs restaurant partner panels |
+| [`DEPLOY_SECURITY.md`](DEPLOY_SECURITY.md) | Deploy order, App Check, full callable list |
+| [`FIRESTORE_RULES_NOTES.md`](FIRESTORE_RULES_NOTES.md) | Shared multi-app rules — what this repo may change |
+| [`FIRESTORE_INDEXES_NOTES.md`](FIRESTORE_INDEXES_NOTES.md) | Shared indexes — never deploy a food-only file |
+
+Customer table bookings are **request-based** (`Pending` → restaurant Accept / Reject). There is no table-slot inventory API. Hotel, car, van, and travel bookings belong to other products and are not exposed here.

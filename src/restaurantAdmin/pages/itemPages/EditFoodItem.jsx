@@ -1,19 +1,26 @@
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
 import { useAuth } from "../../../AuthContext";
+import { updateFoodItem } from "../../../api";
+import { useKitchenScope } from "../../../hooks/useKitchenScope";
+import { getMenuRootId } from "../../../utils/tenant";
+import { partnerPath } from "../../../utils/partnerRoutes";
 import Template from "./Template";
 
 const EditItem = () => {
-  const { roleData } = useAuth();
+  const { roleData, currentUser, resData } = useAuth();
   const itemidParam = useParams();
   const navigate = useNavigate();
-  const { id } = useParams();
   const itemid = decodeURIComponent(itemidParam["itemId"]);
+  const kitchen = useKitchenScope();
+  const ownerUid =
+    kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
+  const cleanItemId = String(itemid).replace("#", "");
   const [itemName, setItemName] = useState("");
-  const [price, setPrice] = useState(0);
+  const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState(0);
   const [category, setCategory] = useState("");
   const [itemType, setItemType] = useState("");
@@ -21,59 +28,74 @@ const EditItem = () => {
   const [image, setImage] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [active, setActive] = useState(false);
+  const [loadingItem, setLoadingItem] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState(null);
+  const [formSuccess, setFormSuccess] = useState(null);
 
   useEffect(() => {
+    document.title = "Thaiseva | Edit menu item";
     const fetchItemData = async () => {
+      setLoadingItem(true);
       try {
-        const docRef = doc(
-          db,
-          "food_items",
-          roleData.restaurantId,
-          "items",
-          itemid
-        );
+        const docRef = doc(db, "food_items", ownerUid, "items", cleanItemId);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setItemName(data.itemName);
-          setPrice(data.price);
-          setDiscount(data.discount);
-          setCategory(data.category);
-          setItemType(data.itemType);
-          setDescription(data.description);
-          setActive(data.active);
-          setImage(data.imageUrl);
+          setItemName(data.itemName || "");
+          setPrice(data.price ?? "");
+          setDiscount(data.discount ?? 0);
+          setCategory(data.category || "");
+          setItemType(data.itemType || "");
+          setDescription(data.description || "");
+          setActive(Boolean(data.active));
+          setImage(data.imageUrl || null);
         } else {
-          alert("No such item exists.");
+          setFormError("No such item exists.");
         }
       } catch (error) {
         console.error("Error fetching item data:", error);
+        setFormError("Could not load this item.");
+      } finally {
+        setLoadingItem(false);
       }
     };
 
-    fetchItemData();
-  }, [itemid, roleData]);
+    if (ownerUid && cleanItemId) fetchItemData();
+  }, [cleanItemId, ownerUid]);
+
+  const applyImageFile = (file) => {
+    if (!file) return;
+    if (!file.type?.startsWith("image/")) {
+      setFormError("Only image files are allowed (JPG, PNG, WebP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFormError("Image must be under 5MB.");
+      return;
+    }
+    setFormError(null);
+    if (image && typeof image === "string" && image.startsWith("blob:")) {
+      URL.revokeObjectURL(image);
+    }
+    setImage(URL.createObjectURL(file));
+    setImageFile(file);
+    setDropdownOpen(false);
+  };
 
   const handleFileChange = (e) => {
-    if (e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      const imageUrl = URL.createObjectURL(selectedFile);
-      setImage(imageUrl); // Set preview URL
-      setImageFile(selectedFile); // Set actual file
-      setDropdownOpen(false);
-    }
+    applyImageFile(e.target.files?.[0]);
+    e.target.value = "";
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.files[0]) {
-      setImage(e.dataTransfer.files[0]);
-      setDropdownOpen(false); // Close dropdown after dropping
-    }
+    applyImageFile(e.dataTransfer.files?.[0]);
   };
 
   const handleDragOver = (e) => {
@@ -81,80 +103,93 @@ const EditItem = () => {
     e.stopPropagation();
   };
 
+  const clearImage = () => {
+    if (image && typeof image === "string" && image.startsWith("blob:")) {
+      URL.revokeObjectURL(image);
+    }
+    setImage(null);
+    setImageFile(null);
+  };
+
+  const validate = () => {
+    const errors = {};
+    if (!String(itemName || "").trim()) errors.itemName = "Enter a dish name.";
+    const p = Number(price);
+    if (!Number.isFinite(p) || p <= 0) errors.price = "Enter a price greater than 0.";
+    const d = Number(discount);
+    if (!Number.isFinite(d) || d < 0 || d > 100) {
+      errors.discount = "Discount must be between 0 and 100.";
+    }
+    if (!String(category || "").trim()) errors.category = "Choose or add a category.";
+    if (!itemType) errors.itemType = "Select Veg or Non Veg.";
+    if (!String(description || "").trim()) {
+      errors.description = "Add a short description for customers.";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleEditItem = async () => {
-    if (
-      !itemName ||
-      !price ||
-      !discount ||
-      !category ||
-      !itemType ||
-      !description
-    ) {
-      alert("Please fill all fields.");
+    setFormError(null);
+    setFormSuccess(null);
+    if (!validate()) {
+      setFormError("Please fix the highlighted fields.");
       return;
     }
 
     try {
-      let imageUrl = image; // Default to preview URL if no file selected
+      let imageUrl = typeof image === "string" ? image : "";
+      setUploading(true);
+      setUploadProgress(0);
 
       if (imageFile) {
-        // Check if an actual file is selected
-        const imageRef = ref(storage, `images/${itemid}`);
+        const imageRef = ref(
+          storage,
+          `restaurants/${ownerUid}/items/${cleanItemId}`
+        );
         const uploadTask = uploadBytesResumable(imageRef, imageFile);
 
-        setUploading(true);
-        await new Promise((resolve, reject) => {
+        imageUrl = await new Promise((resolve, reject) => {
           uploadTask.on(
             "state_changed",
             (snapshot) => {
               const progress =
                 (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              console.log(`Upload is ${progress}% done`);
+              setUploadProgress(Math.round(progress));
             },
             (error) => {
               console.error("Upload failed:", error);
               reject(error);
             },
             async () => {
-              imageUrl = await getDownloadURL(uploadTask.snapshot.ref); // Use uploaded file URL
-              resolve();
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(url);
             }
           );
         });
       }
 
-      await updateItemData(imageUrl);
-    } catch (error) {
-      console.error("Error updating item:", error);
-      alert("Failed to update item. Please try again.");
-    }
-  };
-
-  const updateItemData = async (imageUrl) => {
-    try {
-      const docRef = doc(
-        db,
-        "food_items",
-        roleData.restaurantId,
-        "items",
-        itemid
-      );
-      await updateDoc(docRef, {
-        itemName,
-        price: price,
-        discount: discount,
-        category,
+      await updateFoodItem({
+        ownerUid,
+        itemId: cleanItemId,
+        itemName: String(itemName).trim(),
+        price: Number(price),
+        discount: Number(discount) || 0,
+        category: String(category).trim(),
         itemType,
-        description,
+        description: String(description).trim(),
         imageUrl,
-        active: active,
+        active,
       });
-      alert("Item updated successfully!");
-      navigate(`/${id}/fooditem`);
+
+      setFormSuccess("Item updated successfully.");
+      setTimeout(() => navigate(kitchen.listPath || partnerPath("foodItem")), 700);
     } catch (error) {
       console.error("Error updating item:", error);
+      setFormError(error.message || "Failed to update item. Please try again.");
+      setUploading(false);
+      setUploadProgress(0);
     }
-    setUploading(false);
   };
 
   return (
@@ -163,17 +198,18 @@ const EditItem = () => {
       setDescription={setDescription}
       setDiscount={setDiscount}
       setDropdownOpen={setDropdownOpen}
-      setItemId={itemid}
       setItemName={setItemName}
       setCategory={setCategory}
       setPrice={setPrice}
       dropdownOpen={dropdownOpen}
       uploading={uploading}
+      uploadProgress={uploadProgress}
       handleAddItem={handleEditItem}
       handleDragOver={handleDragOver}
       handleDrop={handleDrop}
       handleFileChange={handleFileChange}
-      itemId={itemid}
+      clearImage={clearImage}
+      itemId={cleanItemId}
       itemName={itemName}
       itemType={itemType}
       price={price}
@@ -181,8 +217,14 @@ const EditItem = () => {
       category={category}
       description={description}
       setItemType={setItemType}
-      submitBtn="Update Food Item"
-      IdDisable={true}
+      submitBtn="Update menu item"
+      fieldErrors={fieldErrors}
+      formError={formError}
+      formSuccess={formSuccess}
+      mode="edit"
+      loadingItem={loadingItem}
+      active={active}
+      setActive={setActive}
     />
   );
 };

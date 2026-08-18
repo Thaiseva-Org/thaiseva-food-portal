@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router";
 import { Logo } from "../../assets";
 import SpaceDashboardRoundedIcon from "@mui/icons-material/SpaceDashboardRounded";
 import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
@@ -6,93 +6,145 @@ import FastfoodRoundedIcon from "@mui/icons-material/FastfoodRounded";
 import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
+import { useAuth } from "../../AuthContext";
+import NavBadge from "../../components/NavBadge";
+import { useBookings } from "../../context/BookingsProvider";
+import { normalizeBookingStatus } from "../../utils/bookingStatus";
+import { ORDER_STATUS } from "../../utils/orderStatus";
+import { PARTNER_BASE, partnerPath } from "../../utils/partnerRoutes";
 
-const Sidebar = ({ show, userId }) => {
-  const links = [
+const Sidebar = ({ show, toggle }) => {
+  const { isRestaurantAdmin, onboardingPhase } = useAuth();
+  const { orders, bookings } = useBookings() || {};
+  const verified = isRestaurantAdmin || onboardingPhase === "complete";
+  const newOrders = (orders || []).filter(
+    (row) => row.Status === ORDER_STATUS.NEW
+  ).length;
+  const pendingBookings = (bookings || []).filter(
+    (row) => normalizeBookingStatus(row.status) === "pending"
+  ).length;
+
+  const mainLinks = [
     {
-      icon: <SpaceDashboardRoundedIcon />,
+      icon: <SpaceDashboardRoundedIcon fontSize="small" />,
       label: "Dashboard",
-      to: `/${userId}`,
-      path: `/${userId}`,
+      to: PARTNER_BASE,
+      end: true,
+      requiresVerified: true,
     },
     {
-      icon: <RestaurantRoundedIcon />,
+      icon: <RestaurantRoundedIcon fontSize="small" />,
       label: "My Restaurant",
-      to: "restaurant",
-      path: `/${userId}/restaurant`,
+      to: partnerPath("restaurant"),
     },
     {
-      icon: <FastfoodRoundedIcon />,
-      label: "Food Item",
-      to: "foodItem",
-      path: `/${userId}/foodItem`,
+      icon: <FastfoodRoundedIcon fontSize="small" />,
+      label: "Menu",
+      to: partnerPath("foodItem"),
+      requiresVerified: true,
     },
     {
-      icon: <ListAltRoundedIcon />,
-      label: "Manage Order",
-      to: "manageOrder",
-      path: `/${userId}/manageOrder`,
+      icon: <ListAltRoundedIcon fontSize="small" />,
+      label: "Orders",
+      to: partnerPath("manageOrder"),
+      requiresVerified: true,
+      badge: newOrders,
+      badgeTone: "danger",
     },
+  ].filter((item) => !item.requiresVerified || verified);
+
+  const bottomLinks = [
     {
-      icon: <TableRestaurantRoundedIcon />,
+      icon: <TableRestaurantRoundedIcon fontSize="small" />,
       label: "Table Reservations",
-      to: "tableReservation",
-      path: `/${userId}/tableReservation`,
+      to: partnerPath("tableReservation"),
+      requiresVerified: true,
+      badge: pendingBookings,
+      badgeTone: "warning",
     },
     {
-      icon: <ExitToAppRoundedIcon />,
+      icon: <ExitToAppRoundedIcon fontSize="small" />,
       label: "Log Out",
-      to: "logOutPage",
+      to: partnerPath("logOutPage"),
+      danger: true,
     },
-  ];
-  const LINK_LIST = (
-    <>
-      {links.map((item) => (
-        <div
-          className="h-14 flex justify-between items-center  "
-          key={item.label}
-        >
-          <NavLink
-            to={item.to}
-            key={item.to}
-            end={item.path === `/${userId}`}
-            className={({ isActive }) =>
-              `hover:bg-[var(--drawer-hover-color)] flex w-full p-3 pl-6 ${
-                isActive ? "sidebar-active-tab" : ""
-              }`
-            }
-          >
-            {item.icon}
-            <i className={`bi ${item.icon} `}></i>
-            <span className="ms-3 ">{item.label}</span>
-          </NavLink>
-          {item.badge && (
-            <span className="bg-blue-500 p-1 text-slate-50 rounded-lg ">
-              {item.badge}
-            </span>
-          )}
-        </div>
-      ))}
-    </>
-  );
+  ].filter((item) => !item.requiresVerified || verified);
+
   return (
     show && (
-      <>
-        <div className="bg-white w-[300px] sticky top-0  h-screen">
-          {/* header start */}
-          <div className="p-6 gap-2 flex relative">
-            <img src={Logo} className="mix-blend-multiply" alt="" />
-            <div className="absolute bottom-3.5 select-none left-0 text-center w-full text-sm text-[var(--logo-text-color)] font-medium">
-              Partner
-            </div>
-          </div>
-          {/* header end */}
-
-          {/* body start*/}
-          <div className="flex-grow sidebar-inactive-tab">{LINK_LIST}</div>
-          {/* body end*/}
+      <aside
+        id="partner-sidebar"
+        className="sidebar-shell fixed inset-y-0 left-0 z-40 sm:sticky sm:z-20 animate-fade-in"
+        aria-label="Partner navigation"
+      >
+        <div className="sidebar-brand">
+          <button
+            type="button"
+            onClick={toggle}
+            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-neutral-100 focus-ring sm:hidden"
+            aria-label="Close navigation"
+          >
+            <i className="bi bi-x-lg" aria-hidden="true" />
+          </button>
+          <img
+            src={Logo}
+            className="mix-blend-multiply w-full max-w-[180px] mx-auto object-contain"
+            alt="Thaiseva"
+          />
+          <div className="sidebar-brand-label">Partner Portal</div>
         </div>
-      </>
+
+        <nav className="sidebar-nav">
+          {mainLinks.map((item) => (
+            <NavLink
+              key={item.label}
+              to={item.to}
+              end={item.end === true}
+              className={({ isActive }) =>
+                ["sidebar-link", isActive ? "sidebar-active-tab" : ""]
+                  .filter(Boolean)
+                  .join(" ")
+              }
+            >
+              <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-50/80">
+                {item.icon}
+              </span>
+              <span className="sidebar-link-label">{item.label}</span>
+              <NavBadge count={item.badge} tone={item.badgeTone} />
+            </NavLink>
+          ))}
+
+          {bottomLinks.map((item) => (
+            <NavLink
+              key={item.label}
+              to={item.to}
+              className={({ isActive }) =>
+                [
+                  "sidebar-link",
+                  isActive ? "sidebar-active-tab" : "",
+                  item.danger
+                    ? "mt-2 border-t border-neutral-100 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              }
+            >
+              <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-50/80">
+                {item.icon}
+              </span>
+              <span className="sidebar-link-label">{item.label}</span>
+              <NavBadge count={item.badge} tone={item.badgeTone} />
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-neutral-100">
+          <div className="rounded-xl bg-brand-soft px-3 py-3 text-xs text-brand-800 font-medium">
+            Manage menu, orders &amp; reservations from one place.
+          </div>
+        </div>
+      </aside>
     )
   );
 };

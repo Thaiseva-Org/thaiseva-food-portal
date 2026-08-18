@@ -4,21 +4,17 @@ import {
   todayBooking,
 } from "../../services/DailyRecords";
 import { CSVLink } from "react-csv";
-import { PDFDownloadLink } from "@react-pdf/renderer";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
-import DescriptionRoundedIcon from "@mui/icons-material/DescriptionRounded";
-import Invoice from "../component/invoice/Invoice";
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "../../../firebaseConfig";
 import Loading from "../../components/Loading";
 import { useAuth } from "../../AuthContext";
 import { Pagination } from "@mui/material";
+import { clearOrderPayment } from "../../api";
 
 const TodayOrders = () => {
   const { isMasterAdmin } = useAuth();
   const [orderDetails, setOrderDetails] = useState([]);
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(new Date());
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [csvData, setCsvData] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -40,20 +36,36 @@ const TodayOrders = () => {
       fetchBookingsTotalPages(setTotalPages, startDate, endDate);
       loadData();
     }
-  }, [isMasterAdmin, page, refetch]);
+  }, [isMasterAdmin, page, refetch]); // eslint-disable-line react-hooks/exhaustive-deps -- date values and cursors are applied only by explicit submit/page triggers
 
-  const toggleUserInvoiceGeneration = (rowId) => {
-    setGenerationUserInvoices((prev) => ({
-      ...prev,
-      [rowId]: !prev[rowId],
-    }));
-  };
-
-  const togglePartnerInvoiceGeneration = (rowId) => {
-    setGenerationPartnerInvoices((prev) => ({
-      ...prev,
-      [rowId]: !prev[rowId],
-    }));
+  const downloadInvoice = async (item, type) => {
+    const setGenerating =
+      type === "user"
+        ? setGenerationUserInvoices
+        : setGenerationPartnerInvoices;
+    setGenerating((prev) => ({ ...prev, [item.OrderID]: true }));
+    try {
+      const [{ pdf }, { default: Invoice }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("../component/invoice/Invoice"),
+      ]);
+      const invoice =
+        type === "user" ? item.userInvoice : item.partnerInvoiceInfo;
+      const blob = await pdf(
+        <Invoice invoice={invoice} contactInfo={contactInfo} type={type} />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${type}-invoice-${item.OrderID}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to generate invoice:", error);
+      alert("Could not generate the invoice. Please try again.");
+    } finally {
+      setGenerating((prev) => ({ ...prev, [item.OrderID]: false }));
+    }
   };
 
   const contactInfo = {
@@ -71,7 +83,7 @@ const TodayOrders = () => {
       lastDocs,
       setLastDocs
     );
-    const datanew = data.map((item) =>
+    const datanew = (data || []).map((item) =>
       createData(
         item.OrderID,
         item.restaurantName,
@@ -222,10 +234,14 @@ const TodayOrders = () => {
     setIsDownloading(false);
   };
 
-  const handleClear = async (id) => {
-    const OrderRef = doc(db, "orders", id);
-    await updateDoc(OrderRef, "isPaymentClear", true);
-    setRefetch((p) => !p);
+  const handleClear = async (orderId) => {
+    try {
+      await clearOrderPayment({ orderId });
+      setRefetch((p) => !p);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to clear payment. Deploy Cloud Functions first.");
+    }
   };
 
   const handleDateRangeSubmit = (event) => {
@@ -366,72 +382,28 @@ const TodayOrders = () => {
                     </td>
                     <td className="px-1 py-4">
                       <div className="flex items-center justify-center gap-1">
-                        {!generationUserInvoices[item.OrderID] ? (
-                          <button
-                            className="bg-[#122159] text-white p-1 rounded-full mr-1"
-                            onClick={() =>
-                              toggleUserInvoiceGeneration(item.OrderID)
-                            }
-                          >
-                            <DescriptionRoundedIcon />
-                          </button>
-                        ) : (
-                          <PDFDownloadLink
-                            document={
-                              <Invoice
-                                invoice={item.userInvoice}
-                                contactInfo={contactInfo}
-                                type={"user"}
-                              />
-                            }
-                            fileName="userinvoice.pdf"
-                          >
-                            {({ loading }) =>
-                              loading ? (
-                                "Loading..."
-                              ) : (
-                                <button className="bg-[#122159] text-white p-1 rounded-full mr-1">
-                                  <FileDownloadIcon />
-                                </button>
-                              )
-                            }
-                          </PDFDownloadLink>
-                        )}
+                        <button
+                          type="button"
+                          className="bg-[#122159] text-white p-1 rounded-full mr-1 disabled:opacity-50"
+                          onClick={() => downloadInvoice(item, "user")}
+                          disabled={generationUserInvoices[item.OrderID]}
+                          aria-label="Download customer invoice"
+                        >
+                          {generationUserInvoices[item.OrderID] ? "…" : <FileDownloadIcon />}
+                        </button>
                       </div>
                     </td>
                     <td className="px-1 py-4">
                       <div className="flex items-center justify-center gap-1">
-                        {!generationPartnerInvoices[item.OrderID] ? (
-                          <button
-                            className="bg-[#122159] text-white p-1 rounded-full mr-1"
-                            onClick={() =>
-                              togglePartnerInvoiceGeneration(item.OrderID)
-                            }
-                          >
-                            <DescriptionRoundedIcon />
-                          </button>
-                        ) : (
-                          <PDFDownloadLink
-                            document={
-                              <Invoice
-                                invoice={item.partnerInvoiceInfo}
-                                contactInfo={contactInfo}
-                                type={"partner"}
-                              />
-                            }
-                            fileName="partnerinvoice.pdf"
-                          >
-                            {({ loading }) =>
-                              loading ? (
-                                "Loading..."
-                              ) : (
-                                <button className="bg-[#122159] text-white p-1 rounded-full mr-1">
-                                  <FileDownloadIcon />
-                                </button>
-                              )
-                            }
-                          </PDFDownloadLink>
-                        )}
+                        <button
+                          type="button"
+                          className="bg-[#122159] text-white p-1 rounded-full mr-1 disabled:opacity-50"
+                          onClick={() => downloadInvoice(item, "partner")}
+                          disabled={generationPartnerInvoices[item.OrderID]}
+                          aria-label="Download partner invoice"
+                        >
+                          {generationPartnerInvoices[item.OrderID] ? "…" : <FileDownloadIcon />}
+                        </button>
                       </div>
                     </td>
                     <td className="px-1 py-4">

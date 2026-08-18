@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
-import ReactApexChart from "react-apexcharts";
+import SafeApexChart from "../../components/SafeApexChart";
 import {
-  getHourlyEarnings,
-  getMonthlyEarnings,
-  getWeeklyEarnings,
+  getAllTimeEarnings,
+  getEarningsForRange,
 } from "../../services/Earning";
 
-const MasterApexChart = ({ selectedView, id = "" }) => {
-  const view = selectedView || "today";
+const MasterApexChart = ({ id = "", startDate = "", endDate = "" }) => {
   const [categories, setCategories] = useState([]);
   const [content, setContent] = useState([]);
   const [options, setOptions] = useState({});
@@ -17,60 +15,65 @@ const MasterApexChart = ({ selectedView, id = "" }) => {
     async function fetchData() {
       try {
         const data =
-          view === "today"
-            ? await getHourlyEarnings(id)
-            : view === "weekly"
-            ? await getWeeklyEarnings(id)
-            : view === "monthly"
-            ? await getMonthlyEarnings(id)
-            : null;
+          startDate && endDate
+            ? await getEarningsForRange(id, startDate, endDate)
+            : await getAllTimeEarnings(id);
 
-        const categoryData = data.map((entry) => entry.data);
-        const valueData = data.map((entry) => entry.earnings.toFixed(2));
+        const rows = Array.isArray(data) ? data : [];
+        const categoryData = rows.map((entry) => entry.data);
+        const valueData = rows.map((entry) =>
+          Number(entry.earnings || 0).toFixed(2)
+        );
+        const hasValue = valueData.some((n) => Number(n) > 0);
 
         setCategories(categoryData);
-        setContent(valueData);
+        setContent(hasValue ? valueData : []);
 
         setOptions({
           chart: {
-            height: 350,
+            height: 280,
             type: "area",
+            toolbar: { show: false },
+            zoom: { enabled: false },
           },
-          colors: ["#FDA237"],
+          colors: ["#2563eb"],
           dataLabels: { enabled: false },
-          stroke: { curve: "smooth" },
+          stroke: { curve: "smooth", width: 2 },
+          yaxis: { min: 0, labels: { formatter: (v) => Number(v).toFixed(0) } },
           xaxis: {
             type: "category",
             categories: categoryData,
-            range: 6,
           },
         });
 
         setSeries([
           {
-            name: "Earning from platform",
+            name: "Earnings",
             data: valueData,
           },
         ]);
       } catch (error) {
         console.error("Error fetching data:", error);
+        setCategories([]);
+        setContent([]);
+        setSeries([]);
       }
     }
     fetchData();
-  }, [view]);
+  }, [id, startDate, endDate]);
 
   return (
     <div id="chart">
       {categories.length > 0 && content.length > 0 ? (
-        <ReactApexChart
+        <SafeApexChart
           options={options}
           series={series}
           type="area"
-          height={350}
+          height={280}
         />
       ) : (
-        <p className="flex items-center justify-center w-full h-[350px]">
-          No data to show...
+        <p className="flex items-center justify-center w-full h-[280px] text-sm text-ink-subtle">
+          No earnings in this period
         </p>
       )}
     </div>

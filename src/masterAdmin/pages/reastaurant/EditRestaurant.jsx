@@ -1,24 +1,31 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useLocation } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { MdLocationOn, MdFileUpload } from "react-icons/md";
 import { FaImages, FaRegImage } from "react-icons/fa";
 import axios from "axios";
 import { useAuth } from "../../../AuthContext";
 import AddressAutocomplete from "../../../components/AddressAutoComplete";
+import {
+  adminUpdateCommission,
+  updateRestaurantProfile,
+} from "../../../api";
+import { getGoogleMapsApiKey } from "../../../utils/tenant";
 
 const EditRestaurantAdmin = () => {
   const { restaId } = useParams();
+  const location = useLocation();
+  // Document ID is always owner Firebase UID
+  const ownerUid = location.state?.ownerId || restaId;
   const [restaurantName, setRestaurantName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [emailId, setEmailId] = useState("");
   const [foodType, setFoodType] = useState("");
-  const [location, setLocation] = useState("");
+  const [locationAddr, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState(null);
-  const [timestamp, setTimestamp] = useState("");
   const [comission, setComission] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -26,12 +33,12 @@ const EditRestaurantAdmin = () => {
   const modalRef = useRef(null);
   const navigate = useNavigate();
 
-  const GOOGLE_API_KEY = "AIzaSyDwTBiBiGtJLrlbaiKzVN5BBCj8He1l5Zc"; // Replace with your API key
+  const GOOGLE_API_KEY = getGoogleMapsApiKey();
 
   useEffect(() => {
     const fetchRestaurantData = async () => {
       try {
-        const docRef = doc(db, "restaurants", restaId);
+        const docRef = doc(db, "restaurants", ownerUid);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -43,8 +50,7 @@ const EditRestaurantAdmin = () => {
           setLocation(data.location || "");
           setDescription(data.description || "");
           setImage(data.imageUrl || "");
-          setTimestamp(data.timestamp || "");
-          setComission(data.comission || "");
+          setComission(data.comission || 0);
         } else {
           alert("No such restaurant!");
         }
@@ -53,20 +59,32 @@ const EditRestaurantAdmin = () => {
       }
     };
 
-    if (currentUser && restaId) {
+    if (currentUser && ownerUid) {
       fetchRestaurantData();
     }
-  }, [currentUser, restaId]);
+  }, [currentUser, ownerUid]);
 
   const handleImageUpload = async (file) => {
     if (file) {
+      if (!file.type?.startsWith("image/")) {
+        alert("Only image files are allowed.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image must be under 5MB.");
+        return;
+      }
       setUploading(true);
-      const storageRef = ref(storage, `restaurantImages/${file.name}`);
+      const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const storageRef = ref(
+        storage,
+        `restaurants/${ownerUid}/profile/${safeName}`
+      );
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setImage(url);
       setUploading(false);
-      setDropdownOpen(false); // Close dropdown after uploading
+      setDropdownOpen(false);
     }
   };
 
@@ -91,25 +109,28 @@ const EditRestaurantAdmin = () => {
 
   const handleSubmit = async () => {
     try {
-      const restaurantData = {
-        name: restaurantName || "N/A",
-        phoneNumber: phoneNumber || "N/A",
-        emailId: emailId || "N/A",
-        foodType: foodType || "N/A",
-        location: location || "N/A",
-        description: description || "N/A",
-        imageUrl: image || "N/A",
-        comission: Number(comission) || 0,
-        timestamp: timestamp || serverTimestamp(),
-      };
-
-      const restaurantsDocRef = doc(db, "restaurants", restaId);
-      await updateDoc(restaurantsDocRef, restaurantData);
+      await updateRestaurantProfile({
+        ownerUid,
+        fields: {
+          name: restaurantName || "N/A",
+          phoneNumber: phoneNumber || "N/A",
+          emailId: emailId || "N/A",
+          foodType: foodType || "N/A",
+          location: locationAddr || "N/A",
+          description: description || "N/A",
+          imageUrl: image || "N/A",
+        },
+      });
+      // Commission is a locked field — separate privileged API
+      await adminUpdateCommission({
+        ownerUid,
+        commission: Number(comission) || 0,
+      });
       alert("Restaurant information updated successfully");
       navigate(-1, { replace: true });
     } catch (error) {
       console.error("Error updating documents: ", error.message);
-      alert("Failed to update. Please try again.");
+      alert(error.message || "Failed to update. Deploy Cloud Functions first.");
     }
   };
 
@@ -397,7 +418,7 @@ const EditRestaurantAdmin = () => {
                     <div className="flex items-center">
                       <AddressAutocomplete
                         onSelect={handleSelect}
-                        location={location}
+                        location={locationAddr}
                         setLocation={setLocation}
                       />
                       <button
