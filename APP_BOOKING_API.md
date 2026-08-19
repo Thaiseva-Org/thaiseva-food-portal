@@ -1,110 +1,164 @@
-# App booking API — implement dine-in reservations
+# Dine-in booking API — customer app integration
 
-This is the contract for the **customer app** (iOS / Android / Flutter / React Native / web).
+Contract for the **customer app** (iOS, Android, Flutter, React Native, web).
 
-Table reservations go through Firebase **HTTPS callable** functions. Do **not** write `dineInBookings` from the client. The restaurant admin panel already reads the same documents and accepts or rejects them.
+Table reservations are Firebase **HTTPS callable** functions in region **`asia-southeast1`**. Do **not** write `dineInBookings` from the client.
 
-Related docs:
-
-- Admin panels (who accepts the booking): `HOW_BOTH_PANELS_WORK.md`
-- Deploy / App Check / function list: `DEPLOY_SECURITY.md`
-- Shared Firestore rules: `FIRESTORE_RULES_NOTES.md`
+Related: `HOW_BOTH_PANELS_WORK.md` · `DEPLOY_SECURITY.md` · `FIRESTORE_RULES_NOTES.md`
 
 ---
 
-## 1. Product model
+## 1. Base URL and how to call
 
-A booking is a **request**, not a reserved table slot.
+| Item | Value |
+|------|--------|
+| Firebase project | `gothai-ffea1` |
+| Region | `asia-southeast1` |
+| Auth | Firebase ID token (user must be signed in) |
+| App Check | Required in production |
+| Protocol | HTTPS POST (callable protocol) |
+
+**Callable SDK (recommended)**
 
 ```
-App: createDineInBooking
+Function name:  createDineInBooking
+Region:         asia-southeast1
+```
+
+**HTTP endpoint (same function, REST-style)**
+
+```
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/<functionName>
+```
+
+Emulator:
+
+```
+POST http://127.0.0.1:5001/gothai-ffea1/asia-southeast1/<functionName>
+```
+
+### Headers
+
+| Header | Required | Value |
+|--------|----------|--------|
+| `Content-Type` | yes | `application/json` |
+| `Authorization` | yes | `Bearer <Firebase ID token>` |
+| `X-Firebase-AppCheck` | production | App Check token |
+
+### Request body (HTTP)
+
+```json
+{
+  "data": {
+    "ownerId": "restaurantOwnerUid",
+    "customerName": "Riya"
+  }
+}
+```
+
+The SDK sends this envelope for you. Pass only the inner fields to `httpsCallable`.
+
+### Success envelope
+
+HTTP response:
+
+```json
+{
+  "result": {
+    "ok": true,
+    "data": { }
+  }
+}
+```
+
+JS SDK: `result.data` is `{ ok: true, data: {…} }`. Read **`result.data.data`**.
+
+### Error envelope
+
+Firebase throws an `HttpsError`. HTTP body looks like:
+
+```json
+{
+  "error": {
+    "status": "INVALID_ARGUMENT",
+    "message": "customerName must be 2-80 characters."
+  }
+}
+```
+
+| `error.code` (SDK) | HTTP `status` | When |
+|--------------------|---------------|------|
+| `unauthenticated` | `UNAUTHENTICATED` | Not signed in |
+| `invalid-argument` | `INVALID_ARGUMENT` | Bad / missing field |
+| `failed-precondition` | `FAILED_PRECONDITION` | Closed, too soon, cannot edit/cancel |
+| `not-found` | `NOT_FOUND` | Restaurant or booking missing |
+| `already-exists` | `ALREADY_EXISTS` | Duplicate pending booking or same idempotency key |
+| `permission-denied` | `PERMISSION_DENIED` | Not this user’s booking (or restaurant-only API) |
+| `resource-exhausted` | `RESOURCE_EXHAUSTED` | Rate limit |
+| `internal` | `INTERNAL` | Unexpected server error |
+
+Strip a `functions/` prefix if the SDK adds it (`functions/invalid-argument` → `invalid-argument`).
+
+---
+
+## 2. Endpoints
+
+Customer app uses **1–5**. Restaurant / master panel uses **6** — do not call it from the customer app.
+
+| # | Method | Endpoint (function name) | Who | Purpose |
+|---|--------|--------------------------|-----|---------|
+| 1 | `POST` | `createDineInBooking` | signed-in customer | Create a Pending request |
+| 2 | `POST` | `listMyDineInBookings` | signed-in customer | List my bookings |
+| 3 | `POST` | `getDineInBooking` | owner of the booking, or restaurant / master | Get one booking |
+| 4 | `POST` | `updateDineInBooking` | owner, Pending only | Edit a request |
+| 5 | `POST` | `cancelDineInBooking` | owner, Pending or Accepted | Cancel |
+| 6 | `POST` | `setDineInBookingStatus` | restaurant owner / master | Accept or reject |
+
+Full HTTP URL example:
+
+```
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/createDineInBooking
+```
+
+Rate limits (on top of the global callable window):
+
+| Endpoint | Extra limit |
+|----------|-------------|
+| `createDineInBooking` | 10 / minute / user |
+| `updateDineInBooking` | 20 / minute / user |
+
+---
+
+## 3. Product model
+
+A booking is a **request**, not a reserved table slot. There is no table map or inventory.
+
+```
+POST createDineInBooking
         │
         ▼
   status = Pending
         │
-        ├─ Restaurant Accepts  →  Accepted   (customer is notified)
-        ├─ Restaurant Rejects  →  Canceled   (customer is notified)
-        └─ Customer cancels    →  Canceled   (restaurant is notified)
+        ├─ POST setDineInBookingStatus { status: "Accepted" }  →  Accepted
+        ├─ POST setDineInBookingStatus { status: "Canceled" }  →  Canceled
+        └─ POST cancelDineInBooking                            →  Canceled
 ```
 
-There is **no** table map, seat count, or “19:00 is free” inventory. The restaurant host stand decides Accept / Reject.
-
-Statuses stored in Firestore (use these strings exactly):
-
-| Status | Meaning | App can update? | App can cancel? |
+| Status | Meaning | Customer update | Customer cancel |
 |--------|---------|-----------------|-----------------|
 | `Pending` | Waiting on the restaurant | Yes | Yes |
 | `Accepted` | Restaurant confirmed | No | Yes |
 | `Canceled` | Rejected or canceled | No | No (already applied) |
 
-The admin UI labels `Canceled` as **Rejected** when the restaurant declined. The API value is still `Canceled`.
+Use these strings **exactly**. The admin UI may label restaurant `Canceled` as **Rejected**. The API value is still `Canceled`.
 
-This food portal does **not** own hotel, car, van, or travel bookings. Do not call those collections from the food app.
-
----
-
-## 2. Prerequisites
-
-| Item | Value |
-|------|--------|
-| Firebase project | same project as the food portal (`gothai-ffea1` in `.env.example`) |
-| Auth | Firebase Auth. User must be signed in. |
-| Functions region | **`asia-southeast1`** |
-| App Check | **Required** in production |
-| Role | Any signed-in user. No restaurant / master claim needed. |
-
-Initialize Functions with the region or every call 404s:
-
-```js
-import { getFunctions, httpsCallable } from "firebase/functions";
-
-const functions = getFunctions(app, "asia-southeast1");
-```
-
-Flutter:
-
-```dart
-FirebaseFunctions.instanceFor(region: 'asia-southeast1');
-```
-
-### App Check
-
-Production callables reject requests without a valid App Check token.
-
-- Android: Play Integrity / Debug provider in debug builds
-- iOS: App Attest / DeviceCheck
-- Web: reCAPTCHA Enterprise (same pattern as `firebaseConfig.js`)
-
-### Envelope
-
-Every callable returns:
-
-```json
-{ "ok": true, "data": { } }
-```
-
-Read **`result.data.data`** (JS) or the inner map after `callable.call`. If `ok === false`, treat it as an error.
-
-On failure Firebase throws an `HttpsError`:
-
-| `error.code` | When |
-|--------------|------|
-| `unauthenticated` | Not signed in |
-| `invalid-argument` | Bad / missing field |
-| `failed-precondition` | Restaurant closed, time too soon, cannot edit/cancel |
-| `not-found` | Restaurant or booking missing |
-| `already-exists` | Duplicate pending booking, or same idempotency key |
-| `permission-denied` | Not this user's booking (or restaurant-only API) |
-| `resource-exhausted` | Rate limit (create: 10/min, update: 20/min) |
-| `internal` | Unexpected server error |
-
-Strip the `functions/` prefix if your SDK adds it (`functions/invalid-argument` → `invalid-argument`).
+This product does **not** own hotel, car, van, or travel bookings.
 
 ---
 
-## 3. Shared booking object
+## 4. Booking object
 
-Every create / list / get / update response uses this shape. Dates are **ISO-8601 UTC**.
+Returned by create, list, get, and update. Dates are **ISO-8601 UTC**.
 
 ```json
 {
@@ -112,7 +166,7 @@ Every create / list / get / update response uses this shape. Dates are **ISO-860
   "ownerId": "restaurantOwnerUid",
   "restaurantId": "AB12CD34",
   "restaurantName": "Cafe Bangkok",
-  "restaurantImageUrl": "https://…",
+  "restaurantImageUrl": "https://example.com/photo.jpg",
   "restaurantLocation": "Sukhumvit",
   "userId": "customerUid",
   "customerName": "Riya",
@@ -134,27 +188,48 @@ Every create / list / get / update response uses this shape. Dates are **ISO-860
 
 ---
 
-## 4. APIs
+## 5. Endpoint details
 
-### 4.1 Create — `createDineInBooking`
+Payloads below are the **inner** `data` object (SDK argument, or HTTP `body.data`).
 
-Creates a **Pending** reservation for the signed-in user. Server sets `userId`, `status`, timestamps, and payment flags. Client cannot forge Accepted or paid.
+---
+
+### 5.1 Create reservation
+
+```
+POST /createDineInBooking
+```
+
+Creates a **Pending** row for the signed-in user. Server sets `userId`, `status`, timestamps, and payment flags.
 
 **Request**
 
 | Field | Required | Rules |
 |-------|----------|--------|
-| `ownerId` | one of `ownerId` / `restaurantId` | Restaurant document id (`restaurants/{ownerId}`). Prefer this. |
-| `restaurantId` | one of | Public `restaurants.id` (8-char hex). Use only if you do not have `ownerId`. |
+| `ownerId` | one of `ownerId` / `restaurantId` | Firestore doc id `restaurants/{ownerId}`. Prefer this. Pattern `[A-Za-z0-9_-]{3,128}` |
+| `restaurantId` | one of | Public `restaurants.id` (short code). Only if you do not have `ownerId`. Max 40 chars |
 | `customerName` | yes | 2–80 chars |
 | `phoneNumber` | yes | 6–30 chars, at least 6 digits |
 | `adults` | yes | integer 1–20 |
-| `children` | no | integer 0–20, default 0. Party (`adults + children`) ≤ 30 |
-| `scheduledAt` | yes | ISO string or unix ms. ≥ **15 minutes** from now, ≤ **90 days** |
-| `notes` | no | max 400 chars (`specialRequests` is accepted as an alias) |
-| `idempotencyKey` | recommended | `[A-Za-z0-9_-]{1,100}`. Retry-safe. |
+| `children` | no | integer 0–20, default 0. `adults + children` ≤ 30 |
+| `scheduledAt` | yes | ISO string or unix ms/seconds. ≥ **15 minutes** from now, ≤ **90 days** |
+| `notes` | no | max 400 (`specialRequests` alias) |
+| `idempotencyKey` | recommended | `[A-Za-z0-9_-]{1,100}`. Retry-safe |
 
-**Success**
+```json
+{
+  "ownerId": "abcRestaurantOwnerUid",
+  "customerName": "Riya",
+  "phoneNumber": "0812345678",
+  "adults": 2,
+  "children": 1,
+  "scheduledAt": "2026-09-01T12:30:00.000Z",
+  "notes": "Window seat",
+  "idempotencyKey": "booking_3f1c9a2e"
+}
+```
+
+**Response `data`**
 
 ```json
 {
@@ -163,58 +238,92 @@ Creates a **Pending** reservation for the signed-in user. Server sets `userId`, 
 }
 ```
 
-`alreadyApplied: true` means this `idempotencyKey` already created a booking — return that booking, do not show a second success toast.
+`alreadyApplied: true` — this `idempotencyKey` already created a booking. Return that booking; do not toast a second success.
 
-**Typical errors**
+**Errors**
 
-- `This restaurant is not accepting reservations.` — not `Verified`
-- `This restaurant is currently closed.` — `active === false`
-- `This restaurant does not accept dine-in reservations.` — `serviceType` is `Delivery`
-- `Reservation time must be at least 15 minutes from now.`
-- `You already have a pending reservation at this restaurant around that time.` — another Pending booking at the same restaurant within 30 minutes
+| Message | Cause |
+|---------|--------|
+| `ownerId or restaurantId is required.` | Neither id sent |
+| `Restaurant not found.` | Unknown shop |
+| `This restaurant is not accepting reservations.` | Not `Verified` |
+| `This restaurant is currently closed.` | `active === false` |
+| `This restaurant does not accept dine-in reservations.` | `serviceType` is `Delivery` |
+| `Reservation time must be at least 15 minutes from now.` | Too soon |
+| `Reservation time cannot be more than 90 days ahead.` | Too far |
+| `You already have a pending reservation at this restaurant around that time.` | Another Pending at the same shop within **30 minutes** |
+| `This reservation request was already submitted.` | Same idempotency key in-flight |
 
-Send a **new** `idempotencyKey` for a genuinely new booking. Reuse the same key only when retrying the same tap / request.
+Reuse the same `idempotencyKey` only when retrying the same tap. A new booking needs a new key.
 
 ---
 
-### 4.2 List mine — `listMyDineInBookings`
+### 5.2 List my reservations
+
+```
+POST /listMyDineInBookings
+```
 
 **Request**
 
 | Field | Required | Rules |
 |-------|----------|--------|
-| `limit` | no | 1–100, default 30 |
+| `limit` | no | 1–100, default **30** |
 | `status` | no | `Pending` \| `Accepted` \| `Canceled` |
 
-**Success**
-
 ```json
-{ "bookings": [ { } ] }
+{ "limit": 30, "status": "Pending" }
 ```
 
-Newest `bookedAt` first. Only the signed-in user's rows.
-
----
-
-### 4.3 Get one — `getDineInBooking`
-
-**Request:** `{ "bookingId": "…" }`
-
-**Success:** `{ "booking": { } }`
-
-The customer can only read their own booking. Restaurant / master can also read (admin apps).
-
----
-
-### 4.4 Update — `updateDineInBooking`
-
-Only while `status === "Pending"`. Send at least one field besides `bookingId`.
-
-**Request**
+**Response `data`**
 
 ```json
 {
-  "bookingId": "…",
+  "bookings": [ { } ]
+}
+```
+
+Newest `bookedAt` first. Only the signed-in user’s rows.
+
+---
+
+### 5.3 Get one reservation
+
+```
+POST /getDineInBooking
+```
+
+**Request**
+
+| Field | Required | Rules |
+|-------|----------|--------|
+| `bookingId` | yes | `[A-Za-z0-9_-]{6,128}` |
+
+```json
+{ "bookingId": "abcXYZ123456" }
+```
+
+**Response `data`**
+
+```json
+{ "booking": { } }
+```
+
+Customer: own booking only. Restaurant owner / master: that shop’s booking.
+
+---
+
+### 5.4 Update (Pending only)
+
+```
+POST /updateDineInBooking
+```
+
+Send `bookingId` plus **at least one** other field. Omitted fields stay unchanged. Same validation as create.
+
+```json
+{
+  "bookingId": "abcXYZ123456",
   "customerName": "Riya Patel",
   "phoneNumber": "0812345678",
   "adults": 3,
@@ -224,60 +333,79 @@ Only while `status === "Pending"`. Send at least one field besides `bookingId`.
 }
 ```
 
-Omitted fields stay unchanged. Same validation as create for any field you send.
+**Response `data`:** `{ "booking": { } }`
 
-**Success:** `{ "booking": { } }`
-
-**Fails** if the restaurant already Accepted / Canceled: `Only pending reservations can be updated.`
+**Fails** if already Accepted / Canceled: `Only pending reservations can be updated.`
 
 ---
 
-### 4.5 Cancel — `cancelDineInBooking`
+### 5.5 Cancel
+
+```
+POST /cancelDineInBooking
+```
 
 Customer may cancel `Pending` or `Accepted`.
 
-**Request**
+| Field | Required | Rules |
+|-------|----------|--------|
+| `bookingId` | yes | `[A-Za-z0-9_-]{6,128}` |
+| `reason` | no | max 400 (`cancellationReason` alias) |
 
 ```json
 {
-  "bookingId": "…",
+  "bookingId": "abcXYZ123456",
   "reason": "Plans changed"
 }
 ```
 
-`reason` is optional (max 400). `cancellationReason` is accepted as an alias.
-
-**Success**
+**Response `data`**
 
 ```json
 {
-  "bookingId": "…",
+  "bookingId": "abcXYZ123456",
   "status": "Canceled",
   "alreadyApplied": false
 }
 ```
 
-If it was already canceled, `alreadyApplied: true` — treat as success.
+Already canceled → `alreadyApplied: true` (treat as success).
 
-**Fails** if the reservation time is more than 2 hours in the past.
+**Fails** if the reservation time is more than **2 hours** in the past: `This reservation time has already passed.`
 
 ---
 
-### 4.6 Restaurant accept / reject — `setDineInBookingStatus`
+### 5.6 Accept or reject (restaurant / master only)
 
-**Do not call this from the customer app.** Restaurant partner / master only.
-
-```json
-{ "bookingId": "…", "status": "Accepted" }
+```
+POST /setDineInBookingStatus
 ```
 
-or `"Canceled"`. Allowed transitions: `Pending → Accepted | Canceled`, `Accepted → Canceled`.
+**Do not call from the customer app.**
+
+```json
+{ "bookingId": "abcXYZ123456", "status": "Accepted" }
+```
+
+or `"Canceled"`.
+
+Allowed: `Pending → Accepted | Canceled`, `Accepted → Canceled`.
+
+**Response `data`**
+
+```json
+{
+  "bookingId": "abcXYZ123456",
+  "status": "Accepted",
+  "alreadyApplied": false
+}
+```
 
 ---
 
-## 5. Restaurant catalog (Firestore read, not a callable)
+## 6. Restaurant catalog (Firestore read, not a callable)
 
-`restaurants` is publicly readable. Query then filter in the client:
+`restaurants` is publicly readable. Filter in the client:
 
 ```js
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -295,17 +423,17 @@ const rows = (await getDocs(q)).docs
   });
 ```
 
-Use **`ownerId` (document id)** when calling `createDineInBooking`.
+Pass **`ownerId` (document id)** to `createDineInBooking`.
 
-Useful restaurant fields: `name`, `imageUrl`, `location`, `phoneNumber`, `openingHours`, `foodType`, `serviceType`, `active`, `id` (public code).
+Useful fields: `name`, `imageUrl`, `location`, `phoneNumber`, `openingHours`, `foodType`, `serviceType`, `active`, `id` (public code).
 
 Missing `serviceType` is treated as dine-in capable (`Both`).
 
 ---
 
-## 6. Live updates (optional)
+## 7. Live updates (optional)
 
-Mutations stay on callables. For live status after the restaurant acts, listen to the user's bookings:
+Mutations stay on the endpoints above. For live status after the restaurant acts:
 
 ```js
 import { collection, onSnapshot, query, where } from "firebase/firestore";
@@ -317,11 +445,10 @@ const q = query(
 
 onSnapshot(q, (snap) => {
   const bookings = snap.docs.map((d) => ({ bookingId: d.id, ...d.data() }));
-  // Map Firestore Timestamps yourself, or refetch with getDineInBooking
 });
 ```
 
-Rules allow the owner of `userId` / `uid` to read. Prefer `listMyDineInBookings` / `getDineInBooking` when you want the stable ISO contract.
+Rules allow the owner of `userId` / `uid` to read. Prefer list/get callables when you want the ISO contract above.
 
 ### Customer notifications
 
@@ -340,16 +467,16 @@ collection(db, "notifications", "users", uid)
 
 ---
 
-## 7. Implementation snippets
+## 8. Client examples
 
-### JavaScript / TypeScript
+### JavaScript / TypeScript (callable SDK)
 
 ```js
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 const functions = getFunctions(app, "asia-southeast1");
 
-async function callApi(name, payload = {}) {
+async function callBookingApi(name, payload = {}) {
   const fn = httpsCallable(functions, name);
   const result = await fn(payload);
   const body = result.data;
@@ -360,37 +487,59 @@ async function callApi(name, payload = {}) {
 }
 
 export function createDineInBooking(input) {
-  return callApi("createDineInBooking", {
+  return callBookingApi("createDineInBooking", {
     ...input,
-    idempotencyKey:
-      input.idempotencyKey || `booking_${crypto.randomUUID()}`,
+    idempotencyKey: input.idempotencyKey || `booking_${crypto.randomUUID()}`,
   });
 }
 
 export const listMyDineInBookings = (data) =>
-  callApi("listMyDineInBookings", data);
+  callBookingApi("listMyDineInBookings", data);
 export const getDineInBooking = (bookingId) =>
-  callApi("getDineInBooking", { bookingId });
+  callBookingApi("getDineInBooking", { bookingId });
 export const updateDineInBooking = (data) =>
-  callApi("updateDineInBooking", data);
+  callBookingApi("updateDineInBooking", data);
 export const cancelDineInBooking = (bookingId, reason) =>
-  callApi("cancelDineInBooking", { bookingId, reason });
+  callBookingApi("cancelDineInBooking", { bookingId, reason });
 ```
 
-Suggested screens:
+### HTTP (curl)
 
-1. Restaurant list → pick shop (`ownerId`)
-2. Form: name, phone, adults, children, date/time, notes
-3. Submit `createDineInBooking` once; keep the idempotency key until success
-4. “My reservations” → `listMyDineInBookings`
-5. Detail → `getDineInBooking` + Cancel / Edit (edit only if Pending)
+```bash
+TOKEN="<firebase-id-token>"
+BASE="https://asia-southeast1-gothai-ffea1.cloudfunctions.net"
+
+curl -sS -X POST "$BASE/createDineInBooking" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Firebase-AppCheck: $APPCHECK" \
+  -d '{
+    "data": {
+      "ownerId": "abcRestaurantOwnerUid",
+      "customerName": "Riya",
+      "phoneNumber": "0812345678",
+      "adults": 2,
+      "children": 1,
+      "scheduledAt": "2026-09-01T12:30:00.000Z",
+      "notes": "Window seat",
+      "idempotencyKey": "booking_3f1c9a2e"
+    }
+  }'
+```
+
+```bash
+curl -sS -X POST "$BASE/listMyDineInBookings" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{ "data": { "limit": 30 } }'
+```
 
 ### Flutter
 
 ```dart
 final functions = FirebaseFunctions.instanceFor(region: 'asia-southeast1');
 
-Future<Map<String, dynamic>> callApi(
+Future<Map<String, dynamic>> callBookingApi(
   String name, [
   Map<String, dynamic> payload = const {},
 ]) async {
@@ -405,8 +554,7 @@ Future<Map<String, dynamic>> callApi(
   return Map<String, dynamic>.from(body['data'] as Map);
 }
 
-// create
-await callApi('createDineInBooking', {
+await callBookingApi('createDineInBooking', {
   'ownerId': ownerId,
   'customerName': name,
   'phoneNumber': phone,
@@ -418,32 +566,38 @@ await callApi('createDineInBooking', {
 });
 ```
 
+### Suggested screens
+
+1. Restaurant list → pick shop (`ownerId`)
+2. Form: name, phone, adults, children, date/time, notes
+3. Submit `createDineInBooking` once; keep the idempotency key until success
+4. “My reservations” → `listMyDineInBookings`
+5. Detail → `getDineInBooking` + Cancel / Edit (edit only if Pending)
+
 ---
 
-## 8. Screen checklist
+## 9. Integration checklist
 
 - [ ] User is signed in before any booking call
-- [ ] Functions client uses region `asia-southeast1`
+- [ ] Functions client uses region `asia-southeast1` (or the HTTP base URL above)
 - [ ] App Check is wired in release builds
-- [ ] Restaurant picker uses `restaurants` where `status == "Verified"`, open, dine-in capable
-- [ ] Create sends `ownerId` (document id), not a random public slug unless you resolved `restaurantId`
+- [ ] Restaurant picker: `restaurants` where `status == "Verified"`, open, dine-in capable
+- [ ] Create sends `ownerId` (document id)
 - [ ] Date picker enforces +15 minutes and ≤ 90 days
 - [ ] One tap → one `idempotencyKey`; retries reuse it
-- [ ] Read `result.data.data` (the `{ ok, data }` envelope)
-- [ ] Map `Canceled` to “Rejected” / “Canceled” in UI from `canceledBy`
+- [ ] Read the inner `{ ok, data }` envelope (`result.data.data` in JS)
+- [ ] Map `Canceled` using `canceledBy` (customer vs restaurant)
 - [ ] Edit only when `status === "Pending"`
 - [ ] Cancel allowed for Pending and Accepted
-- [ ] After create, restaurant panel “Table Reservations” shows the row as Pending
-- [ ] After restaurant Accept, app list/detail shows Accepted (refresh or snapshot)
+- [ ] After create, partner **Table Reservations** shows Pending
+- [ ] After restaurant Accept, app list/detail shows Accepted
 - [ ] Do **not** `setDoc` / `updateDoc` on `dineInBookings`
 - [ ] Do **not** call `setDineInBookingStatus` from the customer app
 - [ ] Do **not** use hotel / car / van / travel booking collections
 
 ---
 
-## 9. Deploy dependency
-
-These functions must be deployed before the app can call them:
+## 10. Deploy
 
 ```bash
 firebase deploy --only functions:food-portal
@@ -451,4 +605,4 @@ firebase deploy --only functions:food-portal
 
 Source: `functions/src/lib/bookings.js` (wired in `functions/src/index.js`).
 
-Admin portal wrappers (for reference only): `src/api/index.js`.
+Admin panel wrappers (reference only): `src/api/index.js`.

@@ -125,7 +125,7 @@ Enterprise site key before deploying.
 
 | Doc | What it covers |
 |-----|----------------|
-| [`APP_BOOKING_API.md`](APP_BOOKING_API.md) | **Customer app** dine-in booking callables — implement create / list / get / update / cancel |
+| [`APP_BOOKING_API.md`](APP_BOOKING_API.md) | **Customer app** dine-in booking integration — HTTP + callable endpoints, payloads, errors |
 | [`HOW_BOTH_PANELS_WORK.md`](HOW_BOTH_PANELS_WORK.md) | Master vs restaurant partner panels |
 | [`DEPLOY_SECURITY.md`](DEPLOY_SECURITY.md) | Deploy order, App Check, full callable list |
 | [`FIRESTORE_RULES_NOTES.md`](FIRESTORE_RULES_NOTES.md) | Shared multi-app rules — what this repo may change |
