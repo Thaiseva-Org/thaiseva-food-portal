@@ -9,6 +9,12 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
+import {
+  PLATFORM_OWNER_ID,
+  isPlatformOwnerId,
+} from "../utils/platformRestaurant";
+
+const ORDERS_PAGE_SIZE = 10;
 
 export function mapOrderDoc(snap) {
   const orderData = snap.data() || {};
@@ -27,6 +33,9 @@ export function mapOrderDoc(snap) {
     restaurantName: orderData?.Restaurant?.name || "N/A",
     RestaurantId: orderData?.RestaurantId || orderData?.Restaurant?.id || "N/A",
     ownerId: orderData?.Restaurant?.ownerId || "",
+    DeliveryPartner: orderData.DeliveryPartner || null,
+    assignedRiderId:
+      orderData.assignedRiderId || orderData.DeliveryPartner?.id || "",
     comission: orderData?.comission ?? null,
     accounting: orderData?.accounting || null,
     isPaymentClear: orderData?.isPaymentClear === true,
@@ -118,10 +127,54 @@ const fetchOrdersTotalPages = async (
   startDate,
   endDate
 ) => {
+  if (!restaurantId) {
+    const [allSnap, kitchenSnap] = await Promise.all([
+      getCountFromServer(buildOrdersQuery(null, startDate, endDate)),
+      getCountFromServer(
+        buildOrdersQuery(PLATFORM_OWNER_ID, startDate, endDate)
+      ),
+    ]);
+    const count = Math.max(
+      0,
+      allSnap.data().count - kitchenSnap.data().count
+    );
+    setTotalPages(Math.ceil(count / ORDERS_PAGE_SIZE));
+    return;
+  }
   const q = buildOrdersQuery(restaurantId, startDate, endDate);
   const pages = await getCountFromServer(q);
-  setTotalPages(Math.ceil(pages.data().count / 10));
+  setTotalPages(Math.ceil(pages.data().count / ORDERS_PAGE_SIZE));
 };
+
+async function fetchPartnerOrdersPage(
+  startDate,
+  endDate,
+  page,
+  lastDocs,
+  pageSize = ORDERS_PAGE_SIZE
+) {
+  const collected = [];
+  let cursor = page > 0 ? lastDocs[page - 1] : null;
+  let lastIncluded = cursor;
+  for (let i = 0; i < 25 && collected.length < pageSize; i += 1) {
+    const q = buildOrdersQuery(null, startDate, endDate, {
+      page: cursor ? 1 : 0,
+      lastDocs: cursor ? [cursor] : [],
+      pageSize: pageSize * 3,
+    });
+    const snap = await getDocs(q);
+    if (snap.empty) break;
+    for (const docSnap of snap.docs) {
+      if (isPlatformOwnerId(docSnap.data()?.Restaurant?.ownerId)) continue;
+      collected.push(mapOrderDoc(docSnap));
+      lastIncluded = docSnap;
+      if (collected.length >= pageSize) break;
+    }
+    cursor = snap.docs[snap.docs.length - 1];
+    if (snap.docs.length < pageSize * 3) break;
+  }
+  return { list: collected.slice(0, pageSize), lastDoc: lastIncluded || null };
+}
 
 async function fetchRecentPartnerOrders(restaurantId, max = 8) {
   if (!restaurantId) return [];
@@ -143,12 +196,28 @@ const fetchOrders = async (
 ) => {
   setLoading(true);
 
-  const q = buildOrdersQuery(restaurantId, startDate, endDate, {
-    page,
-    lastDocs,
-    pageSize: 10,
-  });
   try {
+    if (!restaurantId) {
+      const { list, lastDoc } = await fetchPartnerOrdersPage(
+        startDate,
+        endDate,
+        page,
+        lastDocs,
+        ORDERS_PAGE_SIZE
+      );
+      setLastDocs((prev) => {
+        const updated = [...prev];
+        updated[page] = lastDoc;
+        return updated;
+      });
+      setOrderDetails(list);
+      return list;
+    }
+    const q = buildOrdersQuery(restaurantId, startDate, endDate, {
+      page,
+      lastDocs,
+      pageSize: ORDERS_PAGE_SIZE,
+    });
     const result = await getDocs(q);
     const list = result.docs.map((doc) => mapOrderDoc(doc));
     const lastDoc =

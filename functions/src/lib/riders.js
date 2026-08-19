@@ -82,13 +82,13 @@ function requireRiderId(riderId) {
   if (riderId == null || String(riderId).trim() === "") {
     throw new HttpsError(
       "invalid-argument",
-      "Choose a rider before confirming delivery."
+      "Choose a rider."
     );
   }
   return normalizeRiderId(riderId);
 }
 
-async function loadActiveRiderSnapshot(tx, db, riderId) {
+async function loadRiderSnapshot(tx, db, riderId, { requireActive = true } = {}) {
   const id = requireRiderId(riderId);
   const ref = db.collection("foodRiders").doc(id);
   const snap = await tx.get(ref);
@@ -96,13 +96,26 @@ async function loadActiveRiderSnapshot(tx, db, riderId) {
     throw new HttpsError("failed-precondition", "That rider no longer exists.");
   }
   const data = snap.data() || {};
-  if (data.active === false) {
+  if (requireActive && data.active === false) {
     throw new HttpsError(
       "failed-precondition",
       "That rider is inactive. Choose an active rider."
     );
   }
   return riderSnapshot(id, data);
+}
+
+async function loadActiveRiderSnapshot(tx, db, riderId) {
+  return loadRiderSnapshot(tx, db, riderId, { requireActive: true });
+}
+
+function validateIdempotencyKey(value) {
+  if (value == null || value === "") return null;
+  const key = String(value);
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(key)) {
+    throw new HttpsError("invalid-argument", "Invalid idempotency key.");
+  }
+  return key;
 }
 
 async function createFoodRider(caller, payload) {
@@ -120,18 +133,67 @@ async function createFoodRider(caller, payload) {
     createdBy: caller.uid,
     updatedBy: caller.uid,
   };
-  const id = generateRiderId();
+  const safeKey = validateIdempotencyKey(payload?.idempotencyKey);
   const db = getFirestore();
-  await db.collection("foodRiders").doc(id).set(rider);
+  const result = await db.runTransaction(async (tx) => {
+    if (safeKey) {
+      const idemRef = db
+        .collection("functionIdempotency")
+        .doc(`${caller.uid}_createFoodRider_${safeKey}`);
+      const idemSnap = await tx.get(idemRef);
+      if (idemSnap.exists) {
+        return {
+          alreadyApplied: true,
+          riderId: idemSnap.data()?.riderId || "",
+        };
+      }
+    }
+    const dupSnap = await tx.get(
+      db.collection("foodRiders").where("phone", "==", rider.phone).limit(1)
+    );
+    if (!dupSnap.empty) {
+      throw new HttpsError(
+        "already-exists",
+        "A rider with this phone already exists."
+      );
+    }
+    const id = generateRiderId();
+    tx.set(db.collection("foodRiders").doc(id), rider);
+    if (safeKey) {
+      tx.set(
+        db.collection("functionIdempotency").doc(`${caller.uid}_createFoodRider_${safeKey}`),
+        {
+          uid: caller.uid,
+          action: "createFoodRider",
+          riderId: id,
+          createdAt: FieldValue.serverTimestamp(),
+        }
+      );
+    }
+    return { alreadyApplied: false, riderId: id };
+  });
+
+  if (result.alreadyApplied && result.riderId) {
+    const prior = await db.collection("foodRiders").doc(result.riderId).get();
+    if (prior.exists) {
+      return {
+        alreadyApplied: true,
+        riderId: prior.id,
+        ...riderSnapshot(prior.id, prior.data()),
+        active: prior.data()?.active !== false,
+      };
+    }
+  }
+
   await writeAuditLog({
     actorUid: caller.uid,
     actorRole: caller.role,
     action: "rider.create",
     targetType: "foodRider",
-    targetId: id,
+    targetId: result.riderId,
     after: { name: rider.name, phone: rider.phone, vehicleType: rider.vehicleType },
   });
-  return { riderId: id, ...riderSnapshot(id, rider) };
+  return { riderId: result.riderId, ...riderSnapshot(result.riderId, rider) };
 }
 
 async function updateFoodRider(caller, payload) {
@@ -155,6 +217,17 @@ async function updateFoodRider(caller, payload) {
   const snap = await ref.get();
   if (!snap.exists) {
     throw new HttpsError("not-found", "Rider not found.");
+  }
+  const dupSnap = await db
+    .collection("foodRiders")
+    .where("phone", "==", updates.phone)
+    .limit(5)
+    .get();
+  if (dupSnap.docs.some((docSnap) => docSnap.id !== id)) {
+    throw new HttpsError(
+      "already-exists",
+      "A rider with this phone already exists."
+    );
   }
   await ref.update(updates);
   const next = { ...(snap.data() || {}), ...updates };
@@ -210,6 +283,7 @@ module.exports = {
   cleanVehicleType,
   cleanVehicleNumber,
   riderSnapshot,
+  loadRiderSnapshot,
   loadActiveRiderSnapshot,
   createFoodRider,
   updateFoodRider,

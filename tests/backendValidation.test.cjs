@@ -3,13 +3,23 @@ const assert = require("node:assert/strict");
 
 const {
   nextAllowedStatuses,
+  assignedRiderIdFromOrder,
+  storedRiderSnapshot,
+  canMarkOutForDelivery,
+  deliveryRiderFields,
+  normalizeStoredStatus,
+  resolveCommissionPct,
   normalizeQuantity,
   validateIdempotencyKey,
+  ORDER_FLOW,
 } = require("../functions/src/lib/orders");
+const { isApplicationStoragePath } = require("../functions/src/lib/applications");
 const {
   requireRiderId,
   cleanRiderPhone,
   cleanVehicleType,
+  VEHICLE_TYPES,
+  riderSnapshot,
 } = require("../functions/src/lib/riders");
 const {
   normalizeItemId,
@@ -34,8 +44,95 @@ const {
 } = require("../functions/src/lib/bookings");
 
 test("order workflow cannot skip or move backwards", () => {
+  assert.deepEqual(nextAllowedStatuses("New Order"), ["Order Confirm", "Cancelled"]);
+  assert.deepEqual(nextAllowedStatuses("Order Confirm"), ["Preparing", "Cancelled"]);
   assert.deepEqual(nextAllowedStatuses("Preparing"), ["Ready for pickup", "Cancelled"]);
+  assert.deepEqual(nextAllowedStatuses("Ready for pickup"), [
+    "Out for Delivery",
+    "Cancelled",
+  ]);
+  assert.deepEqual(nextAllowedStatuses("Out for Delivery"), ["Delivered"]);
   assert.deepEqual(nextAllowedStatuses("Delivered"), []);
+  assert.deepEqual(nextAllowedStatuses("Cancelled"), []);
+  assert.deepEqual(nextAllowedStatuses("bogus-status"), ["Cancelled"]);
+  assert.equal(normalizeStoredStatus("confirmed"), "Order Confirm");
+  assert.equal(normalizeStoredStatus("Ready for pickup"), "Ready for pickup");
+  assert.deepEqual(ORDER_FLOW, [
+    "New Order",
+    "Order Confirm",
+    "Preparing",
+    "Ready for pickup",
+    "Out for Delivery",
+    "Delivered",
+  ]);
+});
+
+test("assigned rider is read from assignment fields", () => {
+  assert.equal(assignedRiderIdFromOrder({ assignedRiderId: "rider_1" }), "rider_1");
+  assert.equal(
+    assignedRiderIdFromOrder({ DeliveryPartner: { id: "rider_2" } }),
+    "rider_2"
+  );
+  assert.equal(assignedRiderIdFromOrder({}), null);
+  assert.equal(assignedRiderIdFromOrder({ DeliveryPartner: "N/A" }), null);
+});
+
+test("out for delivery requires an assigned rider id", () => {
+  assert.equal(canMarkOutForDelivery({}), false);
+  assert.equal(canMarkOutForDelivery({ assignedRiderId: "rider_1" }), true);
+  assert.equal(
+    canMarkOutForDelivery({ DeliveryPartner: { id: "rider_2" } }),
+    true
+  );
+});
+
+test("delivery commission prefers the rate stamped on the order", () => {
+  assert.equal(
+    resolveCommissionPct({ comission: 10 }, { comission: 20 }),
+    10
+  );
+  assert.equal(resolveCommissionPct({}, { comission: 15 }), 15);
+  assert.throws(() => resolveCommissionPct({}, { comission: 200 }));
+});
+
+test("application files stay on the private applications path", () => {
+  assert.equal(
+    isApplicationStoragePath("applications/aabbccddeeff001122334455/image_1_cover.jpg"),
+    true
+  );
+  assert.equal(
+    isApplicationStoragePath("https://storage.googleapis.com/bucket/applications/x"),
+    false
+  );
+});
+
+test("delivery stamps assignedRiderId to the same rider that delivered", () => {
+  const rider = {
+    id: "rider_1",
+    name: "Ann",
+    phone: "0811112222",
+    vehicleType: "Scooter",
+    vehicleNumber: "AB-1",
+  };
+  assert.deepEqual(deliveryRiderFields(rider), {
+    DeliveryPartner: rider,
+    deliveredByRiderId: "rider_1",
+    assignedRiderId: "rider_1",
+  });
+  assert.deepEqual(
+    storedRiderSnapshot({
+      assignedRiderId: "rider_1",
+      DeliveryPartner: rider,
+    }),
+    rider
+  );
+  assert.equal(
+    storedRiderSnapshot({
+      assignedRiderId: "rider_1",
+      DeliveryPartner: { ...rider, id: "rider_other" },
+    }),
+    null
+  );
 });
 
 test("confirm delivery requires a valid rider id", () => {
@@ -43,8 +140,25 @@ test("confirm delivery requires a valid rider id", () => {
   assert.throws(() => requireRiderId("../other"), /Invalid riderId/);
   assert.equal(requireRiderId("rider_abc-1"), "rider_abc-1");
   assert.equal(cleanRiderPhone("08 123 4567"), "081234567");
-  assert.equal(cleanVehicleType("Motorcycle"), "Motorcycle");
+  for (const type of VEHICLE_TYPES) {
+    assert.equal(cleanVehicleType(type), type);
+  }
   assert.throws(() => cleanVehicleType("Truck"));
+  assert.deepEqual(
+    riderSnapshot("rider_1", {
+      name: "Ann",
+      phone: "0811112222",
+      vehicleType: "Scooter",
+      vehicleNumber: "AB-1",
+    }),
+    {
+      id: "rider_1",
+      name: "Ann",
+      phone: "0811112222",
+      vehicleType: "Scooter",
+      vehicleNumber: "AB-1",
+    }
+  );
 });
 
 test("order quantities and idempotency keys are bounded", () => {
@@ -75,6 +189,9 @@ test("booking transitions and notifications are explicit", () => {
   assert.deepEqual(BOOKING_TRANSITIONS.Accepted, ["Canceled"]);
   assert.match(notificationForBooking("Accepted", "Riya").desc, /Riya/);
   assert.equal(notificationForBooking("Canceled", "Riya").type, "canceled");
+  assert.equal(restaurantAcceptsDineIn({ serviceType: "Both" }), true);
+  assert.equal(restaurantAcceptsDineIn({ serviceType: "Dine-in" }), true);
+  assert.equal(restaurantAcceptsDineIn({ serviceType: "Delivery" }), false);
 });
 
 test("app booking payload validation rejects unsafe party and contact data", () => {

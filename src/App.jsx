@@ -24,11 +24,11 @@ import {
   MonitorOrderView,
   RestRequests,
   Riders,
+  RiderOverview,
   TableBookings,
   TodayOrders,
 } from "./masterAdmin/pages";
 import OurKitchenLayout from "./masterAdmin/pages/platform/OurKitchenLayout";
-import OurKitchenHome from "./masterAdmin/pages/platform/OurKitchenHome";
 import OurKitchenOrders from "./masterAdmin/pages/platform/OurKitchenOrders";
 import OurOrdersLayout from "./masterAdmin/pages/platform/OurOrdersLayout";
 import {
@@ -243,9 +243,24 @@ const App = () => {
                     <Route path="bookings-record" element={<TodayOrders />} />
                     <Route path="ordersDetails" element={<OrdersDetails />} />
                     <Route path="ourKitchen" element={<OurKitchenLayout />}>
-                      <Route index element={<OurKitchenHome />} />
-                      <Route path="menu" element={<FoodItem />} />
-                      <Route path="menu/addItem" element={<AddItem />} />
+                      <Route index element={<FoodItem />} />
+                      <Route path="addItem" element={<AddItem />} />
+                      <Route
+                        path="edit/:itemId"
+                        element={<EditFoodItem />}
+                      />
+                      <Route
+                        path="menu"
+                        element={
+                          <Navigate to="/foodAdmin/ourKitchen" replace />
+                        }
+                      />
+                      <Route
+                        path="menu/addItem"
+                        element={
+                          <Navigate to="/foodAdmin/ourKitchen/addItem" replace />
+                        }
+                      />
                       <Route
                         path="menu/edit/:itemId"
                         element={<EditFoodItem />}
@@ -262,6 +277,14 @@ const App = () => {
                       <Route path=":orderId" element={<OrderView />} />
                     </Route>
                     <Route path="riders" element={<Riders />} />
+                    <Route
+                      path="riders/overview"
+                      element={<RiderOverview />}
+                    />
+                    <Route
+                      path="riders/:riderId"
+                      element={<RiderOverview />}
+                    />
                     <Route
                       path="tableReservation"
                       element={<TableBookings />}

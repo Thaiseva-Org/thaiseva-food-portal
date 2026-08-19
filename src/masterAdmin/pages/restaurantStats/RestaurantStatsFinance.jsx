@@ -6,6 +6,7 @@ import { Link } from "react-router";
 import { db } from "../../../../firebaseConfig";
 import DateRangeFilter from "../../../components/DateRangeFilter";
 import DataBoxes from "../../../components/DataBoxes";
+import { StatGrid } from "../../../components/dashboard";
 import Loading from "../../../components/Loading";
 import {
   fetchReservationCount,
@@ -585,7 +586,7 @@ const RestaurantStatsFinance = () => {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <StatGrid columns={6}>
             <DataBoxes
               data={orders.length}
               title="Orders"
@@ -622,7 +623,7 @@ const RestaurantStatsFinance = () => {
               icon="bi-wallet2"
               color="green"
             />
-          </div>
+          </StatGrid>
 
           <div className="panel">
             <div className="flex flex-wrap items-center justify-between gap-3">

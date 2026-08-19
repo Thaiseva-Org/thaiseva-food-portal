@@ -2,8 +2,13 @@ import { Pagination } from "@mui/material";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { markOrderDelivered, transitionOrderStatus } from "../../../api";
+import {
+  assignOrderRider,
+  markOrderDelivered,
+  transitionOrderStatus,
+} from "../../../api";
 import DataBoxes from "../../../components/DataBoxes";
+import { StatGrid } from "../../../components/dashboard";
 import DateRangeFilter from "../../../components/DateRangeFilter";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
@@ -27,6 +32,7 @@ import {
   PLATFORM_OWNER_ID,
   isPlatformOrder,
 } from "../../../utils/platformRestaurant";
+import { hasAssignedRider, riderLabel } from "../../../utils/orderRider";
 
 const nextStatusFor = (status) => {
   if (status === ORDER_STATUS.NEW) return ORDER_STATUS.CONFIRM;
@@ -37,20 +43,13 @@ const nextStatusFor = (status) => {
   return null;
 };
 
-const nextActionLabel = (status) => {
+const nextActionLabel = (status, assigned) => {
   if (status === ORDER_STATUS.NEW) return "Confirm";
   if (status === ORDER_STATUS.CONFIRM) return "Prepare";
   if (status === ORDER_STATUS.PREPARING) return "Ready";
-  if (status === ORDER_STATUS.READY) return "Out";
+  if (status === ORDER_STATUS.READY) return assigned ? "Out" : "Assign";
   if (status === ORDER_STATUS.OUT) return "Delivered";
   return null;
-};
-
-const riderLabel = (rider) => {
-  if (!rider) return "";
-  return [rider.name, rider.phone, rider.vehicleType, rider.vehicleNumber]
-    .filter(Boolean)
-    .join(" · ");
 };
 
 const matchesSearch = (item, query) => {
@@ -187,20 +186,21 @@ const OurKitchenOrders = () => {
   const pageError = actionError || error || (isRealTime ? ordersError : null);
   const pageLoading = loading || (isRealTime && ordersLoading);
 
-  const handleAdvance = async (orderId, status) => {
+  const handleAdvance = async (orderId, status, assigned) => {
     const next = nextStatusFor(status);
     if (!next || busyId) return;
     setActionError(null);
-    if (next === ORDER_STATUS.DELIVERED && !selectedRiderId) {
-      setActionError(
-        "Choose the rider who delivered this order, then press Delivered."
-      );
+    const needsAssign = status === ORDER_STATUS.READY && !assigned;
+    if (needsAssign && !selectedRiderId) {
+      setActionError("Choose a rider, then press Assign.");
       return;
     }
     setBusyId(orderId);
     try {
-      if (next === ORDER_STATUS.DELIVERED) {
-        await markOrderDelivered({ orderId, riderId: selectedRiderId });
+      if (needsAssign) {
+        await assignOrderRider({ orderId, riderId: selectedRiderId });
+      } else if (next === ORDER_STATUS.DELIVERED) {
+        await markOrderDelivered({ orderId });
       } else {
         await transitionOrderStatus({ orderId, toStatus: next });
       }
@@ -242,20 +242,19 @@ const OurKitchenOrders = () => {
         )}
       </div>
       <p className="page-subtext mt-1">
-        Tickets for the ThaiSeva kitchen only. Confirm, cook, and mark
-        delivered here — partner shop orders stay under Orders.
+        Tickets from the ThaiSeva kitchen menu only. Confirm, cook, assign a
+        rider when ready, then mark delivered. Partner shop orders stay
+        under Orders.
       </p>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <StatGrid>
         {ORDER_STATUS_SUMMARY.map((card) => {
           const active = summaryCardActive(statusFilter, card.value);
           return (
             <button
               key={card.value}
               type="button"
-              className={`rounded-2xl text-left focus-ring ${
-                active ? `ring-2 ${card.ring}` : ""
-              }`}
+              className="rounded-2xl text-left focus-ring h-full"
               onClick={() => setStatusFilter(card.value)}
             >
               <DataBoxes
@@ -263,11 +262,12 @@ const OurKitchenOrders = () => {
                 title={card.label}
                 icon={card.icon}
                 color={card.color}
+                selected={active}
               />
             </button>
           );
         })}
-      </div>
+      </StatGrid>
 
       <div className="mt-4">
         <DateRangeFilter
@@ -301,11 +301,11 @@ const OurKitchenOrders = () => {
             orders
           </p>
         </div>
-        {stats.out > 0 && (
+        {(stats.ready > 0 || stats.out > 0) && (
           <div className="mt-3 flex flex-col gap-2 border-t border-neutral-100 pt-3 sm:flex-row sm:items-end">
             <label className="block min-w-0 flex-1 sm:max-w-sm">
               <span className="mb-1 block text-xs font-semibold text-ink">
-                Rider for Delivered
+                Rider for ready orders
               </span>
               <select
                 className="modern-select"
@@ -381,12 +381,16 @@ const OurKitchenOrders = () => {
                   <th className="px-4 py-3.5">Location</th>
                   <th className="px-4 py-3.5">Amount</th>
                   <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Rider</th>
                   <th className="px-4 py-3.5 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {filteredRows.map((item) => {
-                  const nextLabel = nextActionLabel(item.Status);
+                  const assigned = hasAssignedRider(item);
+                  const nextLabel = nextActionLabel(item.Status, assigned);
+                  const needsAssign =
+                    item.Status === ORDER_STATUS.READY && !assigned;
                   return (
                     <tr
                       key={item.OrderID}
@@ -405,6 +409,9 @@ const OurKitchenOrders = () => {
                       <td className="px-4 py-4">
                         <StatusBadge status={item.Status} />
                       </td>
+                      <td className="px-4 py-4 text-sm text-ink-muted">
+                        {riderLabel(item.DeliveryPartner) || "—"}
+                      </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center justify-center gap-2">
                           {nextLabel && (
@@ -413,11 +420,14 @@ const OurKitchenOrders = () => {
                               className="btn-primary whitespace-nowrap px-3 py-1.5"
                               disabled={
                                 busyId === item.OrderID ||
-                                (item.Status === ORDER_STATUS.OUT &&
-                                  !selectedRiderId)
+                                (needsAssign && !selectedRiderId)
                               }
                               onClick={() =>
-                                handleAdvance(item.OrderID, item.Status)
+                                handleAdvance(
+                                  item.OrderID,
+                                  item.Status,
+                                  assigned
+                                )
                               }
                             >
                               {busyId === item.OrderID ? "…" : nextLabel}

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
 import DataBoxes from "../../components/DataBoxes";
+import { StatGrid } from "../../components/dashboard";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
@@ -53,7 +54,6 @@ const OrdersDetails = () => {
   const [refetch, setRefetch] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("all");
 
   useEffect(() => {
     document.title = "Thaiseva | Orders";
@@ -98,7 +98,13 @@ const OrdersDetails = () => {
     setPage(newPage);
   };
 
-  const sourceRows = isRealTime ? orders : orderDetailsRecord;
+  const sourceRows = useMemo(
+    () =>
+      (isRealTime ? orders : orderDetailsRecord || []).filter(
+        (item) => !isPlatformOrder(item)
+      ),
+    [isRealTime, orders, orderDetailsRecord]
+  );
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   const stats = useMemo(
@@ -107,26 +113,16 @@ const OrdersDetails = () => {
   );
 
   const filteredRows = useMemo(() => {
-    const matched = (sourceRows || []).filter((item) => {
-      if (
-        sourceFilter === "platform" &&
-        !isPlatformOrder(item)
-      ) {
-        return false;
-      }
-      if (sourceFilter === "partners" && isPlatformOrder(item)) {
-        return false;
-      }
-      return (
+    const matched = (sourceRows || []).filter(
+      (item) =>
         orderMatchesStatusFilter(item.Status, statusFilter) &&
         matchesSearch(item, normalizedQuery)
-      );
-    });
+    );
     if (statusFilter === "all" || statusFilter === "active") {
       return sortOrdersByStatus(matched);
     }
     return matched;
-  }, [sourceRows, statusFilter, normalizedQuery, sourceFilter]);
+  }, [sourceRows, statusFilter, normalizedQuery]);
 
   const pageError = error || (isRealTime ? ordersError : null);
   const pageLoading = loading || (isRealTime && ordersLoading);
@@ -153,43 +149,20 @@ const OrdersDetails = () => {
             )}
           </div>
           <p className="page-subtext mt-1">
-            Partner tickets and ThaiSeva kitchen tickets. Kitchen tickets have
-            their own status page under Our orders.
+            Partner restaurant tickets only. ThaiSeva kitchen menu orders stay
+            on Our orders.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { value: "all", label: "All sources" },
-              { value: "partners", label: "Partner restaurants" },
-              { value: "platform", label: "ThaiSeva kitchen" },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                  sourceFilter === opt.value
-                    ? "border-brand-500 bg-brand-500 text-white"
-                    : "border-neutral-200 bg-white text-ink"
-                }`}
-                onClick={() => setSourceFilter(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* Summary groups — click to filter */}
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <StatGrid>
         {ORDER_STATUS_SUMMARY.map((card) => {
           const active = summaryCardActive(statusFilter, card.value);
           return (
             <button
               key={card.value}
               type="button"
-              className={`text-left rounded-2xl focus-ring ${
-                active ? `ring-2 ${card.ring}` : ""
-              }`}
+              className="text-left rounded-2xl focus-ring h-full"
               onClick={() => setStatusFilter(card.value)}
               aria-pressed={active}
             >
@@ -198,11 +171,12 @@ const OrdersDetails = () => {
                 title={card.label}
                 icon={card.icon}
                 color={card.color}
+                selected={active}
               />
             </button>
           );
         })}
-      </div>
+      </StatGrid>
 
       {/* Date range */}
       <div className="mt-4">

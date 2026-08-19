@@ -156,7 +156,7 @@ const AddItem = () => {
       });
 
       setFormSuccess(
-        "Item saved. It starts inactive — activate it from Menu when ready."
+        "Item saved. It is live on the menu."
       );
       setTimeout(() => navigate(kitchen.listPath || partnerPath("foodItem")), 900);
     } catch (error) {

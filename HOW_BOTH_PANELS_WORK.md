@@ -89,10 +89,14 @@ This is the **control room for the whole platform**. Sidebar:
 1. Dashboard
 2. Restaurant Requests
 3. Restaurant Monitor
-4. Records
-5. Log Out
+4. Our kitchen
+5. Our orders
+6. Orders (partner shops only)
+7. Riders
+8. Records
+9. Log Out
 
-There are also extra pages reached from inside other pages (not all of them sit in the sidebar).
+Categories and the global restaurant list are still in the app; they are opened from other screens, not the main sidebar.
 
 ### 3.1 Dashboard — `/foodAdmin`
 
@@ -107,7 +111,7 @@ There are also extra pages reached from inside other pages (not all of them sit 
 
 **What happens**
 
-Nothing is edited here. It is a live overview so staff can see if the network is healthy.
+Nothing is edited here. It is a live overview so staff can see if the network is healthy. KPI cards on this page match the stats row on Orders, Menu, Reservations, Finance, and Rider overview.
 
 The top bar also has **notifications** and a small profile chip.
 
@@ -143,28 +147,16 @@ This is the **per-restaurant workspace** for staff.
 
 First you see a list of **Active** or **Inactive** restaurants. You can search by name, ID, or address.
 
-Click a restaurant. You enter a shell with five tabs:
+Click a restaurant. You enter a shell with four tabs:
 
-#### Overview
-
-Numbers for that one shop in a date range:
-
-- Orders scanned / delivered
-- Sales (GMV)
-- Platform commission
-- Restaurant payout
-- Average order value
-- Menu size (available vs hidden)
-- Reservation count
-- Charts and commission split
-
-#### Manage
+#### Information
 
 Staff can edit the restaurant the way the owner would:
 
 - Name, phone, email, food type, address, description, photo
 - Turn the shop **open / closed** (active)
 - Look at the menu
+- Update commission
 
 Save writes the profile. Open/closed is what customers see when they try to order.
 
@@ -182,7 +174,7 @@ Statuses you will see:
 6. Delivered
 7. Cancelled
 
-Staff can open an order to inspect it. This is **monitoring**. Day-to-day status changes are done by the restaurant in the partner panel.
+Staff can open an order to inspect it. Day-to-day kitchen steps are done by the restaurant. When an order is **Ready for pickup**, Master Admin assigns a rider on this ticket (or on All Orders / Our Orders). The kitchen can then mark it out for delivery.
 
 #### Reservations
 
@@ -201,7 +193,7 @@ For each order you can see:
 
 You can download a **customer invoice** or a **partner invoice** as PDF.
 
-Staff can also change the restaurant’s commission later. **Old settled orders keep the old rate. New orders use the new rate.**
+Staff can also change the restaurant’s commission later. **Delivered orders keep the rate stamped on the ticket.** If a ticket already has a rate from an earlier kitchen step, delivery uses that rate. If it has none yet, delivery uses the restaurant’s current rate and stamps it.
 
 ### 3.4 Records — `/foodAdmin/bookings-record`
 
@@ -224,13 +216,24 @@ These still exist in the app even if they are not the main sidebar items:
 | --- | --- |
 | **Categories** `/foodAdmin/categories` | Add or delete food categories used on every restaurant menu (Thai, Indian, Cafe, …). |
 | **All restaurants** `/foodAdmin/restaDetails` | Browse every restaurant and open a profile or edit it. |
-| **All orders** `/foodAdmin/ordersDetails` | Search any order on the platform and open the full ticket. |
 | **All table reservations** `/foodAdmin/tableReservation` | See bookings from every restaurant in one list. |
 
-### 3.6 What Master Admin does **not** do
+**Our kitchen** (`/foodAdmin/ourKitchen`) is the ThaiSeva in-house menu. **Our orders** is only tickets from that menu. **Orders** is partner-shop tickets only. History paging on Orders skips kitchen tickets so page counts stay correct.
 
-- Does not cook food or run one kitchen as the owner.
-- Does not add menu items for a restaurant in the partner menu UI (they can view items from Monitor / request detail).
+**Riders** (`/foodAdmin/riders`) is the courier directory. **Overview** (`/foodAdmin/riders/overview`) lists completed and active jobs, drop-off addresses, and a CSV export. One rider: `/foodAdmin/riders/:riderId`. Phone numbers must be unique. Assigning a rider notifies the kitchen and the master inbox. Confirming delivered uses the rider already on that ticket.
+
+### 3.6 Our kitchen and Our orders
+
+**Our kitchen** is ThaiSeva’s own menu (`thaiseva-platform`). Master adds and hides dishes here.
+
+**Our orders** is only tickets from that menu. Master confirms, cooks, assigns a rider when ready, then marks delivered.
+
+Partner shop tickets stay on **Orders**.
+
+### 3.7 What Master Admin does **not** do
+
+- Does not cook a *partner* restaurant’s food (the owner runs that kitchen).
+- Does not add menu items in the partner menu UI (they can view items from Monitor / request detail).
 - Cannot be reached by a restaurant owner even if they guess `/foodAdmin`.
 
 ---
@@ -299,9 +302,7 @@ Categories on the form come from Master Admin’s category list.
 
 This is the **kitchen board**.
 
-By default it is **Live · last 24 hours**. New customer orders appear without refresh.
-
-You can also switch to **History** and pick a date range.
+Open **Live** for the last 24 hours (new tickets appear without refresh). **History** is a date range (or all time until you pick dates).
 
 Filter by status:
 
@@ -333,17 +334,20 @@ Preparing
    │  [Mark ready for pickup]
    ▼
 Ready for pickup
+   │  Master assigns a rider
+   ▼
+Ready for pickup (rider assigned)
    │  [Mark out for delivery]
    ▼
 Out for Delivery
-   │  (customer / system marks delivered)
+   │  Master confirms delivered
    ▼
 Delivered   ← money can now be settled
 ```
 
-You can also **Cancel** while it is still in the kitchen (not after it is delivered).
+You can also **Cancel** while it is still New. After **Ready for pickup**, the kitchen ticket waits live until Master Admin assigns a rider, then the kitchen marks **Out for delivery**.
 
-That is the only place the restaurant changes order status. Master Admin can watch the same pipeline in Restaurant Monitor.
+Master Admin assigns riders from the order ticket (Orders, Our Orders, or Restaurant Monitor). Confirming delivered uses that assigned rider — the list dropdown is only for assign, not for delivered.
 
 ### 4.5 Table Reservations — `/partner/tableReservation`
 
@@ -402,10 +406,16 @@ Customer app places order
         ▼
  Partner “Orders” lights up as New Order
         │
- Owner confirms → prepares → ready → out
+ Owner confirms → prepares → ready
         │
         ▼
- Delivered
+ Master assigns a rider
+        │
+        ▼
+ Kitchen marks out for delivery
+        │
+        ▼
+ Master confirms delivered
         │
         ├── Partner dashboard counts it
         ├── Master Monitor shows it for that shop
@@ -436,7 +446,7 @@ The guest may also cancel (`cancelDineInBooking`) or edit a still-Pending reques
 ### D. Money
 
 1. Master sets commission when they approve the restaurant (and can change it later).
-2. Every **delivered** order is split: platform share vs restaurant payout.
+2. Every **delivered** order is split: platform share vs restaurant payout, using the rate already stamped on the ticket when there is one.
 3. Master uses **Finance** (one restaurant) or **Records** (all restaurants) to export, invoice, and mark paid.
 
 The restaurant does not settle themselves. They cook and complete the order. Master Admin does the books.
@@ -450,10 +460,12 @@ The restaurant does not settle themselves. They cook and complete the order. Mas
 | Apply to join | Restaurant (or anyone on `/apply`) | `/apply` or `/onboarding` |
 | Approve / reject a restaurant | Master | Restaurant Requests |
 | Set or change commission | Master | Request approve, or Monitor |
-| Turn shop open / closed | Restaurant (Master can also) | My Restaurant / Monitor → Manage |
+| Turn shop open / closed | Restaurant (Master can also) | My Restaurant / Monitor → Information |
 | Add or hide a dish | Restaurant | Menu |
 | Add a food category for everyone | Master | Categories |
 | Confirm and cook an order | Restaurant | Orders → open the ticket |
+| Assign a rider (ready for pickup) | Master | Order ticket or Our Orders |
+| See rider jobs / export a sheet | Master | Riders → Overview |
 | Watch any restaurant’s orders | Master | Restaurant Monitor → Orders |
 | Book a table (customer app) | Customer | `createDineInBooking` — see `APP_BOOKING_API.md` |
 | Accept a table booking | Restaurant | Table Reservations (`setDineInBookingStatus`) |
@@ -486,8 +498,8 @@ The restaurant does not settle themselves. They cook and complete the order. Mas
 | `/foodAdmin/restaRequest` | Request list |
 | `/foodAdmin/restaRequest/restaurantReqDet/:id` | Review one request |
 | `/foodAdmin/restaurantStats` | All verified restaurants |
-| `/foodAdmin/restaurantStats/:ownerId` | That restaurant’s overview |
-| `/foodAdmin/restaurantStats/:ownerId/manage` | Edit that restaurant |
+| `/foodAdmin/restaurantStats/:ownerId` | That restaurant’s information |
+| `/foodAdmin/restaurantStats/:ownerId/manage` | Redirects to information |
 | `/foodAdmin/restaurantStats/:ownerId/orders` | Watch that restaurant’s orders |
 | `/foodAdmin/restaurantStats/:ownerId/reservations` | Watch that restaurant’s bookings |
 | `/foodAdmin/restaurantStats/:ownerId/finance` | That restaurant’s settlement |
@@ -495,6 +507,11 @@ The restaurant does not settle themselves. They cook and complete the order. Mas
 | `/foodAdmin/categories` | Global menu categories |
 | `/foodAdmin/restaDetails` | All restaurant profiles |
 | `/foodAdmin/ordersDetails` | All orders |
+| `/foodAdmin/ourKitchen` | ThaiSeva kitchen menu (saved under the platform kitchen) |
+| `/foodAdmin/ourOrders` | Tickets from that kitchen menu only |
+| `/foodAdmin/riders` | Rider directory (add / edit) |
+| `/foodAdmin/riders/overview` | All rider jobs, addresses, sheet export |
+| `/foodAdmin/riders/:riderId` | One rider’s completed trips and addresses |
 | `/foodAdmin/tableReservation` | All reservations |
 
 ### Restaurant Partner

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CSVLink } from "react-csv";
 import { Link } from "react-router";
 import DataBoxes from "../../../components/DataBoxes";
+import { StatGrid } from "../../../components/dashboard";
 import DateRangeFilter from "../../../components/DateRangeFilter";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
@@ -148,14 +149,12 @@ const RestaurantStatsOrders = () => {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <StatGrid>
         {ORDER_STATUS_SUMMARY.map((card) => (
           <button
             key={card.value}
             type="button"
-            className={`rounded-2xl text-left focus-ring ${
-              summaryCardActive(statusFilter, card.value) ? `ring-2 ${card.ring}` : ""
-            }`}
+            className="rounded-2xl text-left focus-ring h-full"
             onClick={() => setStatusFilter(card.value)}
           >
             <DataBoxes
@@ -163,10 +162,11 @@ const RestaurantStatsOrders = () => {
               title={card.label}
               icon={card.icon}
               color={card.color}
+              selected={summaryCardActive(statusFilter, card.value)}
             />
           </button>
         ))}
-      </div>
+      </StatGrid>
 
       <div className="mt-4">
         <DateRangeFilter

@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext.jsx";
 import DataBoxes from "../../components/DataBoxes.jsx";
+import { StatGrid } from "../../components/dashboard";
 import InfoMessage from "../../components/InfoMessage.jsx";
 import Loading from "../../components/Loading.jsx";
 import { deleteFoodItem, setFoodItemActive } from "../../api";
@@ -33,7 +34,6 @@ const FoodItem = () => {
     useAuth();
   const kitchen = useKitchenScope();
   const navigate = useNavigate();
-  const currentUser = authUser?.uid;
   const menuRoot =
     kitchen.ownerUid ||
     getMenuRootId({
@@ -86,10 +86,12 @@ const FoodItem = () => {
         getDoc(doc(db, "settings", "categories")).catch(() => null),
       ]);
 
-      const fetchedItems = itemsSnap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
+      const fetchedItems = itemsSnap.docs
+        .map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+        .filter((item) => item.deleted !== true);
       setItems(fetchedItems);
 
       if (catSnap?.exists?.()) {
@@ -106,12 +108,12 @@ const FoodItem = () => {
   }, [menuRoot]);
 
   useEffect(() => {
-    if (isRestaurantAdmin && currentUser) {
+    if (canManageMenu && menuRoot) {
       fetchData();
-    } else if (!isRestaurantAdmin) {
-      setLoading(false);
+      return;
     }
-  }, [isRestaurantAdmin, currentUser, fetchData]);
+    setLoading(false);
+  }, [canManageMenu, menuRoot, fetchData]);
 
   const stats = useMemo(() => computeMenuStats(items), [items]);
 
@@ -263,14 +265,10 @@ const FoodItem = () => {
         </Link>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <StatGrid>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            filters.status === "all" && !filters.hasDiscount
-              ? "ring-2 ring-brand-400"
-              : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => {
             setStatusFilter("all");
             setFilters((p) => ({ ...p, hasDiscount: false }));
@@ -282,13 +280,12 @@ const FoodItem = () => {
             title="All items"
             icon="bi-journal-richtext"
             color="blue"
+            selected={filters.status === "all" && !filters.hasDiscount}
           />
         </button>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            filters.status === "active" ? "ring-2 ring-success-500" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => setStatusFilter("active")}
           aria-pressed={filters.status === "active"}
         >
@@ -297,13 +294,12 @@ const FoodItem = () => {
             title="Active"
             icon="bi-check-circle"
             color="green"
+            selected={filters.status === "active"}
           />
         </button>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            filters.status === "inactive" ? "ring-2 ring-neutral-400" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => setStatusFilter("inactive")}
           aria-pressed={filters.status === "inactive"}
         >
@@ -312,13 +308,12 @@ const FoodItem = () => {
             title="Inactive"
             icon="bi-pause-circle"
             color="yellow"
+            selected={filters.status === "inactive"}
           />
         </button>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            filters.hasDiscount ? "ring-2 ring-accent-400" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={toggleDiscountFilter}
           aria-pressed={filters.hasDiscount}
           title="Filter items with a discount"
@@ -328,9 +323,10 @@ const FoodItem = () => {
             title="On discount"
             icon="bi-percent"
             color="purple"
+            selected={filters.hasDiscount}
           />
         </button>
-        <div className="rounded-2xl col-span-2 sm:col-span-1" title="Categories used on your menu">
+        <div className="rounded-2xl" title="Categories used on your menu">
           <DataBoxes
             data={stats.categories}
             title="Categories"
@@ -338,7 +334,7 @@ const FoodItem = () => {
             color="blue"
           />
         </div>
-      </div>
+      </StatGrid>
 
       <div className="mt-6">
         <MenuToolbar

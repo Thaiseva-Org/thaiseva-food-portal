@@ -9,6 +9,23 @@ import StatusBadge from "../../components/StatusBadge";
 import { useAuth } from "../../AuthContext";
 import { setRestaurantOpenState } from "../../api";
 import { partnerPath } from "../../utils/partnerRoutes";
+import { useResolvedApplicationFileUrl } from "../../utils/applicationFiles";
+
+const DocumentChip = ({ label, url }) => {
+  const href = useResolvedApplicationFileUrl(url);
+  if (!url) return null;
+  return (
+    <a
+      href={href || "#"}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="btn-ghost text-xs py-1.5 px-3"
+    >
+      <i className="bi bi-file-earmark-text" aria-hidden="true" />
+      {label}
+    </a>
+  );
+};
 
 const InfoTile = ({ icon, label, value, title }) => (
   <div className="min-w-0 rounded-xl border border-neutral-100 bg-neutral-50/80 p-3.5 sm:p-4">
@@ -336,16 +353,7 @@ const Restaurant = () => {
                   ]
                     .filter((d) => d.url)
                     .map((d) => (
-                      <a
-                        key={d.label}
-                        href={d.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-ghost text-xs py-1.5 px-3"
-                      >
-                        <i className="bi bi-file-earmark-text" aria-hidden="true" />
-                        {d.label}
-                      </a>
+                      <DocumentChip key={d.label} label={d.label} url={d.url} />
                     ))}
                 </div>
               </div>

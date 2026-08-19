@@ -14,6 +14,8 @@ export const getPublicApplicationUploadUrl = (data) =>
   callApi("getPublicApplicationUploadUrl", data);
 export const finalizePublicUpload = (data) =>
   callApi("finalizePublicUpload", data);
+export const getApplicationFileUrl = (data) =>
+  callApi("getApplicationFileUrl", data);
 export const submitPublicRestaurantApplication = (data) =>
   callApi("submitPublicRestaurantApplication", data);
 export const updateRestaurantProfile = (data) =>
@@ -35,10 +37,20 @@ export const transitionOrderStatus = ({ orderId, toStatus }) =>
 export const markOrderDelivered = ({ orderId, riderId }) =>
   callApi("markOrderDelivered", {
     orderId,
-    riderId,
+    ...(riderId ? { riderId } : {}),
     idempotencyKey: newIdempotencyKey("deliver"),
   });
-export const createFoodRider = (data) => callApi("createFoodRider", data);
+export const assignOrderRider = ({ orderId, riderId }) =>
+  callApi("assignOrderRider", {
+    orderId,
+    riderId,
+    idempotencyKey: newIdempotencyKey("assign"),
+  });
+export const createFoodRider = (data) =>
+  callApi("createFoodRider", {
+    ...data,
+    idempotencyKey: data?.idempotencyKey || newIdempotencyKey("rider"),
+  });
 export const updateFoodRider = (data) => callApi("updateFoodRider", data);
 export const setFoodRiderActive = (data) =>
   callApi("setFoodRiderActive", data);

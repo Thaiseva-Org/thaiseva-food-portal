@@ -77,10 +77,11 @@ const PublicApply = () => {
   const [landmark, setLandmark] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
+  const [imagePath, setImagePath] = useState("");
   const [docs, setDocs] = useState({
-    businessLicense: { url: "", name: "", uploading: false },
-    ownerId: { url: "", name: "", uploading: false },
-    foodSafety: { url: "", name: "", uploading: false },
+    businessLicense: { url: "", path: "", name: "", uploading: false },
+    ownerId: { url: "", path: "", name: "", uploading: false },
+    foodSafety: { url: "", path: "", name: "", uploading: false },
   });
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -99,13 +100,6 @@ const PublicApply = () => {
     return id;
   };
 
-  const uploadKind = async (kind, file, setter) => {
-    const id = await ensureId();
-    const url = await uploadPublicApplicationFile(id, kind, file);
-    setter(url);
-    return url;
-  };
-
   const handleImageUpload = async (file) => {
     if (!file?.type?.startsWith("image/") || file.size > 5 * 1024 * 1024) {
       setError("Cover photo must be an image under 5MB.");
@@ -114,7 +108,10 @@ const PublicApply = () => {
     try {
       setUploading(true);
       setError("");
-      await uploadKind("image", file, setImage);
+      const id = await ensureId();
+      const uploaded = await uploadPublicApplicationFile(id, "image", file);
+      setImage(uploaded.url);
+      setImagePath(uploaded.path);
     } catch (err) {
       setError(err.message || "Image upload failed.");
     } finally {
@@ -132,10 +129,16 @@ const PublicApply = () => {
       key === "businessLicense" ? "businessLicense" : key === "ownerId" ? "ownerId" : "foodSafety";
     setDocs((prev) => ({ ...prev, [key]: { ...prev[key], uploading: true } }));
     try {
-      const url = await uploadKind(kind, file, () => {});
+      const id = await ensureId();
+      const uploaded = await uploadPublicApplicationFile(id, kind, file);
       setDocs((prev) => ({
         ...prev,
-        [key]: { url, name: file.name, uploading: false },
+        [key]: {
+          url: uploaded.url,
+          path: uploaded.path,
+          name: file.name,
+          uploading: false,
+        },
       }));
     } catch (err) {
       setError(err.message || "Document upload failed.");
@@ -195,12 +198,12 @@ const PublicApply = () => {
         location: location.trim(),
         landmark: landmark.trim() || null,
         description: description.trim(),
-        imageUrl: image,
-        businessLicenseUrl: docs.businessLicense.url,
+        imageUrl: imagePath || image,
+        businessLicenseUrl: docs.businessLicense.path || docs.businessLicense.url,
         businessLicenseName: docs.businessLicense.name,
-        ownerIdDocUrl: docs.ownerId.url,
+        ownerIdDocUrl: docs.ownerId.path || docs.ownerId.url,
         ownerIdDocName: docs.ownerId.name,
-        foodSafetyCertUrl: docs.foodSafety.url || null,
+        foodSafetyCertUrl: docs.foodSafety.path || docs.foodSafety.url || null,
         foodSafetyCertName: docs.foodSafety.name || null,
       });
       setSubmitted(true);

@@ -1,7 +1,17 @@
-import { doc, getDoc, Timestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  Timestamp,
+} from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
+import { assignOrderRider } from "../../../api";
 import { db } from "../../../../firebaseConfig";
+import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import StatusBadge from "../../../components/StatusBadge";
 import {
@@ -9,6 +19,8 @@ import {
   formatCommissionRate,
   resolveOrderAccounting,
 } from "../../../utils/commission";
+import { ORDER_STATUS } from "../../../utils/orderStatus";
+import { hasAssignedRider, riderLabel } from "../../../utils/orderRider";
 import {
   AccountingBadge,
   SettlementBadge,
@@ -29,6 +41,11 @@ const MonitorOrderView = () => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [riders, setRiders] = useState([]);
+  const [ridersError, setRidersError] = useState(null);
+  const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +62,12 @@ const MonitorOrderView = () => {
           if (!cancelled) setError("This order does not belong to this restaurant.");
           return;
         }
-        if (!cancelled) setOrder({ id: snap.id, ...data });
+        if (!cancelled) {
+          setOrder({ id: snap.id, ...data });
+          const existing =
+            data.assignedRiderId || data.DeliveryPartner?.id || "";
+          if (existing) setSelectedRiderId(existing);
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || "Failed to load order.");
       } finally {
@@ -57,6 +79,33 @@ const MonitorOrderView = () => {
       cancelled = true;
     };
   }, [id, ownerId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRiders = async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, "foodRiders"), orderBy("name"))
+        );
+        if (cancelled) return;
+        setRiders(
+          snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((rider) => rider.active !== false)
+        );
+        setRidersError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setRidersError(err.message || "Could not load riders.");
+          setRiders([]);
+        }
+      }
+    };
+    loadRiders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -76,6 +125,32 @@ const MonitorOrderView = () => {
       </div>
     );
   }
+
+  const assigned = hasAssignedRider(order);
+  const canAssignRider =
+    order.currentStatus === ORDER_STATUS.READY ||
+    order.currentStatus === ORDER_STATUS.OUT;
+
+  const handleAssignRider = async () => {
+    if (!canAssignRider || assigning || !selectedRiderId) return;
+    setAssignError(null);
+    try {
+      setAssigning(true);
+      const result = await assignOrderRider({
+        orderId: id,
+        riderId: selectedRiderId,
+      });
+      setOrder((prev) => ({
+        ...prev,
+        DeliveryPartner: result?.rider || prev.DeliveryPartner,
+        assignedRiderId: result?.rider?.id || selectedRiderId,
+      }));
+    } catch (err) {
+      setAssignError(err.message || "Could not assign rider.");
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const money = resolveOrderAccounting(
     {
@@ -117,20 +192,75 @@ const MonitorOrderView = () => {
                 <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Email</dt>
                 <dd className="mt-0.5 break-all">{order.Receiver?.email || "N/A"}</dd>
               </div>
-              {order.DeliveryPartner && (
+              {assigned && (
                 <div>
                   <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Rider</dt>
                   <dd className="mt-0.5 font-medium">
-                    {typeof order.DeliveryPartner === "string"
-                      ? order.DeliveryPartner
-                      : [order.DeliveryPartner.name, order.DeliveryPartner.phone]
-                          .filter(Boolean)
-                          .join(" · ") || "Assigned"}
+                    {riderLabel(order.DeliveryPartner) || "Assigned"}
                   </dd>
                 </div>
               )}
             </dl>
           </section>
+          {canAssignRider && (
+            <section className="panel">
+              <h2 className="section-title">
+                {assigned ? "Assigned rider" : "Assign rider"}
+              </h2>
+              <p className="mt-1 text-xs text-ink-muted">
+                {assigned
+                  ? "This rider will pick up the order."
+                  : "Assign a rider now that the order is ready for pickup."}
+              </p>
+              {assignError && (
+                <div className="mt-3">
+                  <InfoMessage type="error" message={assignError} />
+                </div>
+              )}
+              <label className="mt-3 block" htmlFor="monitor-assign-rider">
+                <span className="mb-1 block text-sm font-semibold text-ink">
+                  Rider
+                </span>
+                <select
+                  id="monitor-assign-rider"
+                  className="modern-select"
+                  value={selectedRiderId}
+                  onChange={(e) => setSelectedRiderId(e.target.value)}
+                  disabled={assigning || riders.length === 0}
+                >
+                  <option value="">
+                    {riders.length ? "Select a rider" : "No active riders"}
+                  </option>
+                  {riders.map((rider) => (
+                    <option key={rider.id} value={rider.id}>
+                      {riderLabel(rider)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {ridersError && (
+                <p className="mt-1 text-xs text-danger-600">{ridersError}</p>
+              )}
+              <Link
+                to="/foodAdmin/riders"
+                className="mt-2 inline-flex text-sm font-semibold text-brand-600 hover:text-brand-700"
+              >
+                {riders.length ? "Manage riders" : "Add a rider first"}
+              </Link>
+              <button
+                type="button"
+                className="btn-primary mt-3 w-full"
+                disabled={assigning || !selectedRiderId}
+                onClick={handleAssignRider}
+              >
+                {assigning
+                  ? "Saving…"
+                  : assigned
+                    ? "Update rider"
+                    : "Assign rider"}
+              </button>
+            </section>
+          )}
           <section className="panel">
             <div className="flex items-center justify-between gap-2">
               <h2 className="section-title">Accounting</h2>

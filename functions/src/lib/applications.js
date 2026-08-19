@@ -25,6 +25,22 @@ function cleanOptionalText(value, field, maxLength) {
   return text;
 }
 
+const APPLICATION_PATH_RE = /^applications\/[a-f0-9]{16,32}\/[A-Za-z0-9._-]+$/;
+
+function isApplicationStoragePath(value) {
+  return APPLICATION_PATH_RE.test(String(value || "").trim());
+}
+
+async function signedReadUrl(path, expiresMs = 60 * 60 * 1000) {
+  const file = getStorage().bucket().file(path);
+  const [url] = await file.getSignedUrl({
+    version: "v4",
+    action: "read",
+    expires: Date.now() + Math.min(expiresMs, 7 * 24 * 60 * 60 * 1000),
+  });
+  return url;
+}
+
 function cleanDocUrl(value, field, { required = true } = {}) {
   const raw = value == null ? "" : String(value).trim();
   if (!raw) {
@@ -33,10 +49,11 @@ function cleanDocUrl(value, field, { required = true } = {}) {
     }
     return null;
   }
+  if (isApplicationStoragePath(raw)) return raw;
   if (raw.length > 2048 || !/^https:\/\//i.test(raw)) {
     throw new HttpsError(
       "invalid-argument",
-      `${field} must be a valid HTTPS URL (max 2048 chars).`
+      `${field} must be a private application file or HTTPS URL.`
     );
   }
   return raw;
@@ -87,7 +104,9 @@ function cleanApplicationPayload(payload) {
     foodType: cleanText(payload?.foodType, "foodType", 100),
     location: cleanText(payload?.location, "location", 500),
     description: cleanText(payload?.description, "description", 2000),
-    imageUrl: cleanImageUrl(payload?.imageUrl),
+    imageUrl: isApplicationStoragePath(payload?.imageUrl)
+      ? String(payload.imageUrl).trim()
+      : cleanImageUrl(payload?.imageUrl),
     ownerName: cleanText(payload?.ownerName, "ownerName", 120),
     businessRegistrationNumber: cleanText(
       payload?.businessRegistrationNumber,
@@ -198,9 +217,39 @@ async function finalizePublicUpload({ applicationId, path }) {
   const file = getStorage().bucket().file(path);
   const [exists] = await file.exists();
   if (!exists) throw new HttpsError("not-found", "File was not uploaded.");
-  await file.makePublic();
-  const bucket = getStorage().bucket();
-  return { url: `https://storage.googleapis.com/${bucket.name}/${path}` };
+  const url = await signedReadUrl(path, 60 * 60 * 1000);
+  return { url, path: String(path) };
+}
+
+async function getApplicationFileUrl(caller, { path }) {
+  const clean = String(path || "").trim();
+  if (!isApplicationStoragePath(clean)) {
+    throw new HttpsError("invalid-argument", "Invalid application file path.");
+  }
+  if (caller.role !== ROLES.MASTER) {
+    if (caller.role !== ROLES.OWNER) {
+      throw new HttpsError("permission-denied", "Not allowed to open this file.");
+    }
+    const rest = await getFirestore().collection("restaurants").doc(caller.uid).get();
+    const data = rest.data() || {};
+    const refs = [
+      data.imageUrl,
+      data.businessLicenseUrl,
+      data.ownerIdDocUrl,
+      data.foodSafetyCertUrl,
+      data.documents?.businessLicense?.url,
+      data.documents?.ownerId?.url,
+      data.documents?.foodSafetyCert?.url,
+    ];
+    if (!refs.includes(clean)) {
+      throw new HttpsError("permission-denied", "Not allowed to open this file.");
+    }
+  }
+  const file = getStorage().bucket().file(clean);
+  const [exists] = await file.exists();
+  if (!exists) throw new HttpsError("not-found", "File was not uploaded.");
+  const url = await signedReadUrl(clean, 60 * 60 * 1000);
+  return { url, path: clean };
 }
 
 async function submitPublicRestaurantApplication(payload) {
@@ -213,6 +262,18 @@ async function submitPublicRestaurantApplication(payload) {
     throw new HttpsError("invalid-argument", "Invalid applicationId.");
   }
   if (!applicationId) applicationId = randomBytes(12).toString("hex");
+  else {
+    const existing = await db.collection("restaurantApplications").doc(applicationId).get();
+    if (existing.exists) {
+      const status = existing.data()?.status;
+      if (status && status !== "Draft") {
+        throw new HttpsError(
+          "failed-precondition",
+          "This application can no longer be submitted."
+        );
+      }
+    }
+  }
 
   const restaurant = {
     ...cleaned,
@@ -256,8 +317,21 @@ async function submitPublicRestaurantApplication(payload) {
   return { applicationId, status: "Pending" };
 }
 
+async function copyCoverToRestaurant(imageRef, ownerUid) {
+  const raw = String(imageRef || "").trim();
+  if (!raw) return "";
+  if (/^https:\/\//i.test(raw)) return raw;
+  if (!isApplicationStoragePath(raw)) return raw;
+  const destPath = `restaurants/${ownerUid}/profile/cover_${Date.now()}`;
+  const bucket = getStorage().bucket();
+  await bucket.file(raw).copy(bucket.file(destPath));
+  await bucket.file(destPath).makePublic();
+  return `https://storage.googleapis.com/${bucket.name}/${destPath}`;
+}
+
 async function createRestaurantFromApplication(app, ownerUid, commissionPct) {
   const db = getFirestore();
+  const coverUrl = await copyCoverToRestaurant(app.imageUrl, ownerUid);
   let publicId = generatePublicId();
   for (let i = 0; i < 10; i++) {
     const q = await db.collection("restaurants").where("id", "==", publicId).limit(1).get();
@@ -274,7 +348,7 @@ async function createRestaurantFromApplication(app, ownerUid, commissionPct) {
     foodType: app.foodType,
     location: app.location,
     description: app.description,
-    imageUrl: app.imageUrl,
+    imageUrl: coverUrl,
     ownerName: app.ownerName,
     businessRegistrationNumber: app.businessRegistrationNumber,
     taxId: app.taxId || null,
@@ -372,81 +446,94 @@ async function reviewPublicApplication(caller, {
     if (err.code === "auth/invalid-password") {
       throw new HttpsError("invalid-argument", "Password is too weak.");
     }
-    throw new HttpsError("internal", err.message || "Could not create the user.");
+    throw new HttpsError("internal", "Could not create the user.");
   }
 
-  await db.collection("users").doc(user.uid).set({
-    name: displayName,
-    email,
-    role: "restaurantOwner",
-    serviceCategory: "Restaurant",
-    isRestaurantAdmin: true,
-    isMasterAdmin: false,
-    restaurantOwnerUid: user.uid,
-    applicationStatus: "Verified",
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-    userId: user.uid,
-  });
-
-  const restaurant = await createRestaurantFromApplication(before, user.uid, pct);
-  await db.collection("users").doc(user.uid).set(
-    { restaurantId: restaurant.id, restaurantOwnerUid: user.uid },
-    { merge: true }
-  );
-
-  await setUserClaims(user.uid, {
-    foodRole: ROLES.OWNER,
-    foodRestaurantId: user.uid,
-    foodRestaurantOwner: true,
-  });
-
-  await appRef.update({
-    status: "Verified",
-    ownerUid: user.uid,
-    loginEmail: email,
-    username: displayName,
-    comission: pct,
-    reviewedAt: FieldValue.serverTimestamp(),
-    reviewedBy: caller.uid,
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-
-  await db
-    .collection("notifications")
-    .doc("restaurants")
-    .collection(user.uid)
-    .add({
-      title: "Congratulations!",
-      desc: `${before.name} has been successfully verified.`,
-      type: "resver",
-      image: before.imageUrl || "",
-      timestamp: FieldValue.serverTimestamp(),
+  try {
+    await db.collection("users").doc(user.uid).set({
+      name: displayName,
+      email,
+      role: "restaurantOwner",
+      serviceCategory: "Restaurant",
+      isRestaurantAdmin: true,
+      isMasterAdmin: false,
+      restaurantOwnerUid: user.uid,
+      applicationStatus: "Verified",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      userId: user.uid,
     });
 
-  await writeAuditLog({
-    actorUid: caller.uid,
-    actorRole: caller.role,
-    action: "application.verify",
-    targetType: "restaurantApplication",
-    targetId: applicationId,
-    tenantId: user.uid,
-    after: { status: "Verified", ownerUid: user.uid, loginEmail: email },
-  });
+    const restaurant = await createRestaurantFromApplication(before, user.uid, pct);
+    await db.collection("users").doc(user.uid).set(
+      { restaurantId: restaurant.id, restaurantOwnerUid: user.uid },
+      { merge: true }
+    );
 
-  return {
-    applicationId,
-    status: "Verified",
-    ownerUid: user.uid,
-    loginEmail: email,
-    username: displayName,
-  };
+    await setUserClaims(user.uid, {
+      foodRole: ROLES.OWNER,
+      foodRestaurantId: user.uid,
+      foodRestaurantOwner: true,
+    });
+
+    await appRef.update({
+      status: "Verified",
+      ownerUid: user.uid,
+      loginEmail: email,
+      username: displayName,
+      comission: pct,
+      reviewedAt: FieldValue.serverTimestamp(),
+      reviewedBy: caller.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    await db
+      .collection("notifications")
+      .doc("restaurants")
+      .collection(user.uid)
+      .add({
+        title: "Congratulations!",
+        desc: `${before.name} has been successfully verified.`,
+        type: "resver",
+        image: before.imageUrl || "",
+        timestamp: FieldValue.serverTimestamp(),
+      });
+
+    await writeAuditLog({
+      actorUid: caller.uid,
+      actorRole: caller.role,
+      action: "application.verify",
+      targetType: "restaurantApplication",
+      targetId: applicationId,
+      tenantId: user.uid,
+      after: { status: "Verified", ownerUid: user.uid, loginEmail: email },
+    });
+
+    return {
+      applicationId,
+      status: "Verified",
+      ownerUid: user.uid,
+      loginEmail: email,
+      username: displayName,
+    };
+  } catch (err) {
+    try {
+      await getAuth().deleteUser(user.uid);
+    } catch (cleanupErr) {
+      console.error("Failed to roll back created owner account", cleanupErr);
+    }
+    if (err instanceof HttpsError) throw err;
+    console.error(err);
+    throw new HttpsError("internal", "Could not finish restaurant approval.");
+  }
 }
 
 module.exports = {
   startPublicRestaurantApplication,
   getPublicApplicationUploadUrl,
   finalizePublicUpload,
+  getApplicationFileUrl,
   submitPublicRestaurantApplication,
   reviewPublicApplication,
+  isApplicationStoragePath,
 };

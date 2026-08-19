@@ -14,10 +14,22 @@ const TONES = {
   purple: { bg: "#fae8ff", fg: "#c026d3" },
 };
 
-const KpiStatCard = ({ title, value, icon, tone = "blue" }) => {
+const CARD_SHADOW =
+  "0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 16px rgba(15, 23, 42, 0.04)";
+
+const KpiStatCard = ({ title, value, icon, tone = "blue", selected = false }) => {
   const colors = TONES[tone] || TONES.blue;
   return (
-    <Card sx={{ height: "100%", borderRadius: 3 }}>
+    <Card
+      elevation={0}
+      sx={{
+        height: "100%",
+        borderRadius: 3,
+        border: "1px solid",
+        borderColor: selected ? colors.fg : "#e5e5e5",
+        boxShadow: selected ? `0 0 0 2px ${colors.bg}` : CARD_SHADOW,
+      }}
+    >
       <CardContent sx={{ p: 2.25, "&:last-child": { pb: 2.25 } }}>
         <Stack direction="row" spacing={1.75} alignItems="center">
           <Avatar
@@ -28,6 +40,7 @@ const KpiStatCard = ({ title, value, icon, tone = "blue" }) => {
               bgcolor: colors.bg,
               color: colors.fg,
               borderRadius: 2,
+              fontSize: 22,
             }}
           >
             {icon}

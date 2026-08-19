@@ -3,15 +3,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { db } from "../../../../firebaseConfig";
 import Loading from "../../../components/Loading";
-import { markOrderDelivered } from "../../../api";
-
-const riderLabel = (rider) => {
-  if (!rider || rider === "N/A") return "";
-  if (typeof rider === "string") return rider;
-  const bits = [rider.name, rider.phone, rider.vehicleType, rider.vehicleNumber]
-    .filter(Boolean);
-  return bits.join(" · ");
-};
+import { assignOrderRider, markOrderDelivered } from "../../../api";
+import { ORDER_STATUS } from "../../../utils/orderStatus";
+import { hasAssignedRider, riderLabel } from "../../../utils/orderRider";
 
 const OrdersDetView = () => {
   const navigate = useNavigate();
@@ -61,7 +55,9 @@ const OrdersDetView = () => {
           OrderID: id,
           Date: date,
           CustomerDetails: orderData.Receiver || "N/A",
-          DeliveryPartner: orderData.DeliveryPartner || "N/A",
+          DeliveryPartner: orderData.DeliveryPartner || null,
+          assignedRiderId:
+            orderData.assignedRiderId || orderData.DeliveryPartner?.id || "",
           Location: orderData.Location || "N/A",
           Amount: orderData.Amount || "0.00",
           CurrentStatus: status,
@@ -80,6 +76,11 @@ const OrdersDetView = () => {
 
     fetchOrders();
   }, [id]);
+
+  useEffect(() => {
+    const existing = completeOrderDetails?.assignedRiderId;
+    if (existing) setSelectedRiderId((prev) => prev || existing);
+  }, [completeOrderDetails?.assignedRiderId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,18 +126,49 @@ const OrdersDetView = () => {
     return fullDate;
   };
 
-  const canVerifyDelivered =
-    completeOrderDetails?.CurrentStatus === "Out for Delivery";
+  const currentStatus = completeOrderDetails?.CurrentStatus;
+  const assigned = hasAssignedRider(completeOrderDetails);
+  const canAssignRider =
+    currentStatus === ORDER_STATUS.READY || currentStatus === ORDER_STATUS.OUT;
+  const canVerifyDelivered = currentStatus === ORDER_STATUS.OUT && assigned;
 
-  const handleVerifyDelivered = async () => {
-    if (!canVerifyDelivered || actionLoading) return;
+  const applyAssignedRider = (rider) => {
+    setCompleteOrderDetails((prev) => ({
+      ...prev,
+      DeliveryPartner: rider || prev.DeliveryPartner,
+      assignedRiderId: rider?.id || prev.assignedRiderId,
+    }));
+    if (rider?.id) setSelectedRiderId(rider.id);
+  };
+
+  const handleAssignRider = async () => {
+    if (!canAssignRider || actionLoading) return;
     if (!selectedRiderId) {
-      alert("Choose the rider who delivered this order.");
+      alert("Choose a rider to pick up this order.");
       return;
     }
     try {
       setActionLoading(true);
-      await markOrderDelivered({ orderId: id, riderId: selectedRiderId });
+      const result = await assignOrderRider({
+        orderId: id,
+        riderId: selectedRiderId,
+      });
+      applyAssignedRider(result?.rider);
+    } catch (err) {
+      console.error("Error assigning rider:", err);
+      alert(
+        err.message || "Failed to assign rider. Deploy Cloud Functions first."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleVerifyDelivered = async () => {
+    if (!canVerifyDelivered || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await markOrderDelivered({ orderId: id });
       navigate(`/foodAdmin/ordersDetails`);
     } catch (err) {
       console.error("Error verifying delivery:", err);
@@ -268,10 +300,10 @@ const OrdersDetView = () => {
               </div>
             </div>
 
-            {riderLabel(completeOrderDetails?.DeliveryPartner) && (
+            {assigned && (
               <div className="bg-white mt-5 rounded-lg w-full">
                 <div className="rounded-lg p-5">
-                  <p className="font-bold text-[1.25rem]">Rider</p>
+                  <p className="font-bold text-[1.25rem]">Assigned rider</p>
                   <p className="mt-2 text-sm font-medium">
                     {riderLabel(completeOrderDetails.DeliveryPartner)}
                   </p>
@@ -297,18 +329,19 @@ const OrdersDetView = () => {
                   </li>
                 ))}
               </ol>
-              {canVerifyDelivered ? (
+              {canAssignRider ? (
                 <div className="mt-5 space-y-3">
                   <div>
                     <label
                       htmlFor="delivery-rider"
                       className="block text-sm font-semibold text-ink"
                     >
-                      Rider who delivered
+                      {assigned ? "Change rider" : "Assign rider"}
                     </label>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Rider details are added on the Riders page. Choose one
-                      here, then confirm delivery.
+                      {assigned
+                        ? "This rider is assigned to pick up the order."
+                        : "Food is ready. Assign a rider before it can go out for delivery."}
                     </p>
                     <select
                       id="delivery-rider"
@@ -337,19 +370,35 @@ const OrdersDetView = () => {
                     </Link>
                   </div>
                   <button
-                    className="w-full py-2 font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:shadow-outline disabled:opacity-60"
+                    className="w-full py-2 font-semibold text-white bg-brand-600 rounded hover:bg-brand-700 focus:outline-none focus:shadow-outline disabled:opacity-60"
                     type="button"
                     disabled={actionLoading || !selectedRiderId}
-                    onClick={handleVerifyDelivered}
+                    onClick={handleAssignRider}
                   >
-                    {actionLoading ? "Confirming…" : "Confirm delivery"}
+                    {actionLoading
+                      ? "Saving…"
+                      : assigned
+                        ? "Update rider"
+                        : "Assign rider"}
                   </button>
+                  {canVerifyDelivered && (
+                    <button
+                      className="w-full py-2 font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 focus:outline-none focus:shadow-outline disabled:opacity-60"
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={handleVerifyDelivered}
+                    >
+                      {actionLoading ? "Confirming…" : "Confirm delivery"}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p className="mt-5 text-sm text-slate-500">
-                  {completeOrderDetails?.CurrentStatus === "Delivered"
+                  {currentStatus === ORDER_STATUS.DELIVERED
                     ? "This order is already delivered."
-                    : "Restaurants move kitchen steps. Confirm delivery only when the order is Out for delivery."}
+                    : currentStatus === ORDER_STATUS.READY
+                      ? "Assign a rider when this order is ready for pickup."
+                      : "Restaurants move kitchen steps. Assign a rider when the order is ready for pickup."}
                 </p>
               )}
             </div>

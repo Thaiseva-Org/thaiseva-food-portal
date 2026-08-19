@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { Link } from "react-router";
 import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext";
 import InfoMessage from "../../components/InfoMessage";
@@ -160,15 +161,20 @@ const Riders = () => {
 
   return (
     <div className="page-shell animate-fade-in px-4 py-8 md:px-6 md:py-10">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">
-          Master admin
-        </p>
-        <h1 className="page-header">Riders</h1>
-        <p className="page-subtext mt-1 max-w-2xl">
-          Add rider details here. When you confirm an order as delivered, you
-          choose one of these riders.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">
+            Master admin
+          </p>
+          <h1 className="page-header">Riders</h1>
+          <p className="page-subtext mt-1 max-w-2xl">
+            Add rider details here. When an order is ready for pickup, assign
+            one of these riders to collect it.
+          </p>
+        </div>
+        <Link to="/foodAdmin/riders/overview" className="btn-primary">
+          Rider overview
+        </Link>
       </div>
 
       {error && (
@@ -304,8 +310,8 @@ const Riders = () => {
           <div className="empty-state py-14">
             <p className="font-semibold">No riders yet</p>
             <p className="page-subtext mt-1">
-              Add a rider above so you can assign them when confirming
-              delivery.
+              Add a rider above so you can assign them when an order is
+              ready for pickup.
             </p>
           </div>
         ) : (
@@ -329,6 +335,12 @@ const Riders = () => {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <Link
+                      to={`/foodAdmin/riders/${encodeURIComponent(rider.id)}`}
+                      className="btn-ghost !py-1.5"
+                    >
+                      Overview
+                    </Link>
                     <button
                       type="button"
                       className="btn-ghost !py-1.5"

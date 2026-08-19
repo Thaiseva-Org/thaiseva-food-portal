@@ -6,7 +6,7 @@ const OurOrdersLayout = () => (
     context={{
       isPlatformKitchen: true,
       menuRoot: PLATFORM_OWNER_ID,
-      menuListPath: "/foodAdmin/ourKitchen/menu",
+      menuListPath: "/foodAdmin/ourKitchen",
       ordersListPath: "/foodAdmin/ourOrders",
     }}
   />

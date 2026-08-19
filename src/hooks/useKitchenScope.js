@@ -13,7 +13,7 @@ export function useKitchenScope() {
       ownerUid: PLATFORM_OWNER_ID,
       isPlatformKitchen: true,
       isMasterAdmin,
-      listPath: ctx.menuListPath || "/foodAdmin/ourKitchen/menu",
+      listPath: ctx.menuListPath || "/foodAdmin/ourKitchen",
       ordersListPath: ctx.ordersListPath || "/foodAdmin/ourOrders",
     };
   }

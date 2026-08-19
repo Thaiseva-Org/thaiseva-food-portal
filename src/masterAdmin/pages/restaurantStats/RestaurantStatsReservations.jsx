@@ -2,6 +2,7 @@ import { Pagination } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { CSVLink } from "react-csv";
 import DataBoxes from "../../../components/DataBoxes";
+import { StatGrid } from "../../../components/dashboard";
 import DateRangeFilter from "../../../components/DateRangeFilter";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
@@ -122,7 +123,7 @@ const RestaurantStatsReservations = () => {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <StatGrid columns={4}>
         {[
           ["all", stats.total, "All", "blue"],
           ["pending", stats.pending, "Pending", "yellow"],
@@ -132,15 +133,19 @@ const RestaurantStatsReservations = () => {
           <button
             key={value}
             type="button"
-            className={`rounded-2xl text-left focus-ring ${
-              statusFilter === value ? "ring-2 ring-brand-400" : ""
-            }`}
+            className="rounded-2xl text-left focus-ring h-full"
             onClick={() => setStatusFilter(value)}
           >
-            <DataBoxes data={data} title={title} icon="bi-calendar2-check" color={color} />
+            <DataBoxes
+              data={data}
+              title={title}
+              icon="bi-calendar2-check"
+              color={color}
+              selected={statusFilter === value}
+            />
           </button>
         ))}
-      </div>
+      </StatGrid>
 
       <div className="mt-4">
         <DateRangeFilter

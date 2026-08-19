@@ -21,12 +21,14 @@ const {
   startPublicRestaurantApplication,
   getPublicApplicationUploadUrl,
   finalizePublicUpload,
+  getApplicationFileUrl,
   submitPublicRestaurantApplication,
   reviewPublicApplication,
 } = require("./lib/applications");
 const {
   transitionOrderStatus,
   markOrderDelivered,
+  assignOrderRider,
   clearOrderPayment,
 } = require("./lib/orders");
 const {
@@ -70,7 +72,7 @@ function wrap(handler, { roles } = {}) {
     } catch (err) {
       if (err instanceof HttpsError) throw err;
       console.error(err);
-      throw new HttpsError("internal", err.message || "Internal error");
+      throw new HttpsError("internal", "Internal error");
     }
   });
 }
@@ -99,7 +101,7 @@ function wrapPublic(handler, maxRequests = 20) {
       } catch (err) {
         if (err instanceof HttpsError) throw err;
         console.error(err);
-        throw new HttpsError("internal", err.message || "Internal error");
+        throw new HttpsError("internal", "Internal error");
       }
     }
   );
@@ -125,6 +127,11 @@ exports.getPublicApplicationUploadUrl = wrapPublic(async (data) => {
 
 exports.finalizePublicUpload = wrapPublic(async (data) => {
   return finalizePublicUpload(data);
+});
+
+exports.getApplicationFileUrl = wrap(async (caller, data) => {
+  requireOwnerOrMaster(caller);
+  return getApplicationFileUrl(caller, data);
 });
 
 exports.submitPublicRestaurantApplication = wrapPublic(async (data) => {
@@ -168,6 +175,11 @@ exports.transitionOrderStatus = wrap(async (caller, data) => {
 exports.markOrderDelivered = wrap(async (caller, data) => {
   requireMaster(caller);
   return markOrderDelivered(caller, data);
+});
+
+exports.assignOrderRider = wrap(async (caller, data) => {
+  requireMaster(caller);
+  return assignOrderRider(caller, data);
 });
 
 exports.clearOrderPayment = wrap(async (caller, data) => {

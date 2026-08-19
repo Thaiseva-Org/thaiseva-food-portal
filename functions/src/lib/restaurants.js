@@ -154,7 +154,13 @@ async function submitRestaurantApplication(caller, payload) {
   const cleaned = {
     name: cleanText(payload?.name, "name", 120),
     phoneNumber: cleanText(payload?.phoneNumber, "phoneNumber", 30),
-    emailId: cleanText(payload?.emailId, "emailId", 254),
+    emailId: (() => {
+      const email = String(payload?.emailId || "").trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+        throw new HttpsError("invalid-argument", "A valid email is required.");
+      }
+      return email;
+    })(),
     foodType: cleanText(payload?.foodType, "foodType", 100),
     location: cleanText(payload?.location, "location", 500),
     description: cleanText(payload?.description, "description", 2000),
@@ -434,6 +440,12 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
         ? cleanImageUrl(fields[key])
         : cleanText(fields[key], key, PROFILE_FIELD_LIMITS[key]);
     }
+  }
+  if (updates.serviceType && !SERVICE_TYPES.has(updates.serviceType)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "serviceType must be Delivery, Dine-in, or Both."
+    );
   }
   if (!Object.keys(updates).length) {
     throw new HttpsError("invalid-argument", "No updatable fields provided.");

@@ -26,5 +26,5 @@ export async function uploadPublicApplicationFile(applicationId, kind, file) {
     throw new Error("File upload failed. Please try again.");
   }
   const done = await finalizePublicUpload({ applicationId, path });
-  return done.url;
+  return { url: done.url, path: done.path || path };
 }

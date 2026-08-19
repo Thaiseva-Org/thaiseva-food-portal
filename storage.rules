@@ -111,7 +111,7 @@ service firebase.storage {
 
     // Food public apply uploads use Admin signed URLs. Clients cannot write this path.
     match /applications/{applicationId}/{allPaths=**} {
-      allow read: if true;
+      allow read: if isAdmin() || isFoodAdmin();
       allow write: if false;
     }
 

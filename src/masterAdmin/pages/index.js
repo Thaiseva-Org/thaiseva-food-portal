@@ -39,6 +39,7 @@ const MonitorOrderView = lazy(() =>
   import("./restaurantStats/MonitorOrderView")
 );
 const Riders = lazy(() => import("./Riders"));
+const RiderOverview = lazy(() => import("./RiderOverview"));
 
 export {
   OrdersDetView,
@@ -64,4 +65,5 @@ export {
   RestaurantStatsFinance,
   MonitorOrderView,
   Riders,
+  RiderOverview,
 };

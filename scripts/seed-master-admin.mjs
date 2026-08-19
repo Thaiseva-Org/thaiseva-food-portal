@@ -201,51 +201,111 @@ async function deleteDoc(token, docPath) {
   }
 }
 
+const ORDER_FLOW = [
+  "New Order",
+  "Order Confirm",
+  "Preparing",
+  "Ready for pickup",
+  "Out for Delivery",
+  "Delivered",
+];
+
+function historyFor(status, when) {
+  const steps =
+    status === "Cancelled"
+      ? ["New Order", "Cancelled"]
+      : ORDER_FLOW.slice(0, Math.max(1, ORDER_FLOW.indexOf(status) + 1));
+  return steps.map((step, i) => ({
+    status: step,
+    timestamp: new Date(when.getTime() + i * 12 * 60 * 1000),
+    by: i === 0 ? "system" : "seed-master",
+  }));
+}
+
+function riderSnap(rider) {
+  if (!rider) return null;
+  return {
+    id: rider.id,
+    name: rider.name,
+    phone: rider.phone,
+    vehicleType: rider.vehicleType,
+    vehicleNumber: rider.vehicleNumber || "",
+  };
+}
+
 function orderPayload({
-  id,
   ownerId,
   restaurantName,
+  restaurantId,
   status,
   hours,
   amount,
   customer,
+  phone,
+  address,
   commission = 12,
+  rider = null,
+  paymentClear = false,
+  items,
 }) {
   const ts = hoursAgo(hours);
+  const assigned = rider && status !== "New Order" && status !== "Order Confirm" && status !== "Preparing" && status !== "Cancelled";
+  const snapshot = assigned ? riderSnap(rider) : null;
+  const delivered = status === "Delivered";
+  const adminShare = Math.round(Number(amount) * commission) / 100;
+  const partnerShare = Math.round((Number(amount) - adminShare) * 100) / 100;
   return {
     demoSeed: true,
     masterSeed: true,
     Amount: Number(amount).toFixed(2),
-    Location: "Sukhumvit Soi 11, Bangkok",
+    Location: address || "Sukhumvit Soi 11, Bangkok",
     timestamp: ts,
     currentStatus: status,
-    isPaymentClear: status === "Delivered",
+    isPaymentDone: delivered,
+    isPaymentClear: delivered && paymentClear,
+    deliveryProcessed: delivered,
     comission: commission,
-    RestaurantId: ownerId.slice(0, 8).toUpperCase(),
+    RestaurantId: restaurantId,
     Restaurant: {
       ownerId,
       name: restaurantName,
-      id: ownerId.slice(0, 8).toUpperCase(),
+      id: restaurantId,
     },
     Receiver: {
-      id: `seed-cust-${customer}`,
+      id: `seed-cust-${customer.replace(/\s+/g, "-").toLowerCase()}`,
       name: customer,
-      phone: "0890001111",
+      phone: phone || "0890001111",
       email: `${customer.toLowerCase().replace(/\s+/g, ".")}@example.com`,
     },
-    Sender: { id: `seed-cust-${customer}`, name: customer },
-    Status: [
-      { status: "New Order", timestamp: ts },
-      { status, timestamp: ts },
-    ],
-    items: [
+    Sender: {
+      id: `seed-cust-${customer.replace(/\s+/g, "-").toLowerCase()}`,
+      name: customer,
+    },
+    Status: historyFor(status, ts),
+    Items: items || [
       {
-        itemName: "Pad Thai",
-        quantity: 1,
-        price: Number(amount),
         ItemId: "seed-pad-thai",
+        ItemName: "Pad Thai",
+        Quantity: 1,
+        Price: Number(amount),
+        Label: "Main Course",
+        imageUrl: IMG.padThai,
       },
     ],
+    DeliveryPartner: snapshot,
+    assignedRiderId: snapshot?.id || "",
+    deliveredByRiderId: delivered && snapshot ? snapshot.id : "",
+    assignedAt: snapshot ? ts : null,
+    deliveredAt: delivered ? ts : null,
+    accounting: delivered
+      ? {
+          amount: Number(amount),
+          ownerId,
+          commissionPct: commission,
+          adminShare,
+          partnerShare,
+        }
+      : null,
   };
 }
 
@@ -254,12 +314,15 @@ async function main() {
   console.log(`\nSeeding master-admin data project=${PROJECT_ID}\n`);
 
   if (hasFlag("clean")) {
-    const collections = [
-      { from: "restaurants", field: "masterSeed" },
-    ];
-    for (const spec of collections) {
+    for (const from of [
+      "restaurants",
+      "orders",
+      "foodRiders",
+      "dineInBookings",
+      "restaurantApplications",
+    ]) {
       const rows = await runQuery(token, {
-        from: [{ collectionId: spec.from }],
+        from: [{ collectionId: from }],
         where: {
           fieldFilter: {
             field: { fieldPath: "masterSeed" },
@@ -267,27 +330,12 @@ async function main() {
             value: { booleanValue: true },
           },
         },
-        limit: 200,
+        limit: 300,
       });
       for (const row of rows) {
         const path = row.document.name.split("/documents/")[1];
         await deleteDoc(token, path);
       }
-    }
-    const orderRows = await runQuery(token, {
-      from: [{ collectionId: "orders" }],
-      where: {
-        fieldFilter: {
-          field: { fieldPath: "masterSeed" },
-          op: "EQUAL",
-          value: { booleanValue: true },
-        },
-      },
-      limit: 200,
-    });
-    for (const row of orderRows) {
-      const path = row.document.name.split("/documents/")[1];
-      await deleteDoc(token, path);
     }
     console.log("✓ cleaned previous masterSeed docs");
   }
@@ -339,21 +387,32 @@ async function main() {
   );
 
   const kitchenMenu = [
-    { id: "seed-pad-thai", itemName: "Pad Thai", price: 120, category: "Main Course", count: 40 },
-    { id: "seed-tom-yum", itemName: "Tom Yum Goong", price: 180, category: "Soup", count: 22 },
-    { id: "seed-mango", itemName: "Mango Sticky Rice", price: 95, category: "Dessert", count: 18 },
-    { id: "seed-thai-tea", itemName: "Thai Iced Tea", price: 55, category: "Beverage", count: 50 },
+    { id: "seed-pad-thai", itemName: "Pad Thai", price: 120, discount: 10, category: "Main Course", itemType: "Non-Veg", count: 40, imageUrl: IMG.padThai, active: true },
+    { id: "seed-green-curry", itemName: "Green Curry", price: 150, discount: 0, category: "Main Course", itemType: "Non-Veg", count: 28, imageUrl: IMG.greenCurry, active: true },
+    { id: "seed-tom-yum", itemName: "Tom Yum Goong", price: 180, discount: 5, category: "Soup", itemType: "Non-Veg", count: 22, imageUrl: IMG.tomYum, active: true },
+    { id: "seed-som-tum", itemName: "Som Tum", price: 90, discount: 0, category: "Salad", itemType: "Veg", count: 31, imageUrl: IMG.mango, active: true },
+    { id: "seed-mango", itemName: "Mango Sticky Rice", price: 95, discount: 0, category: "Dessert", itemType: "Veg", count: 18, imageUrl: IMG.mango, active: true },
+    { id: "seed-thai-tea", itemName: "Thai Iced Tea", price: 55, discount: 0, category: "Beverage", itemType: "Veg", count: 50, imageUrl: IMG.padThai, active: true },
+    { id: "seed-flash-noodles", itemName: "Flash Sale Noodles", price: 100, discount: 50, category: "Main Course", itemType: "Veg", count: 12, imageUrl: IMG.padThai, active: true },
+    { id: "seed-hidden-rice", itemName: "Pineapple Fried Rice", price: 140, discount: 0, category: "Main Course", itemType: "Non-Veg", count: 5, imageUrl: IMG.greenCurry, active: false },
   ];
   for (const item of kitchenMenu) {
     writes.push(
       updateWrite(`food_items/${PLATFORM_OWNER_ID}/items/${item.id}`, {
-        ...item,
-        discount: 0,
-        itemType: "Veg",
+        itemName: item.itemName,
+        itemId: `#${item.id}`,
+        price: item.price,
+        discount: item.discount,
+        category: item.category,
+        itemType: item.itemType,
         description: `${item.itemName} from the ThaiSeva kitchen.`,
-        imageUrl: IMG.padThai,
-        active: true,
-        earning: item.price * item.count,
+        imageUrl: item.imageUrl,
+        active: item.active,
+        count: item.count,
+        earning: Math.round(item.price * (1 - item.discount / 100) * item.count),
+        ownerUid: PLATFORM_OWNER_ID,
+        isPlatformOwned: true,
+        restaurantId: "THAISEVA",
         masterSeed: true,
       })
     );
@@ -384,6 +443,26 @@ async function main() {
         masterSeed: true,
       })
     );
+    for (const item of kitchenMenu.slice(0, 4)) {
+      writes.push(
+        updateWrite(`food_items/${p.uid}/items/${item.id}`, {
+          itemName: item.itemName,
+          itemId: `#${item.id}`,
+          price: item.price,
+          discount: item.discount,
+          category: item.category,
+          itemType: item.itemType,
+          description: `${item.itemName} at ${p.name}.`,
+          imageUrl: item.imageUrl,
+          active: item.active,
+          count: item.count,
+          earning: item.price * item.count,
+          ownerUid: p.uid,
+          isPlatformOwned: false,
+          masterSeed: true,
+        })
+      );
+    }
   }
 
   writes.push(
@@ -414,6 +493,7 @@ async function main() {
       foodType: "Isaan",
       location: "Khon Kaen",
       description: "Public apply — pending.",
+      serviceType: "Both",
       timestamp: hoursAgo(5),
       masterSeed: true,
     })
@@ -428,12 +508,96 @@ async function main() {
       foodType: "Street Food",
       location: "Nonthaburi",
       description: "Rejected sample.",
+      serviceType: "Delivery",
       timestamp: daysAgo(3),
       masterSeed: true,
     })
   );
 
-  const statuses = [
+  const riders = [
+    { id: "seed-rider-somchai", name: "Somchai Prasert", phone: "0811112222", vehicleType: "Motorcycle", vehicleNumber: "1กก 1234", active: true },
+    { id: "seed-rider-pim", name: "Pimchanok Srisuk", phone: "0822223333", vehicleType: "Scooter", vehicleNumber: "9ขข 5566", active: true },
+    { id: "seed-rider-niran", name: "Niran Boonmee", phone: "0833334444", vehicleType: "Bicycle", vehicleNumber: "", active: true },
+    { id: "seed-rider-anuwat", name: "Anuwat K.", phone: "0825557788", vehicleType: "Car", vehicleNumber: "กท 8899", active: true },
+    { id: "seed-rider-mali", name: "Mali Inactive", phone: "0800001111", vehicleType: "Other", vehicleNumber: "TMP-01", active: false },
+  ];
+  for (const r of riders) {
+    writes.push(
+      updateWrite(`foodRiders/${r.id}`, {
+        ...r,
+        masterSeed: true,
+        createdAt: daysAgo(12),
+        updatedAt: hoursAgo(2),
+      })
+    );
+  }
+
+  const customers = [
+    { name: "Ananya Siri", phone: "0891112233" },
+    { name: "James Wilson", phone: "0865557788" },
+    { name: "Mei Lin", phone: "0923334455" },
+    { name: "Emily Chen", phone: "0904445566" },
+    { name: "Nattapong W.", phone: "0821213434" },
+    { name: "Somchai T.", phone: "0837778899" },
+  ];
+  const addresses = [
+    "12 Sukhumvit Soi 11, Bangkok",
+    "88 Silom Rd, Bang Rak, Bangkok",
+    "21 Nimmanhaemin Rd, Chiang Mai",
+    "5 Patong Beach Rd, Phuket",
+    "104 Asok Montri Rd, Bangkok",
+    "999/88 Long Soi Address, Watthana, Bangkok 10110",
+  ];
+  const lineItems = (names) =>
+    names.map((id) => {
+      const item = kitchenMenu.find((row) => row.id === id) || kitchenMenu[0];
+      return {
+        ItemId: item.id,
+        ItemName: item.itemName,
+        Quantity: 1,
+        Price: item.price,
+        Label: item.category,
+        imageUrl: item.imageUrl,
+      };
+    });
+
+  const kitchenCases = [
+    { status: "New Order", hours: 0.3, rider: null, paymentClear: false },
+    { status: "Order Confirm", hours: 0.8, rider: null, paymentClear: false },
+    { status: "Preparing", hours: 1.2, rider: null, paymentClear: false },
+    { status: "Ready for pickup", hours: 1.6, rider: null, paymentClear: false },
+    { status: "Ready for pickup", hours: 2.0, rider: riders[0], paymentClear: false },
+    { status: "Out for Delivery", hours: 2.5, rider: riders[1], paymentClear: false },
+    { status: "Delivered", hours: 5, rider: riders[0], paymentClear: false },
+    { status: "Delivered", hours: 8, rider: riders[2], paymentClear: true },
+    { status: "Cancelled", hours: 4, rider: null, paymentClear: false },
+    { status: "Delivered", hours: 24 * 12, rider: riders[3], paymentClear: true },
+  ];
+  kitchenCases.forEach((spec, i) => {
+    const customer = customers[i % customers.length];
+    writes.push(
+      updateWrite(
+        `orders/seed-k-${String(i + 1).padStart(2, "0")}`,
+        orderPayload({
+          ownerId: PLATFORM_OWNER_ID,
+          restaurantName: "ThaiSeva Kitchen",
+          restaurantId: "THAISEVA",
+          status: spec.status,
+          hours: spec.hours,
+          amount: 160 + i * 25,
+          customer: customer.name,
+          phone: customer.phone,
+          address: addresses[i % addresses.length],
+          commission: 0,
+          rider: spec.rider,
+          paymentClear: spec.paymentClear,
+          items: lineItems(["seed-pad-thai", "seed-thai-tea"]),
+        })
+      )
+    );
+  });
+
+  const partnerStatuses = [
     "New Order",
     "Order Confirm",
     "Preparing",
@@ -442,56 +606,53 @@ async function main() {
     "Delivered",
     "Cancelled",
   ];
-  const customers = [
-    "Ananya Siri",
-    "James Wilson",
-    "Mei Lin",
-    "Emily Chen",
-    "Nattapong W.",
-    "Somchai T.",
-  ];
-
-  let orderIdx = 0;
-  const allOwners = [
-    { uid: PLATFORM_OWNER_ID, name: "ThaiSeva Kitchen", commission: 0 },
-    ...PARTNERS.map((p) => ({
-      uid: p.uid,
-      name: p.name,
-      commission: 12,
-    })),
-  ];
-  for (const owner of allOwners) {
-    statuses.forEach((status, i) => {
-      orderIdx += 1;
-      const id = `seed-m-order-${String(orderIdx).padStart(3, "0")}`;
+  let partnerOrder = 0;
+  for (const p of PARTNERS) {
+    partnerStatuses.forEach((status, i) => {
+      partnerOrder += 1;
+      const customer = customers[i % customers.length];
+      const needsRider =
+        status === "Ready for pickup" ||
+        status === "Out for Delivery" ||
+        status === "Delivered";
       writes.push(
         updateWrite(
-          `orders/${id}`,
+          `orders/seed-p-${String(partnerOrder).padStart(3, "0")}`,
           orderPayload({
-            id,
-            ownerId: owner.uid,
-            restaurantName: owner.name,
+            ownerId: p.uid,
+            restaurantName: p.name,
+            restaurantId: p.uid.slice(-6).toUpperCase(),
             status,
-            hours: i * 6 + (owner.uid === PLATFORM_OWNER_ID ? 1 : 10),
-            amount: 180 + i * 35,
-            customer: customers[i % customers.length],
-            commission: owner.commission,
+            hours: i * 3 + 6,
+            amount: 190 + i * 20,
+            customer: customer.name,
+            phone: customer.phone,
+            address: addresses[i % addresses.length],
+            commission: 12,
+            rider: needsRider ? riders[i % 4] : null,
+            paymentClear: status === "Delivered" && i % 2 === 0,
+            items: lineItems(["seed-green-curry", "seed-mango"]),
           })
         )
       );
     });
     writes.push(
       updateWrite(
-        `orders/seed-m-old-${owner.uid.slice(-6)}`,
+        `orders/seed-p-old-${p.uid.slice(-6)}`,
         orderPayload({
-          id: `old-${owner.uid}`,
-          ownerId: owner.uid,
-          restaurantName: owner.name,
+          ownerId: p.uid,
+          restaurantName: p.name,
+          restaurantId: p.uid.slice(-6).toUpperCase(),
           status: "Delivered",
-          hours: 24 * 18,
+          hours: 24 * 16,
           amount: 420,
           customer: "Older Guest",
-          commission: owner.commission,
+          phone: "0800000000",
+          address: p.location,
+          commission: 12,
+          rider: riders[0],
+          paymentClear: true,
+          items: lineItems(["seed-tom-yum"]),
         })
       )
     );
@@ -506,35 +667,21 @@ async function main() {
         updateWrite(`dineInBookings/seed-m-book-${String(b).padStart(2, "0")}`, {
           masterSeed: true,
           ownerId: p.uid,
+          restaurantId: p.uid.slice(-6).toUpperCase(),
           restaurantName: p.name,
-          customerName: customers[b % customers.length],
-          phoneNumber: "0861112233",
+          userId: `seed-diner-${b}`,
+          customerName: customers[b % customers.length].name,
+          phoneNumber: customers[b % customers.length].phone,
           adults: 2 + (b % 3),
           children: b % 2,
+          notes: b % 2 ? "Window table" : "",
           status,
           Amount: "0.00",
           bookingTimestamp: hoursAgo(b * 5),
-          scheduledTimestamp: hoursAgo(-b * 8),
+          scheduledTimestamp: new Date(Date.now() + b * 8 * 60 * 60 * 1000),
         })
       );
     }
-  }
-
-  const riders = [
-    { id: "seed-rider-somchai", name: "Somchai Rider", phone: "0811112222" },
-    { id: "seed-rider-pim", name: "Pim Rider", phone: "0822223333" },
-    { id: "seed-rider-niran", name: "Niran Rider", phone: "0833334444" },
-  ];
-  for (const r of riders) {
-    writes.push(
-      updateWrite(`foodRiders/${r.id}`, {
-        ...r,
-        vehicleType: "Motorcycle",
-        vehicleNumber: `กท-${r.id.slice(-3)}`,
-        active: true,
-        masterSeed: true,
-      })
-    );
   }
 
   const todayId = new Date().toISOString().slice(0, 10);
@@ -565,12 +712,23 @@ async function main() {
         masterSeed: true,
       })
     );
+    for (const p of PARTNERS) {
+      writes.push(
+        updateWrite(`Earnings/${p.uid}/monthlyEarnings/${monthId}`, {
+          month: monthId,
+          totalEarnings: 4000 + m * 350,
+          masterSeed: true,
+        })
+      );
+    }
   }
 
   for (let i = 0; i < writes.length; i += 40) {
     await commitWrites(token, writes.slice(i, i + 40));
   }
-  console.log(`✓ restaurants, kitchen, orders, bookings, riders, earnings`);
+  console.log(
+    "✓ sections: kitchen menu, partners, requests, orders, riders, bookings, earnings"
+  );
 
   await patchDoc(token, "notifications/restaurants", { seedMarker: true }).catch(
     () => {}
@@ -597,8 +755,14 @@ async function main() {
 
   console.log(`
 Master admin backend seed complete.
+
+Kitchen menu + every order status (Ready with/without rider, Out, Delivered, Cancelled)
+Partners + pending/rejected requests
+Riders for every vehicle type + inactive
+Bookings Pending / Accepted / Canceled
+Records: delivered with cleared and open settlement
+
 Open http://localhost:5000/foodAdmin
-  Dashboard, Requests, Monitor, Our kitchen, Orders, Riders, Records
 `);
 }
 

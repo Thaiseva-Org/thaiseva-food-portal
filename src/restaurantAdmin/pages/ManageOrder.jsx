@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
 import DataBoxes from "../../components/DataBoxes";
+import { StatGrid } from "../../components/dashboard";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
@@ -152,17 +153,14 @@ const ManageOrder = () => {
         </div>
       </div>
 
-      {/* Summary groups — click to filter */}
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <StatGrid>
         {ORDER_STATUS_SUMMARY.map((card) => {
           const active = summaryCardActive(statusFilter, card.value);
           return (
             <button
               key={card.value}
               type="button"
-              className={`text-left rounded-2xl focus-ring ${
-                active ? `ring-2 ${card.ring}` : ""
-              }`}
+              className="text-left rounded-2xl focus-ring h-full"
               onClick={() => setStatusFilter(card.value)}
               aria-pressed={active}
             >
@@ -171,11 +169,12 @@ const ManageOrder = () => {
                 title={card.label}
                 icon={card.icon}
                 color={card.color}
+                selected={active}
               />
             </button>
           );
         })}
-      </div>
+      </StatGrid>
 
       {/* Date range */}
       <div className="mt-4">

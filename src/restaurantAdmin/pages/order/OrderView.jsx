@@ -1,8 +1,8 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   Timestamp,
@@ -13,7 +13,11 @@ import { db } from "../../../../firebaseConfig";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import StatusBadge from "../../../components/StatusBadge";
-import { markOrderDelivered, transitionOrderStatus } from "../../../api";
+import {
+  assignOrderRider,
+  markOrderDelivered,
+  transitionOrderStatus,
+} from "../../../api";
 import { useAuth } from "../../../AuthContext";
 import {
   ORDER_STATUS,
@@ -22,13 +26,7 @@ import {
 import { partnerPath } from "../../../utils/partnerRoutes";
 import { isPlatformOwnerId } from "../../../utils/platformRestaurant";
 import { useKitchenScope } from "../../../hooks/useKitchenScope";
-
-const riderLabel = (rider) => {
-  if (!rider) return "";
-  return [rider.name, rider.phone, rider.vehicleType, rider.vehicleNumber]
-    .filter(Boolean)
-    .join(" · ");
-};
+import { hasAssignedRider, riderLabel } from "../../../utils/orderRider";
 
 /** Kitchen flow steps (excludes terminal Cancelled). */
 const FLOW_STEPS = [
@@ -40,37 +38,37 @@ const FLOW_STEPS = [
   { key: ORDER_STATUS.DELIVERED, short: "Done" },
 ];
 
-const nextStatusFor = (status, canDeliver = false) => {
+const nextStatusFor = (status, { canDeliver = false, hasRider = false } = {}) => {
   if (status === ORDER_STATUS.NEW) return ORDER_STATUS.CONFIRM;
   if (status === ORDER_STATUS.CONFIRM) return ORDER_STATUS.PREPARING;
   if (status === ORDER_STATUS.PREPARING) return ORDER_STATUS.READY;
-  if (status === ORDER_STATUS.READY) return ORDER_STATUS.OUT;
+  if (status === ORDER_STATUS.READY && hasRider) return ORDER_STATUS.OUT;
   if (canDeliver && status === ORDER_STATUS.OUT) return ORDER_STATUS.DELIVERED;
   return null;
 };
 
-const nextActionLabel = (status, canDeliver = false) => {
-  const next = nextStatusFor(status, canDeliver);
+const nextActionLabel = (status, opts) => {
+  const next = nextStatusFor(status, opts);
   if (!next) return null;
   if (status === ORDER_STATUS.NEW) return "Confirm order";
   if (status === ORDER_STATUS.CONFIRM) return "Start preparing";
   if (status === ORDER_STATUS.PREPARING) return "Mark ready for pickup";
   if (status === ORDER_STATUS.READY) return "Mark out for delivery";
-  if (status === ORDER_STATUS.OUT && canDeliver) return "Confirm delivery";
+  if (status === ORDER_STATUS.OUT) return "Confirm delivery";
   return next;
 };
 
-const nextActionHint = (status, canDeliver = false) => {
+const nextActionHint = (status, { canDeliver = false, hasRider = false } = {}) => {
   if (status === ORDER_STATUS.NEW)
     return "Accept this order so the kitchen can start.";
   if (status === ORDER_STATUS.CONFIRM)
     return "Move the order into preparation.";
   if (status === ORDER_STATUS.PREPARING)
     return "Food is ready for the courier to collect.";
-  if (status === ORDER_STATUS.READY)
+  if (status === ORDER_STATUS.READY && hasRider)
     return "Courier has picked up — mark as out for delivery.";
   if (status === ORDER_STATUS.OUT && canDeliver)
-    return "Choose the rider who delivered, then confirm. This posts earnings.";
+    return "Confirm delivery. This posts earnings.";
   return null;
 };
 
@@ -129,12 +127,36 @@ const OrderActions = ({
   selectedRiderId = "",
   setSelectedRiderId,
   ridersError,
+  waitingForRider = false,
+  showAssignForm = false,
+  assignedRiderLabel = "",
+  onAssign,
 }) => {
   if (isTerminal) {
     return (
       <p className="text-center text-sm text-ink-muted py-1">
         No further actions for this order.
       </p>
+    );
+  }
+
+  if (waitingForRider) {
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl bg-warning-50 border border-warning-100 px-3.5 py-3">
+        <i
+          className="bi bi-bicycle text-warning-700 text-lg mt-0.5"
+          aria-hidden="true"
+        />
+        <div>
+          <p className="text-sm font-semibold text-warning-800">
+            Waiting for a rider
+          </p>
+          <p className="text-xs text-warning-800 mt-0.5 leading-relaxed">
+            Master Admin will assign a rider now that this order is ready for
+            pickup. You can mark it out for delivery after that.
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -150,8 +172,9 @@ const OrderActions = ({
             Out for delivery
           </p>
           <p className="text-xs text-brand-700 mt-0.5 leading-relaxed">
-            Master Admin will verify delivered. You cannot mark it delivered
-            from here.
+            {assignedRiderLabel
+              ? `${assignedRiderLabel} is delivering this order. Master Admin will verify delivered.`
+              : "Master Admin will verify delivered. You cannot mark it delivered from here."}
           </p>
         </div>
       </div>
@@ -197,10 +220,76 @@ const OrderActions = ({
     );
   }
 
-  const needsRider = nextStatus === ORDER_STATUS.DELIVERED;
+  const needsLegacyRider = nextStatus === ORDER_STATUS.DELIVERED && !assignedRiderLabel;
 
   return (
     <div className={compact ? "space-y-2" : "space-y-3"}>
+      {showAssignForm && (
+        <div className={compact ? "space-y-2" : "space-y-2"}>
+          {!compact && (
+            <p className="text-xs text-ink-muted leading-relaxed px-0.5">
+              {assignedRiderLabel
+                ? `${assignedRiderLabel} is assigned. You can change the rider if needed.`
+                : "Food is ready. Assign a rider before this order can go out for delivery."}
+            </p>
+          )}
+          <div>
+            <label
+              htmlFor="kitchen-assign-rider"
+              className="block text-sm font-semibold text-ink"
+            >
+              {assignedRiderLabel ? "Change rider" : "Assign rider"}
+            </label>
+            <select
+              id="kitchen-assign-rider"
+              className="modern-select mt-1.5"
+              value={selectedRiderId}
+              onChange={(e) => setSelectedRiderId?.(e.target.value)}
+              disabled={actionLoading || riders.length === 0}
+            >
+              <option value="">
+                {riders.length ? "Select a rider" : "No active riders"}
+              </option>
+              {riders.map((rider) => (
+                <option key={rider.id} value={rider.id}>
+                  {riderLabel(rider)}
+                </option>
+              ))}
+            </select>
+            {ridersError && (
+              <p className="mt-1 text-xs text-danger-600">{ridersError}</p>
+            )}
+            <Link
+              to="/foodAdmin/riders"
+              className="mt-1.5 inline-flex text-sm font-semibold text-brand-600 hover:text-brand-700"
+            >
+              {riders.length ? "Manage riders" : "Add a rider first"}
+            </Link>
+          </div>
+          <button
+            type="button"
+            className="btn-primary w-full py-3 text-base shadow-md"
+            disabled={actionLoading || !selectedRiderId}
+            onClick={onAssign}
+          >
+            {actionLoading ? (
+              <>
+                <span
+                  className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  aria-hidden="true"
+                />
+                Saving…
+              </>
+            ) : (
+              <>
+                <i className="bi bi-bicycle text-lg" aria-hidden="true" />
+                {assignedRiderLabel ? "Update rider" : "Assign rider"}
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {nextLabel && nextStatus && (
         <div className={compact ? "space-y-2" : "space-y-2"}>
           {!compact && nextHint && (
@@ -208,7 +297,7 @@ const OrderActions = ({
               {nextHint}
             </p>
           )}
-          {needsRider && (
+          {needsLegacyRider && (
             <div>
               <label
                 htmlFor="kitchen-delivery-rider"
@@ -235,18 +324,12 @@ const OrderActions = ({
               {ridersError && (
                 <p className="mt-1 text-xs text-danger-600">{ridersError}</p>
               )}
-              <Link
-                to="/foodAdmin/riders"
-                className="mt-1.5 inline-flex text-sm font-semibold text-brand-600 hover:text-brand-700"
-              >
-                {riders.length ? "Manage riders" : "Add a rider first"}
-              </Link>
             </div>
           )}
           <button
             type="button"
             className="btn-success w-full py-3 text-base shadow-md"
-            disabled={actionLoading || (needsRider && !selectedRiderId)}
+            disabled={actionLoading || (needsLegacyRider && !selectedRiderId)}
             onClick={() => onAdvance(nextStatus)}
           >
             {actionLoading ? (
@@ -316,38 +399,47 @@ const OrderView = () => {
   }, [orderId]);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      if (!orderId) {
-        setError("Order not found.");
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const orderDetailsRef = doc(db, `orders/${orderId}`);
-        const orderDetailsSnapshot = await getDoc(orderDetailsRef);
-        if (!orderDetailsSnapshot.exists()) {
+    if (!orderId) {
+      setError("Order not found.");
+      setLoading(false);
+      return undefined;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSelectedRiderId("");
+
+    const unsubscribe = onSnapshot(
+      doc(db, `orders/${orderId}`),
+      (snap) => {
+        if (!snap.exists()) {
           setError("Order not found.");
+          setLoading(false);
           return;
         }
-        const orderData = orderDetailsSnapshot.data();
-
+        const orderData = snap.data() || {};
         const ownerId = orderData?.Restaurant?.ownerId;
         if (kitchen.isPlatformKitchen) {
           if (ownerId && !isPlatformOwnerId(ownerId)) {
             setError("This is not a ThaiSeva kitchen order.");
+            setLoading(false);
             return;
           }
         } else if (ownerId && currentUser?.uid && ownerId !== currentUser.uid) {
           setError("You do not have access to this order.");
+          setLoading(false);
           return;
         }
 
-        const statusArray = orderData?.Status || [];
+        const statusArray = Array.isArray(orderData.Status)
+          ? orderData.Status
+          : [];
         const lastStatus = statusArray[statusArray.length - 1];
-        const status = lastStatus ? lastStatus.status : "Unknown";
+        const status =
+          orderData.currentStatus || lastStatus?.status || "Unknown";
         const placedAt = orderData?.timestamp;
+        const assignedId =
+          orderData.assignedRiderId || orderData.DeliveryPartner?.id || "";
 
         setCompleteOrderDetails({
           OrderID: orderId || "N/A",
@@ -355,32 +447,43 @@ const OrderView = () => {
           PlacedAt: placedAt,
           CustomerDetails: orderData.Receiver || {},
           DeliveryPartner: orderData.DeliveryPartner || null,
+          assignedRiderId: assignedId,
           Location: orderData.Location || "",
           Amount: orderData.Amount || "0.00",
           CurrentStatus: status || "N/A",
-          Status: Array.isArray(orderData.Status) ? orderData.Status : [],
+          Status: statusArray,
           RestaurantName: orderData?.Restaurant || null,
           Items: orderData.Items || [],
         });
-        setOrderDetails(
-          Array.isArray(orderData.Items) ? orderData.Items : []
-        );
-      } catch (err) {
+        if (assignedId) {
+          setSelectedRiderId((prev) => prev || assignedId);
+        }
+        setOrderDetails(Array.isArray(orderData.Items) ? orderData.Items : []);
+        setLoading(false);
+      },
+      (err) => {
         console.error("Error fetching orders: ", err);
         setError("Failed to fetch order details.");
-      } finally {
         setLoading(false);
       }
-    };
+    );
 
-    fetchOrders();
+    return unsubscribe;
   }, [orderId, currentUser?.uid, kitchen.isPlatformKitchen]);
 
   const canDeliver = kitchen.isPlatformKitchen && kitchen.isMasterAdmin;
   const currentStatus = completeOrderDetails?.CurrentStatus;
-  const nextStatus = nextStatusFor(currentStatus, canDeliver);
-  const nextLabel = nextActionLabel(currentStatus, canDeliver);
-  const nextHint = nextActionHint(currentStatus, canDeliver);
+  const hasRider = hasAssignedRider(completeOrderDetails);
+  const canAssignRider =
+    kitchen.isMasterAdmin &&
+    (currentStatus === ORDER_STATUS.READY ||
+      currentStatus === ORDER_STATUS.OUT);
+  const waitingForRider =
+    currentStatus === ORDER_STATUS.READY && !hasRider && !canAssignRider;
+  const actionOpts = { canDeliver, hasRider };
+  const nextStatus = nextStatusFor(currentStatus, actionOpts);
+  const nextLabel = nextActionLabel(currentStatus, actionOpts);
+  const nextHint = nextActionHint(currentStatus, actionOpts);
   const canCancel = currentStatus === ORDER_STATUS.NEW;
   const isTerminal =
     currentStatus === ORDER_STATUS.DELIVERED ||
@@ -402,7 +505,7 @@ const OrderView = () => {
   );
 
   useEffect(() => {
-    if (!canDeliver) return undefined;
+    if (!canAssignRider && !canDeliver) return undefined;
     let cancelled = false;
     const loadRiders = async () => {
       try {
@@ -427,7 +530,35 @@ const OrderView = () => {
     return () => {
       cancelled = true;
     };
-  }, [canDeliver]);
+  }, [canAssignRider, canDeliver]);
+
+  const handleAssignRider = async () => {
+    if (!orderId || actionLoading || !selectedRiderId) {
+      if (!selectedRiderId) setActionError("Choose a rider to pick up this order.");
+      return;
+    }
+    setActionError(null);
+    try {
+      setActionLoading(true);
+      const result = await assignOrderRider({
+        orderId,
+        riderId: selectedRiderId,
+      });
+      setCompleteOrderDetails((prev) => ({
+        ...prev,
+        DeliveryPartner: result?.rider || prev.DeliveryPartner,
+        assignedRiderId: result?.rider?.id || selectedRiderId,
+      }));
+    } catch (err) {
+      console.error("Error assigning rider:", err);
+      setActionError(
+        err.message ||
+          "Failed to assign rider. Ensure Cloud Functions are deployed."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleOrderStatusChange = async (value) => {
     if (!orderId || actionLoading || !value) return;
@@ -435,11 +566,7 @@ const OrderView = () => {
     try {
       setActionLoading(true);
       if (value === ORDER_STATUS.DELIVERED) {
-        if (!selectedRiderId) {
-          setActionError("Choose the rider who delivered this order.");
-          return;
-        }
-        await markOrderDelivered({ orderId, riderId: selectedRiderId });
+        await markOrderDelivered({ orderId });
       } else {
         await transitionOrderStatus({ orderId, toStatus: value });
       }
@@ -508,8 +635,14 @@ const OrderView = () => {
   const email = customer?.email;
   const customerName = customer?.name || "Guest";
   const location = completeOrderDetails?.Location;
+  const assignedRiderName = riderLabel(completeOrderDetails?.DeliveryPartner);
   const showActions =
-    Boolean(nextLabel) || canCancel || isOutForDelivery || isTerminal;
+    Boolean(nextLabel) ||
+    canCancel ||
+    isOutForDelivery ||
+    isTerminal ||
+    waitingForRider ||
+    canAssignRider;
 
   const actionProps = {
     nextLabel,
@@ -527,6 +660,10 @@ const OrderView = () => {
     selectedRiderId,
     setSelectedRiderId,
     ridersError,
+    waitingForRider,
+    showAssignForm: canAssignRider,
+    assignedRiderLabel: assignedRiderName,
+    onAssign: handleAssignRider,
   };
 
   return (
@@ -771,25 +908,17 @@ const OrderView = () => {
                 </div>
               )}
 
-              {completeOrderDetails?.DeliveryPartner &&
-                completeOrderDetails.DeliveryPartner !== "N/A" && (
+              {assignedRiderName && (
                   <div className="rounded-xl bg-neutral-50 border border-neutral-100 p-3.5">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted mb-1.5">
-                      Delivery partner
+                      Assigned rider
                     </p>
                     <p className="text-sm font-medium text-ink flex items-center gap-2">
                       <i
                         className="bi bi-bicycle text-brand-500"
                         aria-hidden="true"
                       />
-                      {typeof completeOrderDetails.DeliveryPartner === "string"
-                        ? completeOrderDetails.DeliveryPartner
-                        : [
-                            completeOrderDetails.DeliveryPartner?.name,
-                            completeOrderDetails.DeliveryPartner?.phone,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "Assigned"}
+                      {assignedRiderName}
                     </p>
                   </div>
                 )}
@@ -1044,7 +1173,11 @@ const OrderView = () => {
       </div>
 
       {/* Sticky mobile / tablet action bar */}
-      {(nextLabel || canCancel || isOutForDelivery) && (
+      {(nextLabel ||
+        canCancel ||
+        isOutForDelivery ||
+        waitingForRider ||
+        canAssignRider) && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-200 bg-white/95 backdrop-blur-md p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.08)] lg:hidden">
           <div className="mx-auto max-w-lg">
             {actionError && (
@@ -1054,7 +1187,9 @@ const OrderView = () => {
             )}
             {confirmCancel && canCancel ? (
               <OrderActions {...actionProps} />
-            ) : canDeliver && isOutForDelivery ? (
+            ) : waitingForRider ||
+              canAssignRider ||
+              (canDeliver && isOutForDelivery) ? (
               <OrderActions {...actionProps} compact />
             ) : (
               <div className="flex gap-2">

@@ -13,13 +13,18 @@ import NavBadge from "../../components/NavBadge";
 import { useBookings } from "../../context/BookingsProvider";
 import { usePendingRequestCount } from "../../hooks/usePendingRequestCount";
 import { ORDER_STATUS } from "../../utils/orderStatus";
+import { hasAssignedRider } from "../../utils/orderRider";
 import { isPlatformOrder } from "../../utils/platformRestaurant";
 
 const MasterSidebar = ({ show, toggle }) => {
   const { orders } = useBookings() || {};
   const pendingRequests = usePendingRequestCount();
   const pendingOrders = (orders || []).filter(
-    (row) => row.Status === ORDER_STATUS.OUT || row.Status === ORDER_STATUS.NEW
+    (row) =>
+      !isPlatformOrder(row) &&
+      (row.Status === ORDER_STATUS.OUT ||
+        row.Status === ORDER_STATUS.NEW ||
+        (row.Status === ORDER_STATUS.READY && !hasAssignedRider(row)))
   ).length;
   const kitchenOrders = (orders || []).filter(
     (row) =>

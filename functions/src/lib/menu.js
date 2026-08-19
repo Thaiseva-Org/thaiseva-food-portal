@@ -1,7 +1,11 @@
 const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { writeAuditLog } = require("./audit");
-const { ROLES, assertTenantAccess } = require("./auth");
+const { assertTenantAccess } = require("./auth");
+const {
+  ensurePlatformRestaurant,
+  PLATFORM_OWNER_ID,
+} = require("./restaurants");
 
 function tenantRoot(caller, ownerUid) {
   const target = ownerUid || caller.uid;
@@ -69,6 +73,9 @@ async function createFoodItem(caller, payload) {
   }
 
   const itemId = normalizeItemId(clientItemId || generateItemId());
+  if (ownerUid === PLATFORM_OWNER_ID) {
+    await ensurePlatformRestaurant(caller, {});
+  }
   const db = getFirestore();
   const ref = db
     .collection("food_items")
@@ -85,10 +92,12 @@ async function createFoodItem(caller, payload) {
     itemType: cleanItemText(itemType, "itemType", 50),
     description: cleanItemText(description, "description", 2000),
     imageUrl: cleanOptionalImageUrl(imageUrl),
-    active: false,
+    active: true,
     count: 0,
     earning: 0,
     ownerUid,
+    isPlatformOwned: ownerUid === PLATFORM_OWNER_ID,
+    ...(ownerUid === PLATFORM_OWNER_ID ? { restaurantId: "THAISEVA" } : {}),
     createdAt: FieldValue.serverTimestamp(),
     createdBy: caller.uid,
   };
@@ -168,6 +177,7 @@ async function updateFoodItem(caller, payload) {
   }
   if (payload.active != null && typeof payload.active === "boolean") {
     updates.active = payload.active;
+    if (payload.active === true) updates.deleted = false;
   }
 
   if (!Object.keys(updates).length) {

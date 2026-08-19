@@ -9,7 +9,7 @@ const COPY = {
     icon: "bi-eye",
     title: "All orders they placed",
     message:
-      "Every order for this restaurant. View and export only — confirm delivered on the main Orders page.",
+      "Every order for this restaurant. Assign a rider when it is ready for pickup. Confirm delivered stays on the main Orders page.",
   },
   reservations: {
     icon: "bi-eye",

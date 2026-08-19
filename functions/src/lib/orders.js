@@ -2,7 +2,12 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { writeAuditLogTx } = require("./audit");
 const { ROLES, assertTenantAccess } = require("./auth");
-const { loadActiveRiderSnapshot } = require("./riders");
+const {
+  loadActiveRiderSnapshot,
+  loadRiderSnapshot,
+  normalizeRiderId,
+  riderSnapshot,
+} = require("./riders");
 
 const ORDER_FLOW = [
   "New Order",
@@ -14,6 +19,49 @@ const ORDER_FLOW = [
 ];
 
 const CANCELLED = "Cancelled";
+const ASSIGN_RIDER_STATUSES = new Set(["Ready for pickup", "Out for Delivery"]);
+
+function assignedRiderIdFromOrder(order) {
+  const raw = order?.assignedRiderId || order?.DeliveryPartner?.id;
+  if (raw == null || String(raw).trim() === "") return null;
+  try {
+    return normalizeRiderId(raw);
+  } catch {
+    return null;
+  }
+}
+
+function storedRiderSnapshot(order) {
+  const id = assignedRiderIdFromOrder(order);
+  const partner = order?.DeliveryPartner;
+  if (!id || !partner || typeof partner !== "object") return null;
+  if (partner.id && partner.id !== id) return null;
+  return riderSnapshot(id, partner);
+}
+
+function canMarkOutForDelivery(order) {
+  return Boolean(assignedRiderIdFromOrder(order));
+}
+
+function deliveryRiderFields(rider) {
+  return {
+    DeliveryPartner: rider,
+    deliveredByRiderId: rider.id,
+    assignedRiderId: rider.id,
+  };
+}
+
+function resolveCommissionPct(orderData, restaurantData) {
+  const stamped = Number(orderData?.comission);
+  if (Number.isFinite(stamped) && stamped >= 0 && stamped <= 100) {
+    return stamped;
+  }
+  const live = Number(restaurantData?.comission || 0);
+  if (!Number.isFinite(live) || live < 0 || live > 100) {
+    throw new HttpsError("failed-precondition", "Restaurant commission is invalid.");
+  }
+  return live;
+}
 
 function validateIdempotencyKey(value) {
   if (value == null || value === "") return null;
@@ -32,11 +80,26 @@ function normalizeQuantity(item) {
   return quantity;
 }
 
+const STATUS_ALIASES = {
+  confirmed: "Order Confirm",
+  ready: "Ready for pickup",
+  out: "Out for Delivery",
+  canceled: CANCELLED,
+  rejected: CANCELLED,
+};
+
+function normalizeStoredStatus(current) {
+  if (!current) return "New Order";
+  if (ORDER_FLOW.includes(current) || current === CANCELLED) return current;
+  return STATUS_ALIASES[String(current).trim().toLowerCase()] || current;
+}
+
 function nextAllowedStatuses(current) {
-  if (current === "Delivered" || current === CANCELLED) return [];
-  if (current === "New Order") return ["Order Confirm", CANCELLED];
-  const idx = ORDER_FLOW.indexOf(current);
-  if (idx === -1) return ["Order Confirm", CANCELLED];
+  const status = normalizeStoredStatus(current);
+  if (status === "Delivered" || status === CANCELLED) return [];
+  if (status === "New Order") return ["Order Confirm", CANCELLED];
+  const idx = ORDER_FLOW.indexOf(status);
+  if (idx === -1) return [CANCELLED];
   const next = [];
   if (idx < ORDER_FLOW.length - 1) next.push(ORDER_FLOW[idx + 1]);
   if (idx <= ORDER_FLOW.indexOf("Ready for pickup")) next.push(CANCELLED);
@@ -163,10 +226,7 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
   const amount = Math.round(
     verifiedItems.reduce((total, item) => total + item.lineAmount, 0) * 100
   ) / 100;
-  const commissionPct = Number(restaurantSnap.data().comission || 0);
-  if (!Number.isFinite(commissionPct) || commissionPct < 0 || commissionPct > 100) {
-    throw new HttpsError("failed-precondition", "Restaurant commission is invalid.");
-  }
+  const commissionPct = resolveCommissionPct(orderData, restaurantSnap.data());
   const adminShare = Math.round(amount * commissionPct) / 100;
   const partnerShare = Math.round((amount - adminShare) * 100) / 100;
   return {
@@ -204,7 +264,7 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
     const ownerId = order.Restaurant?.ownerId;
     assertTenantAccess(caller, ownerId);
 
-    const current = order.currentStatus || "New Order";
+    const current = normalizeStoredStatus(order.currentStatus || "New Order");
 
     if (current === toStatus) {
       return { alreadyApplied: true, order, current, toStatus };
@@ -226,6 +286,13 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
       );
     }
 
+    if (toStatus === "Out for Delivery" && !canMarkOutForDelivery(order)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Assign a rider before marking this order out for delivery."
+      );
+    }
+
     const statusEntry = {
       status: toStatus,
       timestamp: new Date(),
@@ -239,7 +306,7 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
       updatedBy: caller.uid,
     };
 
-    if (caller.role === ROLES.OWNER && order.comission == null) {
+    if (order.comission == null && ownerId) {
       const restSnap = await tx.get(db.collection("restaurants").doc(ownerId));
       if (restSnap.exists) {
         updates.comission = Number(restSnap.data().comission || 0);
@@ -298,17 +365,37 @@ async function markOrderDelivered(caller, { orderId, riderId, idempotencyKey }) 
     if (!snap.exists) throw new HttpsError("not-found", "Order not found.");
     const orderData = snap.data() || {};
 
-    if (orderData.currentStatus === "Delivered" || orderData.deliveryProcessed === true) {
+    const current = normalizeStoredStatus(orderData.currentStatus || "New Order");
+    if (current === "Delivered" || orderData.deliveryProcessed === true) {
       return { alreadyApplied: true, orderData, money: orderData.accounting || null };
     }
-    if (orderData.currentStatus !== "Out for Delivery") {
+    if (current !== "Out for Delivery") {
       throw new HttpsError(
         "failed-precondition",
         `Order must be "Out for Delivery" before Delivered (current: ${orderData.currentStatus}).`
       );
     }
 
-    const rider = await loadActiveRiderSnapshot(tx, db, riderId);
+    const stored = storedRiderSnapshot(orderData);
+    const assignedId = assignedRiderIdFromOrder(orderData);
+    let rider;
+    if (riderId) {
+      const requested = normalizeRiderId(riderId);
+      rider =
+        stored && stored.id === requested
+          ? stored
+          : await loadActiveRiderSnapshot(tx, db, requested);
+    } else {
+      if (!assignedId) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Assign a rider when the order is ready for pickup, then confirm delivery."
+        );
+      }
+      rider =
+        stored ||
+        (await loadRiderSnapshot(tx, db, assignedId, { requireActive: false }));
+    }
 
     // All pricing comes from trusted menu documents. Status, earnings, item
     // counters and restaurant totals commit together or all roll back.
@@ -331,8 +418,8 @@ async function markOrderDelivered(caller, { orderId, riderId, idempotencyKey }) 
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: caller.uid,
       accounting: money,
-      DeliveryPartner: rider,
-      deliveredByRiderId: rider.id,
+      comission: prepared.commissionPct,
+      ...deliveryRiderFields(rider),
       ...(safeKey ? { [`idempotencyKeys.${safeKey}`]: true } : {}),
     });
 
@@ -408,6 +495,102 @@ async function markOrderDelivered(caller, { orderId, riderId, idempotencyKey }) 
   return { orderId, currentStatus: "Delivered", alreadyApplied: false, money };
 }
 
+async function assignOrderRider(caller, { orderId, riderId, idempotencyKey }) {
+  if (!orderId) {
+    throw new HttpsError("invalid-argument", "orderId is required.");
+  }
+  if (caller.role !== ROLES.MASTER) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only master admin can assign riders."
+    );
+  }
+
+  const safeKey = validateIdempotencyKey(idempotencyKey);
+  const db = getFirestore();
+  const orderRef = db.collection("orders").doc(orderId);
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(orderRef);
+    if (!snap.exists) throw new HttpsError("not-found", "Order not found.");
+    const order = snap.data() || {};
+    const current = normalizeStoredStatus(order.currentStatus || "New Order");
+
+    if (safeKey && order.idempotencyKeys?.[safeKey]) {
+      return {
+        alreadyApplied: true,
+        current,
+        rider: storedRiderSnapshot(order),
+      };
+    }
+
+    if (current === "Delivered" || current === CANCELLED) {
+      throw new HttpsError("failed-precondition", "Terminal order cannot change.");
+    }
+    if (!ASSIGN_RIDER_STATUSES.has(current)) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Assign a rider when the order is ready for pickup (current: ${current}).`
+      );
+    }
+
+    const rider = await loadActiveRiderSnapshot(tx, db, riderId);
+    const previousId = assignedRiderIdFromOrder(order);
+    if (previousId === rider.id) {
+      if (safeKey) {
+        tx.update(orderRef, { [`idempotencyKeys.${safeKey}`]: true });
+      }
+      return { alreadyApplied: true, current, rider };
+    }
+
+    tx.update(orderRef, {
+      DeliveryPartner: rider,
+      assignedRiderId: rider.id,
+      assignedAt: FieldValue.serverTimestamp(),
+      assignedBy: caller.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: caller.uid,
+      ...(safeKey ? { [`idempotencyKeys.${safeKey}`]: true } : {}),
+    });
+    const ownerId = order.Restaurant?.ownerId;
+    const riderNote = {
+      title: "Rider assigned",
+      desc: `${rider.name || "A rider"} is assigned to #${orderId}. You can mark it out for delivery.`,
+      type: "rider",
+      image: "",
+      timestamp: FieldValue.serverTimestamp(),
+    };
+    if (ownerId) {
+      tx.set(
+        db.collection("notifications").doc("restaurants").collection(ownerId).doc(),
+        riderNote
+      );
+    }
+    tx.set(
+      db.collection("notifications").doc("restaurants").collection("RestAdmin").doc(),
+      riderNote
+    );
+    writeAuditLogTx(tx, db, {
+      actorUid: caller.uid,
+      actorRole: caller.role,
+      action: "order.assign_rider",
+      targetType: "order",
+      targetId: orderId,
+      tenantId: order.Restaurant?.ownerId,
+      before: { assignedRiderId: previousId, currentStatus: current },
+      after: { assignedRiderId: rider.id, rider, currentStatus: current },
+      requestId: safeKey,
+    });
+    return { alreadyApplied: false, current, rider };
+  });
+
+  return {
+    orderId,
+    currentStatus: result.current,
+    alreadyApplied: result.alreadyApplied,
+    rider: result.rider,
+  };
+}
+
 async function clearOrderPayment(caller, { orderId, idempotencyKey }) {
   if (caller.role !== ROLES.MASTER) {
     throw new HttpsError(
@@ -458,8 +641,15 @@ async function clearOrderPayment(caller, { orderId, idempotencyKey }) {
 module.exports = {
   transitionOrderStatus,
   markOrderDelivered,
+  assignOrderRider,
   clearOrderPayment,
   nextAllowedStatuses,
+  assignedRiderIdFromOrder,
+  storedRiderSnapshot,
+  canMarkOutForDelivery,
+  deliveryRiderFields,
+  normalizeStoredStatus,
+  resolveCommissionPct,
   ORDER_FLOW,
   normalizeQuantity,
   validateIdempotencyKey,

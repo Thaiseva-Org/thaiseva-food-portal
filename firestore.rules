@@ -257,6 +257,42 @@ service cloud.firestore {
         ]);
     }
 
+    function isFoodCancelStatus(value) {
+      return value in ['Cancelled', 'Canceled', 'CANCELED'];
+    }
+
+    function isFoodOrderPreOutStatus(value) {
+      return value in [
+        'New Order', 'Order Confirm', 'Preparing', 'Ready for pickup'
+      ];
+    }
+
+    // Customer cancel only, and only before Out for Delivery.
+    // Kitchen status, rider, and money stay Cloud Functions (Admin SDK).
+    function isFoodOrderCustomerCancel() {
+      return (isOwner('uid') || isOwner('userId') ||
+          isFoodOrderReceiver() || isFoodOrderSender()) &&
+        paymentFieldsUnchanged() &&
+        isFoodOrderPreOutStatus(
+          resource.data.get('currentStatus', resource.data.get('status', 'New Order'))
+        ) &&
+        (
+          !resource.data.keys().hasAny(['currentStatus']) ||
+          isFoodCancelStatus(request.resource.data.get('currentStatus', ''))
+        ) &&
+        (
+          isFoodCancelStatus(request.resource.data.get('currentStatus', '')) ||
+          isFoodCancelStatus(request.resource.data.get('status', '')) ||
+          isFoodCancelStatus(request.resource.data.get('orderStatus', ''))
+        ) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'currentStatus', 'Status', 'status', 'orderStatus',
+            'updatedAt', 'canceledAt', 'cancelledAt',
+            'cancellationReason', 'cancelReason', 'canceledBy', 'cancelledBy'
+          ]);
+    }
+
     // ============================================================
     // PUBLIC CATALOG (read-only for clients)
     // ============================================================
@@ -442,16 +478,8 @@ service cloud.firestore {
         || isFoodOrderRestaurantOwner()
         || isFoodOrderReceiver()
         || isFoodOrderSender();
-      allow update: if isAdmin() || isFoodAdmin() || (
-        (isOwner('uid') || isOwner('userId') || isFoodOrderReceiver() || isFoodOrderSender()) &&
-        paymentFieldsUnchanged() &&
-        (
-          request.resource.data.get('status', '') in ['Canceled', 'Cancelled', 'CANCELED'] ||
-          request.resource.data.get('orderStatus', '') in ['Canceled', 'Cancelled', 'CANCELED'] ||
-          request.resource.data.get('currentStatus', '') in ['Cancelled', 'Canceled', 'CANCELED']
-        )
-      );
-      // Money / delivery / earnings: Cloud Functions (Admin SDK) only
+      allow update: if isFoodOrderCustomerCancel();
+      // Money / delivery / earnings / kitchen status: Cloud Functions (Admin SDK) only
       allow delete: if isAdmin() || isFoodAdmin();
     }
 
@@ -554,7 +582,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Food delivery riders. Master fills details here; assign on confirm delivery.
+    // Food delivery riders. Master fills details here; assigned when Ready for pickup.
     match /foodRiders/{riderId} {
       allow read: if isAdmin() || isFoodAdmin();
       allow write: if false;

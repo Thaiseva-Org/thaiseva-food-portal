@@ -125,6 +125,23 @@ test("food order read allows restaurant owner schema without second loose orders
   );
 });
 
+test("food order client update is cancel-only before Out for Delivery", () => {
+  assert.match(rules, /function isFoodOrderCustomerCancel\(\)/);
+  assert.match(rules, /function isFoodOrderPreOutStatus\(/);
+  const ordersBlock = rules.split("match /orders/{orderId}")[1] || "";
+  const updateLine = ordersBlock.split("allow delete")[0];
+  assert.match(updateLine, /allow update: if isFoodOrderCustomerCancel\(\);/);
+  assert.doesNotMatch(
+    updateLine,
+    /allow update: if isAdmin\(\) \|\| isFoodAdmin\(\)/,
+  );
+  assert.match(rules, /isFoodOrderPreOutStatus/);
+  assert.match(
+    rules,
+    /'New Order', 'Order Confirm', 'Preparing', 'Ready for pickup'/,
+  );
+});
+
 test("food-only paths exist; earnings writes stay server-side", () => {
   assert.match(
     rules,

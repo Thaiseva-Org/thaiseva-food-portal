@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CSVLink } from "react-csv";
 import DataBoxes from "../../../components/DataBoxes";
+import { StatGrid } from "../../../components/dashboard";
 import DateRangeFilter from "../../../components/DateRangeFilter";
 import PeriodToggle from "../../../components/PeriodToggle";
 import Loading from "../../../components/Loading";
@@ -186,7 +187,7 @@ const RestaurantStatsOverview = () => {
             </p>
           )}
 
-          <div className="stat-grid">
+          <StatGrid columns={6}>
             <DataBoxes data={stats.delivered} title="Orders" icon="bi-clipboard2-check" color="blue" />
             <DataBoxes data={stats.gmv} title="GMV (฿)" icon="bi-cash-stack" color="green" />
             <DataBoxes
@@ -213,7 +214,7 @@ const RestaurantStatsOverview = () => {
               icon="bi-graph-up"
               color="blue"
             />
-          </div>
+          </StatGrid>
 
           <BentoGrid className="xl:grid-cols-2">
             <BentoGridItem

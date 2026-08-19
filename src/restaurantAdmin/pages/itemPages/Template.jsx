@@ -166,7 +166,7 @@ const Template = ({
           <p className="page-subtext mt-1 max-w-xl">
             {isEdit
               ? "Update photo and details — the preview updates as you type."
-              : "Drop a photo on the card. New items start inactive until you activate them."}
+              : "Drop a photo on the card. New items go live on the menu."}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -18,8 +18,10 @@ export async function callApi(name, payload = {}) {
   } catch (error) {
     const code = error.code || error?.customData?.status;
     const message =
-      error.message?.replace(/^Firebase:\s*/i, "").replace(/\s*\(.*\)\s*$/, "") ||
-      "Something went wrong. Please try again.";
+      error.message
+        ?.replace(/^Firebase:\s*/i, "")
+        .replace(/\s*\((functions|auth|storage|firestore)\/[^)]+\)\s*$/i, "")
+        .trim() || "Something went wrong. Please try again.";
     const err = new Error(message);
     err.code = code;
     err.raw = error;

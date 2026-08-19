@@ -10,6 +10,7 @@ import {
   fetchVerifiedRestaurants,
 } from "../../../services/RestaurantStats";
 import { formatCount, formatMoney } from "../../../utils/format";
+import { isPlatformOwnerId } from "../../../utils/platformRestaurant";
 
 const RestaurantStatsList = () => {
   const { isMasterAdmin } = useAuth();
@@ -66,9 +67,12 @@ const RestaurantStatsList = () => {
   }, [isMasterAdmin, active, page]); // eslint-disable-line react-hooks/exhaustive-deps -- lastDocs is a pagination cursor store
 
   const filtered = useMemo(() => {
+    const partners = restaurants.filter(
+      (item) => !isPlatformOwnerId(item.ownerId || item.docId)
+    );
     const q = search.trim().toLowerCase();
-    if (!q) return restaurants;
-    return restaurants.filter((item) => {
+    if (!q) return partners;
+    return partners.filter((item) => {
       const haystack = [item.name, item.id, item.location, item.address]
         .filter(Boolean)
         .join(" ")

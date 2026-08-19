@@ -7,7 +7,7 @@
     "dev": "vite --port 5000",
     "build": "vite build",
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "test": "node --test tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js",
+    "test": "node --test tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js tests/orderRider.test.js",
     "check": "npm run lint && npm test && npm run build",
     "verify:production": "node scripts/verify-production.mjs",
     "production:check": "npm run verify:production && npm run check && npm --prefix functions run check && npm audit --omit=dev && npm --prefix functions audit --omit=dev",
@@ -15,6 +15,7 @@
     "seed:restaurant": "node scripts/seed-demo-restaurant.mjs",
     "seed:riders": "node scripts/seed-demo-riders.mjs",
     "seed:master": "node scripts/seed-master-admin.mjs",
+    "seed:all": "node scripts/seed-master-admin.mjs",
     "rename:email": "node scripts/rename-auth-email.mjs"
   },
   "dependencies": {

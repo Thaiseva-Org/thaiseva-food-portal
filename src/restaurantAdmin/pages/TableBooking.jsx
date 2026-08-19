@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../AuthContext";
 import { setDineInBookingStatus } from "../../api";
 import DataBoxes from "../../components/DataBoxes";
+import { StatGrid } from "../../components/dashboard";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
@@ -185,13 +186,10 @@ const TableBookings = () => {
         </div>
       </div>
 
-      {/* Summary — click a card to filter that status */}
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <StatGrid columns={4}>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            statusFilter === "all" ? "ring-2 ring-brand-400" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => setStatusFilter("all")}
           aria-pressed={statusFilter === "all"}
         >
@@ -200,13 +198,12 @@ const TableBookings = () => {
             title="All"
             icon="bi-calendar2-check"
             color="blue"
+            selected={statusFilter === "all"}
           />
         </button>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            statusFilter === "pending" ? "ring-2 ring-warning-500" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => setStatusFilter("pending")}
           aria-pressed={statusFilter === "pending"}
         >
@@ -215,13 +212,12 @@ const TableBookings = () => {
             title="Pending"
             icon="bi-hourglass-split"
             color="yellow"
+            selected={statusFilter === "pending"}
           />
         </button>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            statusFilter === "accepted" ? "ring-2 ring-success-500" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => setStatusFilter("accepted")}
           aria-pressed={statusFilter === "accepted"}
         >
@@ -230,13 +226,12 @@ const TableBookings = () => {
             title="Accepted"
             icon="bi-check-circle"
             color="green"
+            selected={statusFilter === "accepted"}
           />
         </button>
         <button
           type="button"
-          className={`text-left rounded-2xl focus-ring ${
-            statusFilter === "rejected" ? "ring-2 ring-danger-500" : ""
-          }`}
+          className="text-left rounded-2xl focus-ring h-full"
           onClick={() => setStatusFilter("rejected")}
           aria-pressed={statusFilter === "rejected"}
         >
@@ -245,9 +240,10 @@ const TableBookings = () => {
             title="Rejected"
             icon="bi-x-circle"
             color="red"
+            selected={statusFilter === "rejected"}
           />
         </button>
-      </div>
+      </StatGrid>
 
       {/* Date range */}
       <div className="mt-4">

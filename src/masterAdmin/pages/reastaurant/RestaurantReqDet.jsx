@@ -7,6 +7,18 @@ import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import StatusBadge from "../../../components/StatusBadge";
 import { reviewRestaurantApplication } from "../../../api";
+import { useResolvedApplicationFileUrl } from "../../../utils/applicationFiles";
+
+const CoverPhoto = ({ src, alt }) => {
+  const resolved = useResolvedApplicationFileUrl(src);
+  return (
+    <img
+      src={resolved || "https://via.placeholder.com/500x300?text=No+Image"}
+      alt={alt}
+      className="h-56 sm:h-64 w-full object-cover"
+    />
+  );
+};
 
 const DetailRow = ({ label, value }) => (
   <div className="min-w-0">
@@ -20,6 +32,7 @@ const DetailRow = ({ label, value }) => (
 );
 
 const DocLink = ({ label, url, name }) => {
+  const resolved = useResolvedApplicationFileUrl(url);
   if (!url) {
     return (
       <div className="rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 px-3 py-3 min-w-0">
@@ -28,19 +41,20 @@ const DocLink = ({ label, url, name }) => {
       </div>
     );
   }
-  const isImage = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+  const href = resolved || url;
+  const isImage = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(String(url));
   return (
     <a
-      href={url}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
       className="block rounded-xl border border-neutral-100 bg-white p-3 hover:border-brand-200 hover:shadow-sm transition-all min-w-0"
     >
       <p className="text-xs font-semibold text-ink-subtle">{label}</p>
       <div className="mt-2 flex items-center gap-3 min-w-0">
-        {isImage ? (
+        {isImage && resolved ? (
           <img
-            src={url}
+            src={resolved}
             alt=""
             className="h-12 w-12 rounded-lg object-cover border border-neutral-100 shrink-0"
           />
@@ -260,14 +274,9 @@ const RestaurantReqDet = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 min-w-0">
           <div className="lg:col-span-5 min-w-0">
             <div className="overflow-hidden rounded-2xl border border-neutral-100 bg-neutral-100">
-              <img
-                src={
-                  restaurantData.imageUrl ||
-                  restaurantData.photo ||
-                  "https://via.placeholder.com/500x300?text=No+Image"
-                }
+              <CoverPhoto
+                src={restaurantData.imageUrl || restaurantData.photo}
                 alt={restaurantData.name || "Restaurant"}
-                className="h-56 sm:h-64 w-full object-cover"
               />
             </div>
             <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50/60 px-3.5 py-3">

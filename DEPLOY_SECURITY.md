@@ -3,8 +3,8 @@
 ## What changed
 
 1. **Cloud Functions API** (`functions/`) owns money, order status, commission, approvals, menu mutations, and dine-in bookings (customer create/list/update/cancel + restaurant accept/reject).
-2. **Firestore rules** block client updates to `orders` and all `Earnings` writes; lock financial restaurant fields.
-3. **Storage rules** require image MIME + 5MB max; prefer `restaurants/{uid}/...` paths.
+2. **Firestore rules** block client kitchen/rider/money writes on `orders` (customer cancel only before Out) and all `Earnings` writes; lock financial restaurant fields.
+3. **Storage rules** require image MIME + size limits; prefer `restaurants/{uid}/...` paths. Public-apply files stay under `applications/{id}/` (admin/food-admin read only; signed URLs for preview and review).
 4. **SPA** calls callables via `src/api/*`; auth no longer overwrites profiles on Google login.
 5. **`firebase-admin` removed** from the frontend package.
 
@@ -90,12 +90,17 @@ If production data lives under short public IDs, run a one-off Admin script to c
 |----------|------|
 | `ensureUserProfile` | any auth |
 | `submitRestaurantApplication` | any auth |
-| `reviewRestaurantApplication` | master |
+| `startPublicRestaurantApplication` / `getPublicApplicationUploadUrl` / `finalizePublicUpload` / `submitPublicRestaurantApplication` | public (rate-limited; no App Check) |
+| `reviewRestaurantApplication` | master (public apply or existing owner) |
 | `updateRestaurantProfile` | owner / master |
 | `setRestaurantOpenState` | owner / master |
 | `adminUpdateCommission` | master |
-| `transitionOrderStatus` | owner / master |
-| `markOrderDelivered` | master |
+| `ensurePlatformRestaurant` | master |
+| `transitionOrderStatus` | owner / master (one step; rider required before Out) |
+| `assignOrderRider` | master (when Ready for pickup or Out for Delivery) |
+| `markOrderDelivered` | master (uses the rider already on the ticket) |
+| `createFoodRider` / `updateFoodRider` / `setFoodRiderActive` | master (unique phone; create is idempotent) |
+| `getApplicationFileUrl` | owner / master (signed read of private apply files) |
 | `clearOrderPayment` | master |
 | `createDineInBooking` | any auth (customer app) |
 | `listMyDineInBookings` | any auth (own bookings) |
@@ -122,12 +127,16 @@ may set `ENFORCE_APP_CHECK=false`.
 
 - [ ] Partner cannot set commission on apply
 - [ ] Google login does not wipe `isRestaurantAdmin`
-- [ ] Order status updates only via API
+- [ ] Order kitchen / rider / money writes only via API
+- [ ] Customer cancel on `orders` is blocked after Out / Delivered
 - [ ] Customer app creates / cancels table bookings via booking callables (not client `setDoc`)
 - [ ] Restaurant accept / reject uses `setDineInBookingStatus`
-- [ ] Delivered once → earnings once (retry is idempotent)
+- [ ] Ready for pickup requires a rider before Out for Delivery
+- [ ] Delivered uses the assigned rider; inactive rider still closes an in-flight ticket
+- [ ] Delivered once → earnings once (retry is idempotent); commission uses the stamped ticket rate
 - [ ] Payment clear works
 - [ ] Approve restaurant sets claims + commission
+- [ ] Public apply ID/license files are not world-readable (`applications/` is private)
 - [ ] `npm audit` triage remaining high/critical deps
 - [ ] Restrict API keys in Google Cloud Console
 - [ ] App Check requests show valid tokens; unverified callable requests fail

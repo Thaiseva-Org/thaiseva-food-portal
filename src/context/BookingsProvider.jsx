@@ -82,6 +82,11 @@ export const BookingsProvider = ({ children }) => {
               Status: orderData.currentStatus || "N/A",
               restaurantName: orderData?.Restaurant?.name || "N/A",
               ownerId: orderData?.Restaurant?.ownerId || "",
+              DeliveryPartner: orderData.DeliveryPartner || null,
+              assignedRiderId:
+                orderData.assignedRiderId ||
+                orderData.DeliveryPartner?.id ||
+                "",
             };
           });
           setOrders(ordersList);

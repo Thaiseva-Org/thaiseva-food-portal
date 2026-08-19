@@ -647,15 +647,16 @@ async function cancelDineInBooking(caller, payload = {}) {
 }
 
 async function setDineInBookingStatus(caller, { bookingId, status }) {
-  if (!bookingId || !["Accepted", "Canceled"].includes(status)) {
+  if (!["Accepted", "Canceled"].includes(status)) {
     throw new HttpsError(
       "invalid-argument",
       "bookingId and status (Accepted|Canceled) are required."
     );
   }
+  const id = cleanBookingId(bookingId);
 
   const db = getFirestore();
-  const bookingRef = db.collection("dineInBookings").doc(String(bookingId));
+  const bookingRef = db.collection("dineInBookings").doc(id);
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists) throw new HttpsError("not-found", "Booking not found.");
@@ -693,7 +694,7 @@ async function setDineInBookingStatus(caller, { bookingId, status }) {
       actorRole: caller.role,
       action: "booking.transition",
       targetType: "dine_in_booking",
-      targetId: bookingId,
+      targetId: id,
       tenantId: booking.ownerId,
       before: { status: current },
       after: { status },
@@ -701,7 +702,7 @@ async function setDineInBookingStatus(caller, { bookingId, status }) {
     return { alreadyApplied: false, booking, current };
   });
 
-  return { bookingId, status, alreadyApplied: result.alreadyApplied };
+  return { bookingId: id, status, alreadyApplied: result.alreadyApplied };
 }
 
 module.exports = {

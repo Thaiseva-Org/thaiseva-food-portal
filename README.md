@@ -8,34 +8,35 @@ Welcome to the **Thaiseva Food Portal Admin Panel**. This is a powerful, modern 
 
 ### 🏢 Master Admin Portal (`/foodAdmin`)
 The Master Admin dashboard oversees the entire platform's operations:
-* **Dashboard Analytics:** Comprehensive statistics regarding total earnings, total orders, active/inactive restaurants, and active users via interactive charts.
-* **Category Management:** Manage and update food categories across the portal.
-* **Restaurant Requests:** Review and approve or reject sign-up requests from new restaurants.
-* **Restaurant Management:** View profiles, edit operational information, and manage statuses of all active restaurants.
-* **Global Order History & Tracking:** Deep inspection of all orders placed on the portal.
-* **Global Table Reservations:** Monitor table bookings and reservation schedules globally.
-* **Invoicing System:** Generate and export PDF invoices for billing and audits.
+* **Dashboard Analytics:** Network KPIs, charts, and top restaurants (same KPI card style as other stats pages).
+* **Restaurant Requests:** Review public `/apply` and logged-in onboarding; approve (with commission) or reject.
+* **Restaurant Monitor:** Per-shop information, orders, reservations, and finance.
+* **Our kitchen / Our orders:** ThaiSeva in-house menu and its tickets only.
+* **Orders:** Partner-shop tickets; assign a rider at Ready for pickup; confirm delivered.
+* **Riders:** Courier directory plus job overview / CSV.
+* **Records / invoices:** Settlement book, PDF invoices, mark paid.
+* **Categories:** Global menu categories.
 
 ### 🍳 Restaurant Admin Portal (`/partner`)
 Designed for individual restaurant owners to manage their day-to-day operations:
-* **Restaurant Dashboard:** Visual statistics on sales performance, customer trends, and order counts.
-* **Order Management:** View incoming orders, update dispatch/preparation statuses, and handle order logs in real-time.
-* **Menu Management:** Add, edit, or remove menu items, set prices, write descriptions, and update dish photos.
-* **Restaurant Profile:** Manage operational hours, contact information, descriptions, and address integration.
-* **Table Reservations:** Review guest requests and accept or reject them. Customer apps create bookings through Cloud Functions (see `APP_BOOKING_API.md`).
+* **Restaurant Dashboard:** Sales, customers, and order counts for that shop only.
+* **Orders:** Kitchen board — confirm → prepare → ready; wait for a rider; mark out for delivery.
+* **Menu:** Add, edit, hide, or remove dishes.
+* **My Restaurant:** Profile, open/closed, documents on file.
+* **Table Reservations:** Accept or reject guest requests. Customer apps use Cloud Functions (see `APP_BOOKING_API.md`).
 
 ---
 
 ## 🛠️ Tech Stack
 
 * **Core Framework:** React 19, Vite (Fast Bundler)
-* **Routing & Authentication:** React Router DOM (v6), Custom Context-based Route Protection (`PrivateRoute`)
+* **Routing & Authentication:** React Router 8, custom `PrivateRoute` + Auth context
 * **Styling & Components:** Tailwind CSS, Material-UI (MUI), Emotion, styled-components, RSuite
-* **Database & Auth Integration:** Firebase Web SDK, Firebase Admin SDK
-* **Data Visualization:** ApexCharts, Chart.js, React ChartJS 2
-* **PDF Operations:** React PDF Renderer, jsPDF, jsPDF AutoTable (for invoice generation)
-* **Integrations:** React Google Maps API (for address autocomplete & locations)
-* **Animations:** Lottie React
+* **Database & Auth Integration:** Firebase Web SDK (SPA), Firebase Admin SDK (Cloud Functions)
+* **Data Visualization:** ApexCharts, Chart.js
+* **PDF Operations:** React PDF Renderer
+* **Integrations:** React Google Maps API (address autocomplete)
+* **Motion:** Motion (formerly Framer Motion)
 
 ---
 
@@ -46,7 +47,7 @@ Designed for individual restaurant owners to manage their day-to-day operations:
 ├── public/                # Public assets (favicon, fonts, static files)
 ├── src/
 │   ├── assets/            # App icons, illustrations, animations, and logos
-│   ├── components/        # Reusable global UI components (Loading, DataBoxes, etc.)
+│   ├── components/        # Shared UI (dashboard KPI cards, Loading, filters)
 │   ├── context/           # Global React Contexts (Bookings, Notifications)
 │   ├── services/          # API & database service wrappers (Earnings, Orders, Records)
 │   ├── masterAdmin/       # Pages, components, and routing specific to Master Admin
@@ -111,9 +112,11 @@ Enterprise site key before deploying.
   npm run preview
   ```
 
-* **Lint Code:**
+* **Lint, test, and production check:**
   ```bash
   npm run lint
+  npm test
+  npm run check
   ```
 
 ---
@@ -127,5 +130,7 @@ Enterprise site key before deploying.
 | [`DEPLOY_SECURITY.md`](DEPLOY_SECURITY.md) | Deploy order, App Check, full callable list |
 | [`FIRESTORE_RULES_NOTES.md`](FIRESTORE_RULES_NOTES.md) | Shared multi-app rules — what this repo may change |
 | [`FIRESTORE_INDEXES_NOTES.md`](FIRESTORE_INDEXES_NOTES.md) | Shared indexes — never deploy a food-only file |
+
+Food orders: kitchen one step at a time → master assigns a rider at **Ready for pickup** → kitchen marks **Out for delivery** → master confirms **Delivered** (earnings post then).
 
 Customer table bookings are **request-based** (`Pending` → restaurant Accept / Reject). There is no table-slot inventory API. Hotel, car, van, and travel bookings belong to other products and are not exposed here.
