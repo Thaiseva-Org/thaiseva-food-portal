@@ -13,7 +13,7 @@ const Home = lazy(() => import("./Home"));
 const ManageOrder = lazy(() => import("./ManageOrder"));
 const Restaurant = lazy(() => import("./Restaurant"));
 const ResturantAdminHome = lazy(() => import("./ResturantAdminHome"));
-const TableBooking = lazy(() => import("./TableBooking"));
+const RestaurantChat = lazy(() => import("./RestaurantChat"));
 const OwnerOnboarding = lazy(() => import("./onboarding/OwnerOnboarding"));
 const PublicApply = lazy(() => import("./onboarding/PublicApply"));
 
@@ -29,7 +29,7 @@ export {
   ManageOrder,
   Restaurant,
   ResturantAdminHome,
-  TableBooking,
+  RestaurantChat,
   OwnerOnboarding,
   PublicApply,
 };

@@ -25,14 +25,6 @@
       ]
     },
     {
-      "collectionGroup": "dineInBookings",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "ownerId", "order": "ASCENDING" },
-        { "fieldPath": "bookingTimestamp", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "hotelBookingData",
       "queryScope": "COLLECTION",
       "fields": [

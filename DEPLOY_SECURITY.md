@@ -2,7 +2,7 @@
 
 ## What changed
 
-1. **Cloud Functions API** (`functions/`) owns money, order status, commission, approvals, menu mutations, and dine-in bookings (customer create/list/update/cancel + restaurant accept/reject).
+1. **Cloud Functions API** (`functions/`) owns money, order status, commission, approvals, and menu mutations.
 2. **Firestore rules** block client kitchen/rider/money writes on `orders` (customer cancel only before Out) and all `Earnings` writes; lock financial restaurant fields.
 3. **Storage rules** require image MIME + size limits; prefer `restaurants/{uid}/...` paths. Public-apply files stay under `applications/{id}/` (admin/food-admin read only; signed URLs for preview and review).
 4. **SPA** calls callables via `src/api/*`; auth no longer overwrites profiles on Google login.
@@ -102,15 +102,7 @@ If production data lives under short public IDs, run a one-off Admin script to c
 | `createFoodRider` / `updateFoodRider` / `setFoodRiderActive` | master (unique phone; create is idempotent) |
 | `getApplicationFileUrl` | owner / master (signed read of private apply files) |
 | `clearOrderPayment` | master |
-| `createDineInBooking` | any auth (customer app) |
-| `listMyDineInBookings` | any auth (own bookings) |
-| `getDineInBooking` | booking owner, or owner / master |
-| `updateDineInBooking` | booking owner (Pending only) |
-| `cancelDineInBooking` | booking owner (Pending or Accepted) |
-| `setDineInBookingStatus` | owner / master (Accept / Reject) |
 | `createFoodItem` / `updateFoodItem` / `setFoodItemActive` / `deleteFoodItem` | owner / master |
-
-Customer-app booking contract, payloads, and error codes: **`APP_BOOKING_API.md`**.
 
 ## Local env
 
@@ -129,8 +121,6 @@ may set `ENFORCE_APP_CHECK=false`.
 - [ ] Google login does not wipe `isRestaurantAdmin`
 - [ ] Order kitchen / rider / money writes only via API
 - [ ] Customer cancel on `orders` is blocked after Out / Delivered
-- [ ] Customer app creates / cancels table bookings via booking callables (not client `setDoc`)
-- [ ] Restaurant accept / reject uses `setDineInBookingStatus`
 - [ ] Ready for pickup requires a rider before Out for Delivery
 - [ ] Delivered uses the assigned rider; inactive rider still closes an in-flight ticket
 - [ ] Delivered once → earnings once (retry is idempotent); commission uses the stamped ticket rate

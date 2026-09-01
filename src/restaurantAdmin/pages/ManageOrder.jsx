@@ -8,7 +8,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
-import { useBookings } from "../../context/BookingsProvider";
+import { useOrders } from "../../context/OrdersProvider";
 import { fetchOrders, fetchOrdersTotalPages } from "../../services/GetOrders";
 import {
   ORDER_STATUS_FILTERS,
@@ -41,7 +41,7 @@ const matchesSearch = (item, query) => {
 
 const ManageOrder = () => {
   const { isRestaurantAdmin, currentUser } = useAuth();
-  const { orders, ordersLoading, ordersError } = useBookings();
+  const { orders, ordersLoading, ordersError } = useOrders();
   const restaurantId = currentUser?.uid;
 
   const [orderDetailsRecord, setOrderDetailsRecord] = useState([]);

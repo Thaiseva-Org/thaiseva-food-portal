@@ -129,19 +129,6 @@ async function main() {
     console.log("· orders (may need index):", e.message);
   }
 
-  // dine-in
-  try {
-    const snap = await db
-      .collection("dineInBookings")
-      .where("ownerId", "==", uid)
-      .get();
-    const n = await deleteCollectionDocs(db, snap);
-    console.log(`✓ dineInBookings (${n})`);
-    deleted += n;
-  } catch (e) {
-    console.log("· dineInBookings:", e.message);
-  }
-
   // notifications/restaurants/{uid}
   try {
     const notifRoot = db.collection("notifications").doc("restaurants");

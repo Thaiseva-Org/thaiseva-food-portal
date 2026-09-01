@@ -7,7 +7,7 @@ import {
   useCallback,
   useRef,
 } from "react";
-import { auth, db } from "../firebaseConfig";
+import { appCheckReady, auth, db } from "../firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
 import { ensureUserProfile } from "./api";
 import Loading from "./components/Loading";
@@ -101,6 +101,11 @@ export const AuthProvider = ({ children }) => {
         }));
         return;
       }
+
+      // App Check is intentionally initialized during the browser's first idle
+      // period so reCAPTCHA does not compete with the public shell. Authenticated
+      // Firestore reads still wait for it, preserving enforcement guarantees.
+      await appCheckReady;
 
       const [tokenResult, userDoc, resDoc] = await Promise.all([
         user.getIdTokenResult(forceRefresh),

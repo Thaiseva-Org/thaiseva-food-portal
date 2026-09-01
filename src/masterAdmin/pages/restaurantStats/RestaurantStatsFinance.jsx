@@ -8,10 +8,7 @@ import DateRangeFilter from "../../../components/DateRangeFilter";
 import DataBoxes from "../../../components/DataBoxes";
 import { StatGrid } from "../../../components/dashboard";
 import Loading from "../../../components/Loading";
-import {
-  fetchReservationCount,
-  fetchRestaurantOrdersInRange,
-} from "../../../services/RestaurantStats";
+import { fetchRestaurantOrdersInRange } from "../../../services/RestaurantStats";
 import {
   applyPeriodOffer,
   formatCommissionMoney,
@@ -103,7 +100,6 @@ const RestaurantStatsFinance = () => {
 
   const [orders, setOrders] = useState([]);
   const [partial, setPartial] = useState(false);
-  const [reservations, setReservations] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -114,24 +110,19 @@ const RestaurantStatsFinance = () => {
       setLoading(true);
       setError(null);
       try {
-        const [orderResult, reservationCount] = await Promise.all([
-          fetchRestaurantOrdersInRange({
-            ownerId,
-            startDate: range.startDate,
-            endDate: range.endDate,
-          }),
-          fetchReservationCount(ownerId, range.startDate, range.endDate),
-        ]);
+        const orderResult = await fetchRestaurantOrdersInRange({
+          ownerId,
+          startDate: range.startDate,
+          endDate: range.endDate,
+        });
         if (cancelled) return;
         setOrders(orderResult.rows);
         setPartial(orderResult.partial);
-        setReservations(reservationCount);
       } catch (err) {
         console.error(err);
         if (!cancelled) {
           setError(err.message || "Could not load this period.");
           setOrders([]);
-          setReservations(0);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -586,7 +577,7 @@ const RestaurantStatsFinance = () => {
         </div>
       ) : (
         <>
-          <StatGrid columns={6}>
+          <StatGrid columns={5}>
             <DataBoxes
               data={orders.length}
               title="Orders"
@@ -598,12 +589,6 @@ const RestaurantStatsFinance = () => {
               title="Delivered"
               icon="bi-bag-check"
               color="green"
-            />
-            <DataBoxes
-              data={reservations}
-              title="Reservations"
-              icon="bi-calendar2-check"
-              color="purple"
             />
             <DataBoxes
               data={totals.gmv}
@@ -645,12 +630,6 @@ const RestaurantStatsFinance = () => {
                   className="btn-ghost"
                 >
                   All orders
-                </Link>
-                <Link
-                  to={`/foodAdmin/restaurantStats/${ownerId}/reservations`}
-                  className="btn-ghost"
-                >
-                  All reservations
                 </Link>
               </div>
             </div>

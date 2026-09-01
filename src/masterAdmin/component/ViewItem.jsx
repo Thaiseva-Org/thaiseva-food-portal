@@ -287,6 +287,8 @@ const ViewFoodItem = ({ items, onClose, resId, ownerId }) => {
                                 <img
                                   src={item.imageUrl}
                                   alt=""
+                                  loading="lazy"
+                                  decoding="async"
                                   className={`h-full w-full object-cover ${
                                     item.active ? "" : "grayscale-[30%]"
                                   }`}

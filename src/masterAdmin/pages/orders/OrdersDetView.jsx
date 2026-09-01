@@ -439,6 +439,8 @@ const OrdersDetView = () => {
                             <img
                               src={item.imageUrl}
                               alt=""
+                              loading="lazy"
+                              decoding="async"
                               className="w-24 h-16 object-cover rounded-md"
                             />
                             <div className="flex w-[60%] items-center">

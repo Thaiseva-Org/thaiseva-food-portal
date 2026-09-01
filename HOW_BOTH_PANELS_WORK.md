@@ -1,518 +1,78 @@
-# How Both Panels Work
+# How Both Food Panels Work
 
-A simple, functional guide to the Thaiseva Food Portal.
+This repository contains the Thaiseva Master Admin panel and Restaurant Partner panel.
 
-This app has **two workspaces**. Same product, two different jobs:
+## Master Admin
 
-| Panel | Who uses it | Address | Job in one sentence |
-| --- | --- | --- | --- |
-| **Master Admin** | Thaiseva staff who run the whole platform | `/foodAdmin` | Approve restaurants, watch the network, settle money |
-| **Restaurant Partner** | A restaurant owner running one shop | `/partner` | Manage their menu, kitchen orders, and table bookings |
+Master Admin runs the food platform across all restaurants.
 
-A person can only be in **one** of these at a time. The system decides after login. You cannot jump from one panel to the other by typing a URL.
+- Dashboard: network order and restaurant health.
+- Restaurant Requests: review applications and set commission.
+- Restaurant Monitor: inspect one restaurant's profile, orders, and finance.
+- Our Kitchen / Our Orders: operate Thaiseva's in-house kitchen.
+- Orders: manage partner-shop orders and assign riders.
+- Riders: manage couriers and inspect completed or active work.
+- Records: invoices, payouts, and payment clearing.
+- Restaurant Chat: talk directly with restaurant partners.
 
----
+## Restaurant Partner
 
-## 1. What happens when someone signs in
+Restaurant Partner runs one verified shop.
 
-Everyone starts at `/auth` (or the home page `/`, which immediately sends them to the right place).
+- Dashboard: order totals, customers, charts, and notifications.
+- My Restaurant: public profile, operating hours, and open/closed state.
+- Menu: add, edit, hide, and remove dishes.
+- Orders: confirm and prepare kitchen tickets.
+- Restaurant Chat: talk with Thaiseva support.
 
-1. They sign in with email/password or Google.
-2. The app checks who they are (not from the URL — from their login token and profile).
-3. They are sent to the matching screen:
+Unverified partners can view their application state but cannot use operational pages.
 
-```
-Signed in?
-   │
-   ├─ Thaiseva master admin  ──────────────►  /foodAdmin
-   │
-   └─ Restaurant person
-         │
-         ├─ No restaurant yet                ►  /onboarding   (fill the form)
-         ├─ Application waiting / rejected   ►  /onboarding   (see status)
-         └─ Restaurant approved              ►  /partner      (full shop tools)
-```
+## Partner application
 
-**Important rules**
+The application has two steps:
 
-- Master admin is **not** created by signing up. That role is set only on the backend.
-- A restaurant owner’s ID is **never** put in the URL. The partner panel is always `/partner/...`.
-- If someone is not logged in and they open a protected page, they go to `/auth`.
-- If they open the wrong panel, they are sent to “Unauthorized” or bounced back to their own home.
+1. Fill the complete restaurant, business, location, photo, and document form.
+2. Preview all submitted information and send it for verification.
 
----
+Master Admin approves or rejects the application. Approval establishes the restaurant-owner role and commission rate.
 
-## 2. How a new restaurant joins (the full story)
+## Order workflow
 
-There are **two ways** to apply. Both end up on the Master Admin “Restaurant Requests” list.
-
-### Way A — Public apply (no login)
-
-Anyone can open `/apply` and fill a multi-step form:
-
-1. Welcome
-2. Basics (restaurant name, owner name, phone, email)
-3. Business (registration number, tax ID, food type, delivery / dine-in / both, hours)
-4. Location (address + map)
-5. Photo
-6. Documents (business license, owner ID, food safety)
-7. Review and submit
-
-After submit, the form becomes a **pending application**. Master Admin later creates the login account if they approve.
-
-### Way B — Sign up first, then onboard
-
-1. Person creates an account at `/auth`.
-2. They land on `/onboarding` and fill the same kind of form.
-3. Photos and documents upload.
-4. They submit. Status becomes **Pending**.
-5. Until they are approved they **cannot** open Menu, Orders, or Table Reservations. They can still look at **My Restaurant** to see status.
-
-### What Master Admin does next
-
-On **Restaurant Requests** they open the application and can:
-
-- **Approve (Verified)**  
-  They set a commission % (platform share of each order).  
-  For a public application they also type a username, login email, and password — that **creates the owner account**.  
-  The restaurant becomes live. The owner can now use `/partner`.
-
-- **Reject**  
-  The application is marked Rejected. The owner stays on onboarding and can see that it was rejected.
-
----
-
-## 3. Master Admin panel (`/foodAdmin`)
-
-This is the **control room for the whole platform**. Sidebar:
-
-1. Dashboard
-2. Restaurant Requests
-3. Restaurant Monitor
-4. Our kitchen
-5. Our orders
-6. Orders (partner shops only)
-7. Riders
-8. Records
-9. Log Out
-
-Categories and the global restaurant list are still in the app; they are opened from other screens, not the main sidebar.
-
-### 3.1 Dashboard — `/foodAdmin`
-
-**What you see**
-
-- How many restaurants exist
-- How many applications are still waiting
-- How many orders (and how many finished)
-- How many customers
-- Charts (today / week / month, or a custom date range)
-- Top restaurants
-
-**What happens**
-
-Nothing is edited here. It is a live overview so staff can see if the network is healthy. KPI cards on this page match the stats row on Orders, Menu, Reservations, Finance, and Rider overview.
-
-The top bar also has **notifications** and a small profile chip.
-
-### 3.2 Restaurant Requests — `/foodAdmin/restaRequest`
-
-**What you see**
-
-Two lists you can switch:
-
-- **Restaurants Requests** — still waiting (Pending)
-- **Rejected Restaurants** — already turned down
-
-Each row is a restaurant that applied (new public applications and older “already-has-account” requests).
-
-**What happens when you open one**
-
-You go to the request detail page:
-
-`/foodAdmin/restaRequest/restaurantReqDet/:id`
-
-There you read the profile, documents, and (if they added any) a preview of their menu.
-
-Then you either:
-
-| Action | What the system does |
-| --- | --- |
-| **Accept** | Restaurant status becomes Verified. Commission is saved. For a public apply, a login account is created. Owner can now use the partner panel. |
-| **Reject** | Status becomes Rejected. Owner cannot use kitchen tools. |
-
-### 3.3 Restaurant Monitor — `/foodAdmin/restaurantStats`
-
-This is the **per-restaurant workspace** for staff.
-
-First you see a list of **Active** or **Inactive** restaurants. You can search by name, ID, or address.
-
-Click a restaurant. You enter a shell with four tabs:
-
-#### Information
-
-Staff can edit the restaurant the way the owner would:
-
-- Name, phone, email, food type, address, description, photo
-- Turn the shop **open / closed** (active)
-- Look at the menu
-- Update commission
-
-Save writes the profile. Open/closed is what customers see when they try to order.
-
-#### Orders
-
-Watch this restaurant’s kitchen pipeline (live last 24 hours, or a date range).
-
-Statuses you will see:
-
-1. New Order
-2. Order Confirm
-3. Preparing
-4. Ready for pickup
-5. Out for Delivery
-6. Delivered
-7. Cancelled
-
-Staff can open an order to inspect it. Day-to-day kitchen steps are done by the restaurant. When an order is **Ready for pickup**, Master Admin assigns a rider on this ticket (or on All Orders / Our Orders). The kitchen can then mark it out for delivery.
-
-#### Reservations
-
-Watch table bookings for that restaurant (Pending / Accepted / Rejected), live or by date. Export to CSV if needed. Rows are created by the customer app (`createDineInBooking`). See `APP_BOOKING_API.md`.
-
-#### Finance
-
-Only **delivered** orders for that restaurant in a date range.
-
-For each order you can see:
-
-- Order amount
-- Commission %
-- Platform share vs restaurant payout
-- Whether settlement is cleared
-
-You can download a **customer invoice** or a **partner invoice** as PDF.
-
-Staff can also change the restaurant’s commission later. **Delivered orders keep the rate stamped on the ticket.** If a ticket already has a rate from an earlier kitchen step, delivery uses that rate. If it has none yet, delivery uses the restaurant’s current rate and stamps it.
-
-### 3.4 Records — `/foodAdmin/bookings-record`
-
-Platform-wide **settlement book**.
-
-Pick a start and end date. You get delivered-order records across restaurants:
-
-- Order ID, restaurant, customer, location, amount, commission, paid/cleared flag
-- Export CSV
-- Download user or partner PDF invoices
-- Mark a payment as cleared (settlement)
-
-Use this when accounting needs “everything that happened between these dates.”
-
-### 3.5 Other Master pages (opened from inside)
-
-These still exist in the app even if they are not the main sidebar items:
-
-| Page | What it is for |
-| --- | --- |
-| **Categories** `/foodAdmin/categories` | Add or delete food categories used on every restaurant menu (Thai, Indian, Cafe, …). |
-| **All restaurants** `/foodAdmin/restaDetails` | Browse every restaurant and open a profile or edit it. |
-| **All table reservations** `/foodAdmin/tableReservation` | See bookings from every restaurant in one list. |
-
-**Our kitchen** (`/foodAdmin/ourKitchen`) is the ThaiSeva in-house menu. **Our orders** is only tickets from that menu. **Orders** is partner-shop tickets only. History paging on Orders skips kitchen tickets so page counts stay correct.
-
-**Riders** (`/foodAdmin/riders`) is the courier directory. **Overview** (`/foodAdmin/riders/overview`) lists completed and active jobs, drop-off addresses, and a CSV export. One rider: `/foodAdmin/riders/:riderId`. Phone numbers must be unique. Assigning a rider notifies the kitchen and the master inbox. Confirming delivered uses the rider already on that ticket.
-
-### 3.6 Our kitchen and Our orders
-
-**Our kitchen** is ThaiSeva’s own menu (`thaiseva-platform`). Master adds and hides dishes here.
-
-**Our orders** is only tickets from that menu. Master confirms, cooks, assigns a rider when ready, then marks delivered.
-
-Partner shop tickets stay on **Orders**.
-
-### 3.7 What Master Admin does **not** do
-
-- Does not cook a *partner* restaurant’s food (the owner runs that kitchen).
-- Does not add menu items in the partner menu UI (they can view items from Monitor / request detail).
-- Cannot be reached by a restaurant owner even if they guess `/foodAdmin`.
-
----
-
-## 4. Restaurant Partner panel (`/partner`)
-
-This is **one restaurant’s daily tools**. Sidebar (only after they are verified):
-
-1. Dashboard
-2. My Restaurant
-3. Menu
-4. Orders
-5. Table Reservations
-6. Log Out
-
-If they are still pending or rejected, Menu / Orders / Reservations are hidden and blocked.
-
-### 4.1 Dashboard — `/partner`
-
-**What you see** (for *their* restaurant only)
-
-- Total orders
-- Completed / delivered / cancelled
-- Unique customers
-- Charts (today / week / month, or a date range)
-- Best-selling dishes
-- Notifications (new orders, etc.)
-
-**What happens**
-
-Read-only snapshot. Real work happens on Orders, Menu, and Reservations.
-
-### 4.2 My Restaurant — `/partner/restaurant`
-
-**What you see**
-
-The public shop card: name, photo, address, phone, hours, cuisine, status badge (Pending / Verified / Rejected), and whether they are currently **Open** or **Closed**.
-
-**What you can do**
-
-- Toggle **Open / Closed**. Closed means customers should not be able to place new orders.
-- **Edit** profile (`/partner/restaurant/edit`) — name, phone, email, location, description, photo.
-- If they somehow have no restaurant record yet, they can still start **Add restaurant**.
-
-Pending owners can open this page just to see “we are still reviewing you.”
-
-### 4.3 Menu — `/partner/foodItem`
-
-**What you see**
-
-Every dish in this restaurant, grouped by category. Search, filter, grid or list view. Counts: total, available, hidden.
-
-**What you can do**
-
-| Action | What happens |
-| --- | --- |
-| **Add item** | Opens a form: name, price, discount, category, veg/non-veg type, description, photo. Photo uploads, then the dish is created. |
-| **Edit item** | Change any of those fields. |
-| **Turn on / off** | Hide a dish from customers without deleting it (sold out, seasonal, etc.). |
-| **Delete** | Remove the dish from the menu. |
-| **Open a card** | See the full dish detail. |
-
-Categories on the form come from Master Admin’s category list.
-
-### 4.4 Orders — `/partner/manageOrder`
-
-This is the **kitchen board**.
-
-Open **Live** for the last 24 hours (new tickets appear without refresh). **History** is a date range (or all time until you pick dates).
-
-Filter by status:
-
-- All
-- New
-- Confirmed
-- Preparing
-- Ready
-- Out for delivery
-- Delivered
-- Cancelled
-
-Search by customer name, address, date, status, amount, or order ID.
-
-**Open an order** (`/partner/manageOrder/orderView/:orderId`)
-
-You see customer details, address, line items, totals, and the current step.
-
-You move the order **one step at a time**:
-
-```
+```text
 New Order
-   │  [Confirm order]
-   ▼
-Order Confirm
-   │  [Start preparing]
-   ▼
-Preparing
-   │  [Mark ready for pickup]
-   ▼
-Ready for pickup
-   │  Master assigns a rider
-   ▼
-Ready for pickup (rider assigned)
-   │  [Mark out for delivery]
-   ▼
-Out for Delivery
-   │  Master confirms delivered
-   ▼
-Delivered   ← money can now be settled
+  -> Order Confirm
+  -> Preparing
+  -> Ready for pickup
+  -> Out for Delivery
+  -> Delivered
 ```
 
-You can also **Cancel** while it is still New. After **Ready for pickup**, the kitchen ticket waits live until Master Admin assigns a rider, then the kitchen marks **Out for delivery**.
+The restaurant moves kitchen steps. Master Admin assigns a rider when an order is ready and confirms delivery. Commission and payout accounting use the rate stamped on the delivered order.
 
-Master Admin assigns riders from the order ticket (Orders, Our Orders, or Restaurant Monitor). Confirming delivered uses that assigned rider — the list dropdown is only for assign, not for delivered.
+## Restaurant chat
 
-### 4.5 Table Reservations — `/partner/tableReservation`
+Restaurant and customer support chats share `chatRooms/CustomerSupport`. A restaurant conversation is identified when either room metadata or `users/{uid}` contains `serviceCategory: "Restaurant"` or `role: "Restaurant"`.
 
-Live list of dine-in bookings for this restaurant (or history by date).
+Messages live in `chats/{uid}_CustomerSupport`. Master Admin sees only restaurant conversations on the Restaurant Chat page, and its navigation badge counts unread restaurant conversations.
 
-Each booking is:
-
-- **Pending** — customer asked for a table; kitchen/host has not answered
-- **Accepted** — table is reserved
-- **Rejected** — restaurant turned it down (or it was cancelled)
-
-The owner can **Accept** or **Reject** a pending booking. Search by guest name, phone, date, or party.
-
-Master Admin can *see* these in Monitor / global reservations. The restaurant is who actually accepts or rejects.
-
-### 4.6 What a restaurant owner cannot do
-
-- Cannot approve other restaurants.
-- Cannot change their own commission.
-- Cannot see other restaurants’ orders or money.
-- Cannot open `/foodAdmin`.
-- Cannot use Menu / Orders / Reservations until Master Admin verifies them.
-
----
-
-## 5. How the two panels work together
-
-Think of it as a relay.
-
-### A. Bringing a restaurant onto the platform
-
-```
-Public /apply  or  Sign up → /onboarding
-              │
-              ▼
-     Application = Pending
-              │
-              ▼
-   Master Admin reviews it
-        │            │
-   Approve        Reject
-        │            │
-        ▼            ▼
- Owner account    Owner stays
- + commission     on onboarding
-        │
-        ▼
-   Owner uses /partner
-```
-
-### B. A food order
-
-```
-Customer app places order
-        │
-        ▼
- Partner “Orders” lights up as New Order
-        │
- Owner confirms → prepares → ready
-        │
-        ▼
- Master assigns a rider
-        │
-        ▼
- Kitchen marks out for delivery
-        │
-        ▼
- Master confirms delivered
-        │
-        ├── Partner dashboard counts it
-        ├── Master Monitor shows it for that shop
-        └── Master Records / Finance can invoice and settle
-              (platform commission vs restaurant payout)
-```
-
-### C. A table booking
-
-The customer **app** creates the row through Cloud Functions (`createDineInBooking`). Implementation contract: `APP_BOOKING_API.md`.
-
-```
-Customer app → createDineInBooking
-        │
-        ▼
- Partner “Table Reservations” = Pending
-        │
- Owner Accepts or Rejects  (setDineInBookingStatus)
-        │
-        ▼
- Customer is notified (Accepted or Canceled)
- Master can watch the same booking in Monitor
- (they do not run the host stand)
-```
-
-The guest may also cancel (`cancelDineInBooking`) or edit a still-Pending request (`updateDineInBooking`). This is a request to the host stand, not a reserved table slot.
-
-### D. Money
-
-1. Master sets commission when they approve the restaurant (and can change it later).
-2. Every **delivered** order is split: platform share vs restaurant payout, using the rate already stamped on the ticket when there is one.
-3. Master uses **Finance** (one restaurant) or **Records** (all restaurants) to export, invoice, and mark paid.
-
-The restaurant does not settle themselves. They cook and complete the order. Master Admin does the books.
-
----
-
-## 6. Quick “who does what” cheat sheet
-
-| Everyday task | Who does it | Where |
-| --- | --- | --- |
-| Apply to join | Restaurant (or anyone on `/apply`) | `/apply` or `/onboarding` |
-| Approve / reject a restaurant | Master | Restaurant Requests |
-| Set or change commission | Master | Request approve, or Monitor |
-| Turn shop open / closed | Restaurant (Master can also) | My Restaurant / Monitor → Information |
-| Add or hide a dish | Restaurant | Menu |
-| Add a food category for everyone | Master | Categories |
-| Confirm and cook an order | Restaurant | Orders → open the ticket |
-| Assign a rider (ready for pickup) | Master | Order ticket or Our Orders |
-| See rider jobs / export a sheet | Master | Riders → Overview |
-| Watch any restaurant’s orders | Master | Restaurant Monitor → Orders |
-| Book a table (customer app) | Customer | `createDineInBooking` — see `APP_BOOKING_API.md` |
-| Accept a table booking | Restaurant | Table Reservations (`setDineInBookingStatus`) |
-| Cancel a table booking | Customer (own) or restaurant | App callable / Table Reservations |
-| Download invoices / mark paid | Master | Records or Monitor → Finance |
-| See today’s sales for my shop | Restaurant | Dashboard |
-| See the whole network | Master | Dashboard |
-
----
-
-## 7. Pages and addresses (for staff)
-
-### Shared
-
-| Address | What it is |
-| --- | --- |
-| `/` | Redirects you to the right home |
-| `/auth` | Sign in |
-| `/apply` | Public application (no login) |
-| `/onboarding` | Logged-in owner application / waiting / rejected |
-| `/unauthorized` | You opened a page your role cannot use |
-| `/logOutFoodAdmin` | Master log out |
-| `/partner/logOutPage` | Partner log out |
+## Main routes
 
 ### Master Admin
 
 | Address | Screen |
 | --- | --- |
 | `/foodAdmin` | Dashboard |
-| `/foodAdmin/restaRequest` | Request list |
-| `/foodAdmin/restaRequest/restaurantReqDet/:id` | Review one request |
-| `/foodAdmin/restaurantStats` | All verified restaurants |
-| `/foodAdmin/restaurantStats/:ownerId` | That restaurant’s information |
-| `/foodAdmin/restaurantStats/:ownerId/manage` | Redirects to information |
-| `/foodAdmin/restaurantStats/:ownerId/orders` | Watch that restaurant’s orders |
-| `/foodAdmin/restaurantStats/:ownerId/reservations` | Watch that restaurant’s bookings |
-| `/foodAdmin/restaurantStats/:ownerId/finance` | That restaurant’s settlement |
-| `/foodAdmin/bookings-record` | Platform records / invoices |
-| `/foodAdmin/categories` | Global menu categories |
-| `/foodAdmin/restaDetails` | All restaurant profiles |
-| `/foodAdmin/ordersDetails` | All orders |
-| `/foodAdmin/ourKitchen` | ThaiSeva kitchen menu (saved under the platform kitchen) |
-| `/foodAdmin/ourOrders` | Tickets from that kitchen menu only |
-| `/foodAdmin/riders` | Rider directory (add / edit) |
-| `/foodAdmin/riders/overview` | All rider jobs, addresses, sheet export |
-| `/foodAdmin/riders/:riderId` | One rider’s completed trips and addresses |
-| `/foodAdmin/tableReservation` | All reservations |
+| `/foodAdmin/restaRequest` | Restaurant requests |
+| `/foodAdmin/restaurantStats` | Restaurant Monitor |
+| `/foodAdmin/restaurantStats/:ownerId` | Restaurant information |
+| `/foodAdmin/restaurantStats/:ownerId/orders` | Restaurant orders |
+| `/foodAdmin/restaurantStats/:ownerId/finance` | Restaurant finance |
+| `/foodAdmin/ordersDetails` | Partner orders |
+| `/foodAdmin/ourKitchen` | Thaiseva kitchen menu |
+| `/foodAdmin/ourOrders` | Thaiseva kitchen orders |
+| `/foodAdmin/riders` | Riders |
+| `/foodAdmin/records` | Records and invoices |
+| `/foodAdmin/restaurantChat` | Restaurant Chat |
 
 ### Restaurant Partner
 
@@ -520,20 +80,8 @@ The restaurant does not settle themselves. They cook and complete the order. Mas
 | --- | --- |
 | `/partner` | Dashboard |
 | `/partner/restaurant` | My Restaurant |
-| `/partner/restaurant/edit` | Edit profile |
 | `/partner/foodItem` | Menu |
-| `/partner/foodItem/addItem` | Add a dish |
-| `/partner/foodItem/edit/:itemId` | Edit a dish |
-| `/partner/manageOrder` | Kitchen orders |
-| `/partner/manageOrder/orderView/:orderId` | One order ticket |
-| `/partner/tableReservation` | Table bookings |
-
----
-
-## 8. Remember these three sentences
-
-1. **Master Admin runs the platform** — they let restaurants in, watch every shop, and settle money.
-2. **Restaurant Partner runs one shop** — they keep the profile, menu, kitchen, and tables.
-3. **Login decides the panel.** The URL never decides who you are, and one login cannot operate the other panel.
-
-Customer-app table booking APIs (create, list, update, cancel): **`APP_BOOKING_API.md`**.
+| `/partner/manageOrder` | Orders |
+| `/partner/restaurantChat` | Restaurant Chat |
+| `/onboarding` | Authenticated partner application |
+| `/apply` | Public partner application |

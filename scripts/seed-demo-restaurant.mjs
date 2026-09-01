@@ -22,35 +22,37 @@ const PROJECT_ID =
   arg("project") || process.env.VITE_FIREBASE_PROJECT_ID || "gothai-ffea1";
 const EMAIL = (arg("email") || "restaurant@gmail.com").trim().toLowerCase();
 let OWNER_UID = arg("uid") || process.env.SEED_OWNER_UID || "";
+const PLATFORM_OWNER_ID = "thaiseva-platform";
 
 const FS = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const IT = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}`;
 
 const IMG = {
-  restaurant:
-    "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80",
-  padThai:
-    "https://images.unsplash.com/photo-1559314809-0d155014e29e?w=600&q=80",
-  greenCurry:
-    "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600&q=80",
-  tomYum:
-    "https://images.unsplash.com/photo-1547592166-23ac45744acd?w=600&q=80",
-  mango:
-    "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&q=80",
-  springRoll:
-    "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&q=80",
-  thaiTea:
-    "https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=600&q=80",
-  somTum:
-    "https://images.unsplash.com/photo-1562565652-a0d8f0c59eb4?w=600&q=80",
-  friedRice:
-    "https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=600&q=80",
-  massaman:
-    "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600&q=80",
-  satay:
-    "https://images.unsplash.com/photo-1529042410759-befb1204b468?w=600&q=80",
-  coconut:
-    "https://images.unsplash.com/photo-1497534446932-c925b458314e?w=600&q=80",
+  restaurant: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80",
+  // Thai
+  padThai: "https://images.unsplash.com/photo-1559314809-0d155014e29e?w=600&q=80",
+  greenCurry: "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600&q=80",
+  tomYum: "https://images.unsplash.com/photo-1547592166-23ac45744acd?w=600&q=80",
+  mango: "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&q=80",
+  springRoll: "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&q=80",
+  thaiTea: "https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=600&q=80",
+  somTum: "https://images.unsplash.com/photo-1562565652-a0d8f0c59eb4?w=600&q=80",
+  friedRice: "https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=600&q=80",
+  massaman: "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600&q=80",
+  satay: "https://images.unsplash.com/photo-1529042410759-befb1204b468?w=600&q=80",
+  coconut: "https://images.unsplash.com/photo-1497534446932-c925b458314e?w=600&q=80",
+  // Italian
+  pizza: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&q=80",
+  pasta: "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=600&q=80",
+  lasagna: "https://images.unsplash.com/photo-1574894709920-11b28e7367e3?w=600&q=80",
+  tiramisu: "https://images.unsplash.com/photo-1571115177098-24ec42ed204d?w=600&q=80",
+  bruschetta: "https://images.unsplash.com/photo-1572695157366-5e585ab2b69f?w=600&q=80",
+  // Indian
+  butterChicken: "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=600&q=80",
+  naan: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=600&q=80",
+  biryani: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=600&q=80",
+  samosa: "https://images.unsplash.com/photo-1601050690597-df0568f70950?w=600&q=80",
+  lassi: "https://images.unsplash.com/photo-1626082929543-690227926e83?w=600&q=80",
   broken: "https://invalid.example.com/missing-image.jpg",
 };
 
@@ -119,7 +121,6 @@ function toFsDoc(obj) {
 }
 
 async function patchDoc(token, docPath, data) {
-  // docPath: users/UID  or  food_items/UID/items/demo-x
   const keys = Object.keys(data);
   const mask = keys.map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   const url = `${FS}/${docPath}?${mask}`;
@@ -138,30 +139,7 @@ async function patchDoc(token, docPath, data) {
   return json;
 }
 
-async function createDoc(token, collectionPath, data, docId) {
-  // collectionPath: notifications/restaurants/UID  (parent doc must exist as .../restaurants)
-  // For nested: use documents:commit or PATCH known id
-  if (docId) {
-    return patchDoc(token, `${collectionPath}/${docId}`, data);
-  }
-  const url = `${FS}/${collectionPath}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(toFsDoc(data)),
-  });
-  const json = await res.json();
-  if (!res.ok) {
-    throw new Error(`POST ${collectionPath}: ${json.error?.message || res.status}`);
-  }
-  return json;
-}
-
 async function commitWrites(token, writes) {
-  // Batch up to 500
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:commit`;
   const res = await fetch(url, {
     method: "POST",
@@ -187,6 +165,34 @@ function updateWrite(docPath, data) {
   };
 }
 
+async function deleteDoc(token, docPath) {
+  const url = `${FS}/${docPath}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    const json = await res.json().catch(() => ({}));
+    console.warn("delete warn", docPath, json.error?.message || res.status);
+  }
+}
+
+async function listCollection(token, parentPath, collectionId) {
+  const base = parentPath ? `${FS}/${parentPath}` : FS;
+  const url = `${base}/${collectionId}`;
+  let docs = [];
+  let pageToken = "";
+  do {
+    const res = await fetch(`${url}?pageSize=300${pageToken ? `&pageToken=${pageToken}` : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    if (json.documents) docs.push(...json.documents);
+    pageToken = json.nextPageToken || "";
+  } while (pageToken);
+  return docs;
+}
+
 async function runQuery(token, structuredQuery) {
   const url = `${FS}:runQuery`;
   const res = await fetch(url, {
@@ -204,34 +210,10 @@ async function runQuery(token, structuredQuery) {
   return Array.isArray(json) ? json.filter((r) => r.document) : [];
 }
 
-async function deleteDoc(token, docPath) {
-  const url = `${FS}/${docPath}`;
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok && res.status !== 404) {
-    const json = await res.json().catch(() => ({}));
-    console.warn("delete warn", docPath, json.error?.message || res.status);
-  }
-}
-
-async function listCollection(token, parentPath, collectionId) {
-  // parentPath empty for root; or users/uid
-  const base = parentPath ? `${FS}/${parentPath}` : FS;
-  const url = `${base}/${collectionId}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const json = await res.json();
-  return json.documents || [];
-}
-
 async function main() {
   const token = await getAccessToken();
   console.log(`\nSeeding project=${PROJECT_ID} email=${EMAIL}\n`);
 
-  // Resolve UID
   if (!OWNER_UID) {
     const lookup = await fetch(`${IT}/accounts:lookup`, {
       method: "POST",
@@ -242,14 +224,11 @@ async function main() {
       body: JSON.stringify({ email: [EMAIL] }),
     });
     const body = await lookup.json();
-    if (!body.users?.[0]) {
-      throw new Error(`Auth user not found for ${EMAIL}`);
-    }
+    if (!body.users?.[0]) throw new Error(`Auth user not found for ${EMAIL}`);
     OWNER_UID = body.users[0].localId;
   }
   console.log(`Owner UID: ${OWNER_UID}`);
 
-  // Claims
   await fetch(`${IT}/accounts:update`, {
     method: "POST",
     headers: {
@@ -270,13 +249,18 @@ async function main() {
 
   if (hasFlag("clean")) {
     console.log("Cleaning demo docs…");
-    // delete demo items
-    const items = await listCollection(token, `food_items/${OWNER_UID}`, "items");
+    const items = await listCollection(token, `food_items/${PLATFORM_OWNER_ID}`, "items");
+    let delWrites = [];
     for (const d of items) {
-      const id = d.name.split("/").pop();
-      if (id.startsWith("demo-")) await deleteDoc(token, `food_items/${OWNER_UID}/items/${id}`);
+      if (d.fields?.demoSeed?.booleanValue) {
+        const path = d.name.split("/documents/")[1];
+        delWrites.push({ delete: d.name });
+      }
     }
-    // orders by owner — runQuery
+    for (let i = 0; i < delWrites.length; i += 400) {
+      await commitWrites(token, delWrites.slice(i, i + 400));
+    }
+
     try {
       const rows = await runQuery(token, {
         from: [{ collectionId: "orders" }],
@@ -287,45 +271,21 @@ async function main() {
             value: { stringValue: OWNER_UID },
           },
         },
-        limit: 100,
+        limit: 300,
       });
       for (const r of rows) {
         const path = r.document.name.split("/documents/")[1];
-        if (path.includes("demo-order") || r.document.fields?.demoSeed) {
-          await deleteDoc(token, path);
-        }
+        if (r.document.fields?.demoSeed?.booleanValue) await deleteDoc(token, path);
       }
     } catch (e) {
       console.warn("clean orders:", e.message);
     }
-    try {
-      const rows = await runQuery(token, {
-        from: [{ collectionId: "dineInBookings" }],
-        where: {
-          fieldFilter: {
-            field: { fieldPath: "ownerId" },
-            op: "EQUAL",
-            value: { stringValue: OWNER_UID },
-          },
-        },
-        limit: 50,
-      });
-      for (const r of rows) {
-        const path = r.document.name.split("/documents/")[1];
-        if (path.includes("demo-booking") || r.document.fields?.demoSeed) {
-          await deleteDoc(token, path);
-        }
-      }
-    } catch (e) {
-      console.warn("clean bookings:", e.message);
-    }
   }
 
   const publicId = "DEMO" + OWNER_UID.slice(0, 4).toUpperCase();
-  const restaurantName = "Bangkok Garden Demo";
+  const restaurantName = "Global Food Hub (Demo)";
   const now = new Date();
 
-  // Profile + restaurant
   await patchDoc(token, `users/${OWNER_UID}`, {
     name: "Demo Partner",
     email: EMAIL,
@@ -346,14 +306,13 @@ async function main() {
     name: restaurantName,
     phoneNumber: "081 234 5678",
     emailId: EMAIL,
-    foodType: "Thai",
+    foodType: "Multi-Cuisine",
     location: "123 Sukhumvit Rd, Khlong Toei, Bangkok 10110, Thailand",
-    description:
-      "QA demo restaurant with full sample data: every order status, mixed menu, table bookings, earnings, and notifications.",
+    description: "QA demo restaurant with full sample data across multiple cuisines.",
     imageUrl: IMG.restaurant,
     active: true,
-    orderCount: 24,
-    lifetimeEarning: 28640.75,
+    orderCount: 45,
+    lifetimeEarning: 45000.50,
     comission: 12,
     status: "Verified",
     ownerId: OWNER_UID,
@@ -372,55 +331,204 @@ async function main() {
       "Seafood",
       "Vegetarian",
       "Special",
+      "Pizza",
+      "Pasta",
+      "Bread",
     ],
     demoSeed: true,
   });
   console.log("✓ categories");
 
-  const menuItems = [
-    { id: "demo-pad-thai", itemName: "Pad Thai", price: 120, discount: 10, category: "Main Course", itemType: "Non-Veg", description: "Stir-fried rice noodles with tamarind, egg, tofu, sprouts, peanuts.", imageUrl: IMG.padThai, active: true, count: 42, earning: 4536 },
-    { id: "demo-green-curry", itemName: "Green Curry Chicken", price: 150, discount: 0, category: "Main Course", itemType: "Non-Veg", description: "Creamy coconut green curry with Thai basil.", imageUrl: IMG.greenCurry, active: true, count: 28, earning: 4200 },
-    { id: "demo-tom-yum", itemName: "Tom Yum Goong", price: 180, discount: 5, category: "Soup", itemType: "Non-Veg", description: "Hot & sour prawn soup with lemongrass.", imageUrl: IMG.tomYum, active: true, count: 35, earning: 5985 },
-    { id: "demo-som-tum", itemName: "Som Tum Papaya Salad", price: 90, discount: 0, category: "Salad", itemType: "Veg", description: "Spicy green papaya salad.", imageUrl: IMG.somTum, active: true, count: 31, earning: 2790 },
-    { id: "demo-spring-rolls", itemName: "Vegetable Spring Rolls", price: 80, discount: 0, category: "Appetizer", itemType: "Veg", description: "Crispy rolls with sweet chili sauce.", imageUrl: IMG.springRoll, active: true, count: 50, earning: 4000 },
-    { id: "demo-mango-sticky", itemName: "Mango Sticky Rice", price: 95, discount: 0, category: "Dessert", itemType: "Veg", description: "Sweet coconut sticky rice with ripe mango.", imageUrl: IMG.mango, active: true, count: 22, earning: 2090 },
-    { id: "demo-thai-tea", itemName: "Thai Iced Tea", price: 55, discount: 0, category: "Beverage", itemType: "Veg", description: "Sweet milky Thai tea over ice.", imageUrl: IMG.thaiTea, active: true, count: 60, earning: 3300 },
-    { id: "demo-massaman", itemName: "Massaman Beef Curry", price: 190, discount: 15, category: "Main Course", itemType: "Non-Veg", description: "Slow-cooked beef massaman with potatoes.", imageUrl: IMG.massaman, active: true, count: 18, earning: 2907 },
-    { id: "demo-satay", itemName: "Chicken Satay (4 skewers)", price: 110, discount: 0, category: "Appetizer", itemType: "Non-Veg", description: "Grilled marinated chicken with peanut sauce.", imageUrl: IMG.satay, active: true, count: 40, earning: 4400 },
-    { id: "demo-coconut-water", itemName: "Fresh Coconut Water", price: 65, discount: 0, category: "Beverage", itemType: "Veg", description: "Chilled young coconut.", imageUrl: IMG.coconut, active: true, count: 25, earning: 1625 },
-    { id: "demo-fried-rice", itemName: "Pineapple Fried Rice (INACTIVE)", price: 140, discount: 0, category: "Main Course", itemType: "Non-Veg", description: "Inactive item for UI toggle testing.", imageUrl: IMG.friedRice, active: false, count: 5, earning: 700 },
-    { id: "demo-zero-sales", itemName: "Seasonal Special (no sales)", price: 200, discount: 0, category: "Special", itemType: "Veg", description: "Never ordered — empty top-seller edge.", imageUrl: IMG.padThai, active: true, count: 0, earning: 0 },
-    { id: "demo-long-name", itemName: "Chef Royal Thai Seafood Platter for Two with Extra Chili Oil", price: 499, discount: 20, category: "Seafood", itemType: "Non-Veg", description: "Long name + description for truncation testing in tables and cards.", imageUrl: IMG.tomYum, active: true, count: 3, earning: 1198 },
-    { id: "demo-broken-img", itemName: "Broken Image Item", price: 70, discount: 0, category: "Appetizer", itemType: "Veg", description: "Broken image URL for fallback UI.", imageUrl: IMG.broken, active: true, count: 1, earning: 70 },
-    { id: "demo-high-discount", itemName: "Flash Sale Noodles", price: 100, discount: 50, category: "Main Course", itemType: "Veg", description: "50% discount edge case.", imageUrl: IMG.padThai, active: true, count: 12, earning: 600 },
+  const menuItems = [];
+  const cuisines = ["Thai", "Italian", "Indian"];
+  
+  const thaiDishes = [
+    { n: "Pad Thai with Shrimp", c: "Main Course", t: "Non-Veg" },
+    { n: "Tom Yum Goong", c: "Soup", t: "Non-Veg" },
+    { n: "Green Curry Chicken", c: "Main Course", t: "Non-Veg" },
+    { n: "Som Tum Papaya Salad", c: "Salad", t: "Veg" },
+    { n: "Massaman Beef Curry", c: "Main Course", t: "Non-Veg" },
+    { n: "Panang Pork Curry", c: "Main Course", t: "Non-Veg" },
+    { n: "Mango Sticky Rice", c: "Dessert", t: "Veg" },
+    { n: "Thai Iced Tea", c: "Beverage", t: "Veg" },
+    { n: "Pineapple Fried Rice", c: "Main Course", t: "Veg" },
+    { n: "Chicken Satay", c: "Appetizer", t: "Non-Veg" },
+    { n: "Tom Kha Gai", c: "Soup", t: "Non-Veg" },
+    { n: "Spicy Basil Pork (Pad Kra Pao)", c: "Main Course", t: "Non-Veg" },
+    { n: "Crispy Spring Rolls", c: "Appetizer", t: "Veg" },
+    { n: "Thai Fish Cakes", c: "Appetizer", t: "Non-Veg" },
+    { n: "Red Curry with Duck", c: "Main Course", t: "Non-Veg" },
+    { n: "Drunken Noodles (Pad Kee Mao)", c: "Main Course", t: "Non-Veg" },
+    { n: "Yellow Curry", c: "Main Course", t: "Veg" },
+    { n: "Coconut Ice Cream", c: "Dessert", t: "Veg" },
+    { n: "Thai Lemongrass Soup", c: "Soup", t: "Veg" },
+    { n: "Pad See Ew", c: "Main Course", t: "Non-Veg" },
+    { n: "Mango Salad", c: "Salad", t: "Veg" },
+    { n: "Sticky Rice with Custard", c: "Dessert", t: "Veg" },
+    { n: "Thai Iced Coffee", c: "Beverage", t: "Veg" },
+    { n: "Fried Bananas", c: "Dessert", t: "Veg" },
+    { n: "Papaya Salad with Crab", c: "Salad", t: "Non-Veg" },
+    { n: "Pork Larb", c: "Salad", t: "Non-Veg" },
+    { n: "Gai Yang (Grilled Chicken)", c: "Main Course", t: "Non-Veg" },
+    { n: "Khao Soi", c: "Main Course", t: "Non-Veg" },
+    { n: "Moo Ping (Grilled Pork Skewers)", c: "Appetizer", t: "Non-Veg" },
+    { n: "Thai Green Tea", c: "Beverage", t: "Veg" }
   ];
 
-  // Ensure parent food_items/{uid} exists by writing a marker field via items path only
+  const italianDishes = [
+    { n: "Margherita Pizza", c: "Pizza", t: "Veg" },
+    { n: "Spaghetti Carbonara", c: "Pasta", t: "Non-Veg" },
+    { n: "Lasagna al Forno", c: "Pasta", t: "Non-Veg" },
+    { n: "Tiramisu", c: "Dessert", t: "Veg" },
+    { n: "Bruschetta al Pomodoro", c: "Appetizer", t: "Veg" },
+    { n: "Fettuccine Alfredo", c: "Pasta", t: "Veg" },
+    { n: "Risotto ai Funghi", c: "Main Course", t: "Veg" },
+    { n: "Caprese Salad", c: "Salad", t: "Veg" },
+    { n: "Penne Arrabbiata", c: "Pasta", t: "Veg" },
+    { n: "Chicken Parmesan", c: "Main Course", t: "Non-Veg" },
+    { n: "Gelato (Chocolate)", c: "Dessert", t: "Veg" },
+    { n: "Garlic Bread", c: "Bread", t: "Veg" },
+    { n: "Minestrone Soup", c: "Soup", t: "Veg" },
+    { n: "Gnocchi with Pesto", c: "Pasta", t: "Veg" },
+    { n: "Ravioli Ricotta e Spinaci", c: "Pasta", t: "Veg" },
+    { n: "Eggplant Parmigiana", c: "Main Course", t: "Veg" },
+    { n: "Calzone", c: "Pizza", t: "Non-Veg" },
+    { n: "Prosciutto e Melone", c: "Appetizer", t: "Non-Veg" },
+    { n: "Panna Cotta", c: "Dessert", t: "Veg" },
+    { n: "Cannoli", c: "Dessert", t: "Veg" },
+    { n: "Linguine alle Vongole", c: "Pasta", t: "Non-Veg" },
+    { n: "Veal Milanese", c: "Main Course", t: "Non-Veg" },
+    { n: "Ossobuco", c: "Main Course", t: "Non-Veg" },
+    { n: "Focaccia", c: "Bread", t: "Veg" },
+    { n: "Pepperoni Pizza", c: "Pizza", t: "Non-Veg" },
+    { n: "Quattro Formaggi Pizza", c: "Pizza", t: "Veg" },
+    { n: "Aperol Spritz", c: "Beverage", t: "Veg" },
+    { n: "Espresso", c: "Beverage", t: "Veg" },
+    { n: "Affogato", c: "Dessert", t: "Veg" },
+    { n: "Biscotti", c: "Dessert", t: "Veg" }
+  ];
+
+  const indianDishes = [
+    { n: "Butter Chicken", c: "Main Course", t: "Non-Veg" },
+    { n: "Garlic Naan", c: "Bread", t: "Veg" },
+    { n: "Chicken Biryani", c: "Main Course", t: "Non-Veg" },
+    { n: "Vegetable Samosa", c: "Appetizer", t: "Veg" },
+    { n: "Mango Lassi", c: "Beverage", t: "Veg" },
+    { n: "Paneer Tikka Masala", c: "Main Course", t: "Veg" },
+    { n: "Chana Masala", c: "Main Course", t: "Veg" },
+    { n: "Palak Paneer", c: "Main Course", t: "Veg" },
+    { n: "Aloo Gobi", c: "Main Course", t: "Veg" },
+    { n: "Tandoori Chicken", c: "Main Course", t: "Non-Veg" },
+    { n: "Dal Makhani", c: "Main Course", t: "Veg" },
+    { n: "Lamb Rogan Josh", c: "Main Course", t: "Non-Veg" },
+    { n: "Gulab Jamun", c: "Dessert", t: "Veg" },
+    { n: "Rasmalai", c: "Dessert", t: "Veg" },
+    { n: "Masala Chai", c: "Beverage", t: "Veg" },
+    { n: "Onion Bhaji", c: "Appetizer", t: "Veg" },
+    { n: "Fish Curry", c: "Main Course", t: "Non-Veg" },
+    { n: "Prawn Vindaloo", c: "Main Course", t: "Non-Veg" },
+    { n: "Keema Naan", c: "Bread", t: "Non-Veg" },
+    { n: "Peshawari Naan", c: "Bread", t: "Veg" },
+    { n: "Mutter Paneer", c: "Main Course", t: "Veg" },
+    { n: "Chicken Korma", c: "Main Course", t: "Non-Veg" },
+    { n: "Malai Kofta", c: "Main Course", t: "Veg" },
+    { n: "Saag Aloo", c: "Main Course", t: "Veg" },
+    { n: "Pani Puri", c: "Appetizer", t: "Veg" },
+    { n: "Chicken Tikka", c: "Appetizer", t: "Non-Veg" },
+    { n: "Vegetable Pakora", c: "Appetizer", t: "Veg" },
+    { n: "Jeera Rice", c: "Main Course", t: "Veg" },
+    { n: "Raita", c: "Appetizer", t: "Veg" },
+    { n: "Sweet Lassi", c: "Beverage", t: "Veg" }
+  ];
+
+  // Generator for Thai
+  thaiDishes.forEach((item, idx) => {
+    const i = idx + 1;
+    menuItems.push({
+      id: `demo-thai-${i}`,
+      itemName: item.n,
+      price: 100 + (i * 5),
+      discount: i % 5 === 0 ? 10 : 0,
+      category: item.c,
+      itemType: item.t,
+      cuisine: "Thai",
+      description: `Authentic traditional ${item.n}, made with fresh ingredients.`,
+      imageUrl: IMG[Object.keys(IMG)[i % 12 + 1]],
+      active: i !== 29,
+      count: i * 2,
+      earning: i * 200,
+    });
+  });
+
+  // Generator for Italian
+  italianDishes.forEach((item, idx) => {
+    const i = idx + 1;
+    menuItems.push({
+      id: `demo-ita-${i}`,
+      itemName: item.n,
+      price: 150 + (i * 8),
+      discount: i % 4 === 0 ? 15 : 0,
+      category: item.c,
+      itemType: item.t,
+      cuisine: "Italian",
+      description: `Classic Italian ${item.n}, crafted from a family recipe.`,
+      imageUrl: IMG[Object.keys(IMG)[(i % 5) + 12]],
+      active: true,
+      count: i * 3,
+      earning: i * 300,
+    });
+  });
+
+  // Generator for Indian
+  indianDishes.forEach((item, idx) => {
+    const i = idx + 1;
+    menuItems.push({
+      id: `demo-ind-${i}`,
+      itemName: item.n,
+      price: 120 + (i * 6),
+      discount: i % 6 === 0 ? 20 : 0,
+      category: item.c,
+      itemType: item.t,
+      cuisine: "Indian",
+      description: `Flavorful and aromatic ${item.n}, cooked to perfection.`,
+      imageUrl: IMG[Object.keys(IMG)[(i % 5) + 17]],
+      active: true,
+      count: i * 1,
+      earning: i * 150,
+    });
+  });
+
+  // Edge cases (Removed)
+  // menuItems.push(...);
+
   let writes = [];
   for (const item of menuItems) {
+    // Write to PLATFORM_OWNER_ID so Master Admin can see it and Restaurant Admin fetches it correctly
     writes.push(
-      updateWrite(`food_items/${OWNER_UID}/items/${item.id}`, {
+      updateWrite(`food_items/${PLATFORM_OWNER_ID}/items/${item.id}`, {
         itemName: item.itemName,
         itemId: `#${item.id}`,
         price: item.price,
         discount: item.discount,
         category: item.category,
         itemType: item.itemType,
+        cuisine: item.cuisine,
         description: item.description,
         imageUrl: item.imageUrl,
         active: item.active,
         count: item.count,
         earning: item.earning,
-        ownerUid: OWNER_UID,
+        ownerUid: PLATFORM_OWNER_ID,
+        assignedRestaurants: [OWNER_UID], // Essential for UI visibility
         demoSeed: true,
       })
     );
   }
-  // commit in chunks of 40
-  for (let i = 0; i < writes.length; i += 40) {
-    await commitWrites(token, writes.slice(i, i + 40));
+  
+  for (let i = 0; i < writes.length; i += 400) {
+    await commitWrites(token, writes.slice(i, i + 400));
   }
-  console.log(`✓ menu (${menuItems.length})`);
+  console.log(`✓ menu (${menuItems.length} items across 3 cuisines)`);
 
   const ORDER_FLOW = [
     "New Order",
@@ -437,13 +545,6 @@ async function main() {
     { name: "Mei Lin", phone: "092 333 4455" },
     { name: "Carlos R.", phone: "081 999 0011" },
     { name: "Priya K.", phone: "088 222 3344" },
-    { name: "Somchai T.", phone: "083 777 8899" },
-    { name: "Emily Chen", phone: "090 444 5566" },
-    { name: "Lucas M.", phone: "087 666 9900" },
-    { name: "Nattapong W.", phone: "082 121 3434" },
-    { name: "Sofia R.", phone: "085 787 9090" },
-    { name: "Guest Walk-in", phone: "" },
-    { name: "Very Long Customer Name For Truncation Testing XYZ", phone: "099 000 1111" },
   ];
 
   const orderPlan = [];
@@ -455,8 +556,6 @@ async function main() {
     { status: "New Order", tag: "single" },
     { status: "Delivered", tag: "high" },
     { status: "Delivered", tag: "discount" },
-    { status: "Preparing", tag: "long-addr" },
-    { status: "Order Confirm", tag: "empty-phone" }
   );
 
   writes = [];
@@ -467,34 +566,14 @@ async function main() {
     const status = plan.status;
     const customer = customers[i % customers.length];
     const when = hoursAgo(Math.min(22, i * 0.65 + 0.1));
-    const itemA = menuItems[i % 8];
-    const itemB = menuItems[(i + 3) % 8];
-    const itemC = menuItems[(i + 5) % 10];
+    const itemA = menuItems[i % menuItems.length];
+    const itemB = menuItems[(i + 15) % menuItems.length];
+    const itemC = menuItems[(i + 30) % menuItems.length];
 
     let basket;
     if (plan.tag === "single") basket = [{ m: itemA, qty: 1 }];
-    else if (plan.tag === "high")
-      basket = [
-        { m: menuItems.find((x) => x.id === "demo-long-name"), qty: 2 },
-        { m: itemA, qty: 3 },
-        { m: itemB, qty: 2 },
-      ];
-    else if (plan.tag === "discount")
-      basket = [
-        { m: menuItems.find((x) => x.id === "demo-high-discount"), qty: 4 },
-        { m: menuItems.find((x) => x.id === "demo-pad-thai"), qty: 2 },
-      ];
-    else if (plan.tag === "multi")
-      basket = [
-        { m: itemA, qty: 2 },
-        { m: itemB, qty: 1 },
-        { m: itemC, qty: 1 },
-      ];
-    else
-      basket = [
-        { m: itemA, qty: 1 + (i % 2) },
-        { m: itemB, qty: 1 },
-      ];
+    else if (plan.tag === "multi") basket = [{ m: itemA, qty: 2 }, { m: itemB, qty: 1 }, { m: itemC, qty: 1 }];
+    else basket = [{ m: itemA, qty: 1 + (i % 2) }, { m: itemB, qty: 1 }];
 
     let subtotal = 0;
     const Items = basket.map(({ m, qty }) => {
@@ -512,11 +591,9 @@ async function main() {
         imageUrl: m.imageUrl,
       };
     });
-    const amount = subtotal + (plan.tag === "high" ? 80 : 30);
+    const amount = subtotal + 30;
 
-    const history = [
-      { status: "New Order", timestamp: hoursAgo(i * 0.65 + 2.2), by: "system" },
-    ];
+    const history = [{ status: "New Order", timestamp: hoursAgo(i * 0.65 + 2.2), by: "system" }];
     if (status !== "New Order") {
       const flowIdx = ORDER_FLOW.indexOf(status);
       if (status === "Cancelled") {
@@ -532,11 +609,6 @@ async function main() {
       }
     }
 
-    const location =
-      plan.tag === "long-addr"
-        ? "999/88 Very Long Soi Address Name That Should Truncate In Orders Table, Watthana, Bangkok 10110, Thailand"
-        : `${100 + i} Silom Rd, Bang Rak, Bangkok`;
-
     const orderId = `demo-order-${OWNER_UID.slice(0, 6)}-${String(orderIdx).padStart(2, "0")}`;
     writes.push(
       updateWrite(`orders/${orderId}`, {
@@ -547,16 +619,9 @@ async function main() {
           name: restaurantName,
           imageUrl: IMG.restaurant,
         },
-        Receiver: {
-          id: `demo-customer-${orderIdx}`,
-          name: plan.tag === "empty-phone" ? "Guest Walk-in" : customer.name,
-          phone: plan.tag === "empty-phone" ? "" : customer.phone,
-        },
-        Sender: {
-          id: `demo-customer-${orderIdx}`,
-          name: customer.name,
-        },
-        Location: location,
+        Receiver: { id: `demo-customer-${orderIdx}`, name: customer.name, phone: customer.phone },
+        Sender: { id: `demo-customer-${orderIdx}`, name: customer.name },
+        Location: "123 Main St",
         Amount: money(amount),
         amountTHB: amount,
         subtotal,
@@ -565,70 +630,14 @@ async function main() {
         Items,
         timestamp: when,
         isPaymentDone: status === "Delivered",
-        isPaymentClear: status === "Delivered" && plan.tag === "high",
-        paymentVerificationStatus:
-          status === "Delivered" ? "VERIFIED" : "PENDING",
-        DeliveryPartner:
-          status === "Out for Delivery" || status === "Delivered"
-            ? { name: "Rider Demo", phone: "080 000 1111", vehicle: "Bike" }
-            : null,
-        note:
-          plan.tag === "discount"
-            ? "Promo FLASH50"
-            : plan.tag === "high"
-              ? "VIP order"
-              : "",
       })
     );
   }
-  for (let i = 0; i < writes.length; i += 40) {
-    await commitWrites(token, writes.slice(i, i + 40));
+  for (let i = 0; i < writes.length; i += 400) {
+    await commitWrites(token, writes.slice(i, i + 400));
   }
-  console.log(`✓ orders (${orderPlan.length}) all statuses + edge cases`);
+  console.log(`✓ orders (${orderPlan.length})`);
 
-  // Bookings
-  const bookingCases = [
-    { status: "Pending", adults: 2, children: 0 },
-    { status: "Pending", adults: 4, children: 2 },
-    { status: "Accepted", adults: 2, children: 1 },
-    { status: "Accepted", adults: 6, children: 0 },
-    { status: "Rejected", adults: 3, children: 1 },
-    { status: "Canceled", adults: 2, children: 0 },
-    { status: "Pending", adults: 8, children: 3 },
-    { status: "Accepted", adults: 1, children: 0 },
-  ];
-  writes = [];
-  for (let i = 0; i < bookingCases.length; i++) {
-    const b = bookingCases[i];
-    const when = hoursAgo(i * 1.5 + 0.2);
-    const scheduled = new Date(Date.now() + (i + 1) * 2.5 * 60 * 60 * 1000);
-    const bookingId = `demo-booking-${OWNER_UID.slice(0, 6)}-${String(i + 1).padStart(2, "0")}`;
-    writes.push(
-      updateWrite(`dineInBookings/${bookingId}`, {
-        demoSeed: true,
-        ownerId: OWNER_UID,
-        userId: `demo-diner-${i + 1}`,
-        customerName: customers[i % customers.length].name,
-        phoneNumber: customers[i % customers.length].phone || "080 000 0000",
-        adults: b.adults,
-        children: b.children,
-        status: b.status,
-        bookingStatus: b.status,
-        restaurantName,
-        Amount: money(b.adults * 50),
-        bookingTimestamp: when,
-        scheduledTimestamp: scheduled,
-        isPaymentDone: false,
-        isPaymentClear: false,
-        isBookingConfirmed: b.status === "Accepted",
-        notes: b.adults >= 6 ? "Large party" : "",
-      })
-    );
-  }
-  await commitWrites(token, writes);
-  console.log(`✓ bookings (${bookingCases.length})`);
-
-  // Earnings
   writes = [];
   const todayId = now.toISOString().slice(0, 10);
   const hourlyMap = {};
@@ -639,77 +648,19 @@ async function main() {
     hourlyMap[hour] = earnings;
     hourlyArr.push({ hour, earnings });
   }
-  const todayTotal = hourlyArr.reduce((s, x) => s + x.earnings, 0);
   writes.push(
     updateWrite(`Earnings/${OWNER_UID}/dailyEarnings/${todayId}`, {
       date: todayId,
-      totalAmount: todayTotal,
+      totalAmount: hourlyArr.reduce((s, x) => s + x.earnings, 0),
       hourlyEarnings: hourlyArr,
       hourlyEarningsMap: hourlyMap,
       demoSeed: true,
     })
   );
-  for (let d = 1; d < 14; d++) {
-    const day = new Date(now);
-    day.setDate(now.getDate() - d);
-    const id = day.toISOString().slice(0, 10);
-    writes.push(
-      updateWrite(`Earnings/${OWNER_UID}/dailyEarnings/${id}`, {
-        date: id,
-        totalAmount: d === 3 ? 0 : Math.round(600 + Math.random() * 3200),
-        demoSeed: true,
-      })
-    );
+  for (let i = 0; i < writes.length; i += 400) {
+    await commitWrites(token, writes.slice(i, i + 400));
   }
-  for (let m = 0; m < 12; m++) {
-    const monthDate = new Date(now.getFullYear(), now.getMonth() - m, 1);
-    const monthId = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-    writes.push(
-      updateWrite(`Earnings/${OWNER_UID}/monthlyEarnings/${monthId}`, {
-        month: monthId,
-        totalEarnings: Math.round(12000 + Math.random() * 45000 - m * 900),
-        demoSeed: true,
-      })
-    );
-  }
-  for (let i = 0; i < writes.length; i += 40) {
-    await commitWrites(token, writes.slice(i, i + 40));
-  }
-  console.log("✓ earnings charts data");
-
-  // Notifications — need parent path notifications/restaurants as document
-  // Client: collection(db, `notifications/restaurants/${uid}`)
-  // => documents: notifications/restaurants/{autoId} under collection uid?
-  // Actually Firestore path notifications/restaurants/UID/notifId means:
-  // collection notifications / doc restaurants / collection UID / doc notifId
-  // Ensure restaurants doc exists
-  await patchDoc(token, "notifications/restaurants", {
-    seedMarker: true,
-  }).catch(() => {});
-
-  const notifs = [
-    { type: "order", title: "New Order", desc: "Order waiting for confirmation." },
-    { type: "confirmed", title: "Order Confirmed", desc: "You confirmed an order." },
-    { type: "preparing", title: "Preparing", desc: "Kitchen has 2 active orders." },
-    { type: "ready", title: "Ready for pickup", desc: "Order ready for rider." },
-    { type: "out", title: "Out for delivery", desc: "Rider Demo picked up an order." },
-    { type: "completed", title: "Delivered", desc: "Order delivered successfully." },
-    { type: "canceled", title: "Order cancelled", desc: "A customer order was cancelled." },
-    { type: "booking", title: "New table booking", desc: "Pending reservation for 4 adults." },
-    { type: "nitem", title: "Menu updated", desc: "Demo menu loaded for QA." },
-    { type: "resreq", title: "Restaurant verified", desc: "Demo restaurant is verified and open." },
-    { type: "cmpo", title: "Payment cleared", desc: "High-value order payment cleared (demo)." },
-  ];
-  for (let i = 0; i < notifs.length; i++) {
-    const id = `demo-notif-${String(i + 1).padStart(2, "0")}`;
-    await patchDoc(token, `notifications/restaurants/${OWNER_UID}/${id}`, {
-      ...notifs[i],
-      image: IMG.restaurant,
-      timestamp: hoursAgo(i * 0.5),
-      demoSeed: true,
-    });
-  }
-  console.log(`✓ notifications (${notifs.length})`);
+  console.log("✓ earnings");
 
   console.log(`
 ══════════════════════════════════════════════════════════
@@ -722,14 +673,8 @@ async function main() {
  Check these screens:
    /partner                  Dashboard boxes + charts
    /partner/manageOrder      All order statuses + edges
-   /partner/manageOrder/...  Order detail (click a row)
    /partner/foodItem         Active menu (+ toggle inactive)
-   /partner/foodItem/addItem Categories dropdown
-   /partner/tableReservation Booking statuses
-   Bell icon                 Notification types
    /partner/restaurant       Verified profile
-
- Tip: sign out/in once if role looks wrong, then hard refresh.
 ══════════════════════════════════════════════════════════
 `);
 }

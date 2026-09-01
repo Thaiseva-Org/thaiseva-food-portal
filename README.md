@@ -10,7 +10,7 @@ Welcome to the **Thaiseva Food Portal Admin Panel**. This is a powerful, modern 
 The Master Admin dashboard oversees the entire platform's operations:
 * **Dashboard Analytics:** Network KPIs, charts, and top restaurants (same KPI card style as other stats pages).
 * **Restaurant Requests:** Review public `/apply` and logged-in onboarding; approve (with commission) or reject.
-* **Restaurant Monitor:** Per-shop information, orders, reservations, and finance.
+* **Restaurant Monitor:** Per-shop information, orders, and finance.
 * **Our kitchen / Our orders:** ThaiSeva in-house menu and its tickets only.
 * **Orders:** Partner-shop tickets; assign a rider at Ready for pickup; confirm delivered.
 * **Riders:** Courier directory plus job overview / CSV.
@@ -23,7 +23,7 @@ Designed for individual restaurant owners to manage their day-to-day operations:
 * **Orders:** Kitchen board — confirm → prepare → ready; wait for a rider; mark out for delivery.
 * **Menu:** Add, edit, hide, or remove dishes.
 * **My Restaurant:** Profile, open/closed, documents on file.
-* **Table Reservations:** Accept or reject guest requests. Customer apps use Cloud Functions (see `APP_BOOKING_API.md`).
+* **Restaurant Chat:** Talk directly with restaurant partners through shared customer support rooms.
 
 ---
 
@@ -48,15 +48,15 @@ Designed for individual restaurant owners to manage their day-to-day operations:
 ├── src/
 │   ├── assets/            # App icons, illustrations, animations, and logos
 │   ├── components/        # Shared UI (dashboard KPI cards, Loading, filters)
-│   ├── context/           # Global React Contexts (Bookings, Notifications)
+│   ├── context/           # Global React Contexts (Orders, Notifications)
 │   ├── services/          # API & database service wrappers (Earnings, Orders, Records)
 │   ├── masterAdmin/       # Pages, components, and routing specific to Master Admin
 │   │   ├── component/     # Master admin dashboard components & sub-views
 │   │   └── pages/         # Page level components (Categories, Request reviews, etc.)
 │   ├── restaurantAdmin/   # Pages, components, and routing specific to Restaurant Admins
 │   │   ├── component/     # Chart components, Sidebar, and Auth pages
-│   │   └── pages/         # Menu items management, order tracking, reservations
-│   ├── api/               # HTTPS callable wrappers (orders, bookings, menu)
+│   │   └── pages/         # Menu item management, order tracking, partner chat
+│   ├── api/               # HTTPS callable wrappers (orders, restaurants, menu)
 │   ├── App.jsx            # Main app router & component tree configuration
 │   ├── AuthContext.jsx    # Authentication state provider
 │   ├── index.css          # Global Tailwind CSS and fonts configuration
@@ -125,7 +125,6 @@ Enterprise site key before deploying.
 
 | Doc | What it covers |
 |-----|----------------|
-| [`APP_BOOKING_API.md`](APP_BOOKING_API.md) | **Customer app** dine-in booking integration — HTTP + callable endpoints, payloads, errors |
 | [`HOW_BOTH_PANELS_WORK.md`](HOW_BOTH_PANELS_WORK.md) | Master vs restaurant partner panels |
 | [`DEPLOY_SECURITY.md`](DEPLOY_SECURITY.md) | Deploy order, App Check, full callable list |
 | [`FIRESTORE_RULES_NOTES.md`](FIRESTORE_RULES_NOTES.md) | Shared multi-app rules — what this repo may change |
@@ -133,4 +132,4 @@ Enterprise site key before deploying.
 
 Food orders: kitchen one step at a time → master assigns a rider at **Ready for pickup** → kitchen marks **Out for delivery** → master confirms **Delivered** (earnings post then).
 
-Customer table bookings are **request-based** (`Pending` → restaurant Accept / Reject). There is no table-slot inventory API. Hotel, car, van, and travel bookings belong to other products and are not exposed here.
+Hotel, car, van, and travel booking systems belong to other products and are not exposed in this food portal.

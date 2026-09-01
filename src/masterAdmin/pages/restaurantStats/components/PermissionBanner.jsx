@@ -11,12 +11,6 @@ const COPY = {
     message:
       "Every order for this restaurant. Assign a rider when it is ready for pickup. Confirm delivered stays on the main Orders page.",
   },
-  reservations: {
-    icon: "bi-eye",
-    title: "All table reservations",
-    message:
-      "Every booking for this restaurant. Accept or reject stays with the restaurant.",
-  },
   finance: {
     icon: "bi-wallet2",
     title: "Payout, custom invoices, and period offers",

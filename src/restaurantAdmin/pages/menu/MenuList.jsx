@@ -6,18 +6,18 @@ import {
   getSalePrice,
 } from "./menuUtils";
 
-const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
+const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin }) => {
   if (!items.length) return null;
 
   return (
     <div className="modern-card overflow-hidden">
-      <div className="hidden border-b border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted lg:grid lg:grid-cols-12 lg:gap-3">
+      <div className={`hidden border-b border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted lg:grid ${isMasterAdmin ? "lg:grid-cols-12" : "lg:grid-cols-10"} lg:gap-3`}>
         <div className="col-span-4">Dish</div>
         <div className="col-span-2">Category</div>
         <div className="col-span-1">Type</div>
-        <div className="col-span-1">Price</div>
+        {isMasterAdmin && <div className="col-span-1">Price</div>}
         <div className="col-span-1">Status</div>
-        <div className="col-span-1">Sales</div>
+        {isMasterAdmin && <div className="col-span-1">Sales</div>}
         <div className="col-span-2 text-right">Actions</div>
       </div>
 
@@ -33,7 +33,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
           return (
             <li
               key={key}
-              className={`grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-neutral-50/80 lg:grid-cols-12 lg:items-center lg:gap-3 ${
+              className={`grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-neutral-50/80 lg:grid ${isMasterAdmin ? "lg:grid-cols-12" : "lg:grid-cols-10"} lg:items-center lg:gap-3 ${
                 inactive ? "bg-neutral-50/50 opacity-90" : ""
               }`}
             >
@@ -50,8 +50,9 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
                     <img
                       src={item.imageUrl}
                       alt=""
-                      className="h-full w-full object-cover"
                       loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover"
                     />
                   ) : (
                     <span className="flex h-full w-full items-center justify-center text-neutral-400">
@@ -70,7 +71,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
                   </button>
                   <p className="truncate text-xs text-ink-muted">
                     {item.itemId || item.id}
-                    {discount > 0 ? ` · ${discount}% off` : ""}
+                    {isMasterAdmin && discount > 0 ? ` · ${discount}% off` : ""}
                   </p>
                 </div>
               </div>
@@ -93,25 +94,27 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between gap-2 text-sm lg:col-span-1 lg:block">
-                <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
-                  Price
-                </span>
-                {discount > 0 ? (
-                  <span className="flex flex-col leading-tight">
-                    <span className="font-semibold text-ink">
-                      {formatPrice(salePrice)}
+              {isMasterAdmin && (
+                <div className="flex items-center justify-between gap-2 text-sm lg:col-span-1 lg:block">
+                  <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
+                    Price
+                  </span>
+                  {discount > 0 ? (
+                    <span className="flex flex-col leading-tight">
+                      <span className="font-semibold text-ink">
+                        {formatPrice(salePrice)}
+                      </span>
+                      <span className="text-xs text-ink-muted line-through">
+                        {formatPrice(item.price)}
+                      </span>
                     </span>
-                    <span className="text-xs text-ink-muted line-through">
+                  ) : (
+                    <span className="font-semibold text-ink">
                       {formatPrice(item.price)}
                     </span>
-                  </span>
-                ) : (
-                  <span className="font-semibold text-ink">
-                    {formatPrice(item.price)}
-                  </span>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between gap-2 lg:col-span-1 lg:block">
                 <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
@@ -120,14 +123,16 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
                 <StatusBadge status={item.active ? "Active" : "Inactive"} />
               </div>
 
-              <div className="flex items-center justify-between gap-2 text-sm lg:col-span-1 lg:block">
-                <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
-                  Sales
-                </span>
-                <span className="font-medium text-ink-muted tabular-nums">
-                  {formatPrice(item.earning || 0)}
-                </span>
-              </div>
+              {isMasterAdmin && (
+                <div className="flex items-center justify-between gap-2 text-sm lg:col-span-1 lg:block">
+                  <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
+                    Sales
+                  </span>
+                  <span className="font-medium text-ink-muted tabular-nums">
+                    {formatPrice(item.earning || 0)}
+                  </span>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center justify-end gap-1.5 lg:col-span-2">
                 <button
@@ -137,13 +142,15 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId }) => {
                 >
                   View
                 </button>
-                <button
-                  type="button"
-                  className="btn-outline !min-h-9 !px-2.5 !py-1.5 text-xs"
-                  onClick={() => onEdit(item)}
-                >
-                  Edit
-                </button>
+                {isMasterAdmin && (
+                  <button
+                    type="button"
+                    className="btn-outline !min-h-9 !px-2.5 !py-1.5 text-xs"
+                    onClick={() => onEdit(item)}
+                  >
+                    Edit
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={isBusy}

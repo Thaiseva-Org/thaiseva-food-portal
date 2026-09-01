@@ -132,6 +132,8 @@ const RestaDetails = () => {
                     <div className="flex items-center gap-4">
                       <img
                         src={item.imageUrl || item.photo}
+                        loading="lazy"
+                        decoding="async"
                         className="w-[25%] rounded-md aspect-square"
                         alt="Restaurant Image"
                       />

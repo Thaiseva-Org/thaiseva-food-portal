@@ -26,7 +26,7 @@ import {
   fetchPartnerOrdersData,
   fetchTopItem,
 } from "../../services/DashboardData";
-import { useBookings } from "../../context/BookingsProvider";
+import { useOrders } from "../../context/OrdersProvider";
 import { formatCount, formatMoney } from "../../utils/format";
 
 // Heavy chart libs (chart.js / apexcharts) — load after shell paints
@@ -184,7 +184,7 @@ const TopNav = ({ toggle, show }) => {
 
 export const Stat = () => {
   const { isRestaurantAdmin, roleData, currentUser, resData } = useAuth();
-  const { orders, ordersLoading } = useBookings();
+  const { orders } = useOrders();
   // Prefer owner uid for menu paths; restaurantId field may be publicId
   // Tenant from auth only — never from the URL
   const resId =
@@ -203,17 +203,21 @@ export const Stat = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [topItems, setTopItems] = useState([]);
+  const [orderSummary, setOrderSummary] = useState({
+    total: 0,
+    inprocess: 0,
+    delivered: 0,
+    cancelled: 0,
+    newOrder: 0,
+  });
   const [rangeLoading, setRangeLoading] = useState(false);
 
   useEffect(() => {
     document.title = "Thaiseva | Dashboard";
   }, []);
 
-  const ordersCount = orders.length;
-  const latestOrderId = orders[0]?.OrderID ?? null;
-
-  // Derive box stats from realtime orders without blanking the whole page.
-  // Do not depend on full orders array identity for a loading spinner.
+  // Aggregate totals load once per restaurant. Live order updates only update
+  // locally derived customer counts; they must not fan out into more queries.
   useEffect(() => {
     if (!isRestaurantAdmin || !restaurantId) {
       setStatsReady(true);
@@ -224,7 +228,7 @@ export const Stat = () => {
     const run = async () => {
       try {
         setError(null);
-        await fetchPartnerOrdersData(
+        const summary = await fetchPartnerOrdersData(
           restaurantId,
           "",
           "",
@@ -235,8 +239,9 @@ export const Stat = () => {
           setCanceled,
           setError,
           resId,
-          orders
+          []
         );
+        if (!cancelled && summary) setOrderSummary(summary);
         // Top items is secondary — do not block shell paint
         fetchTopItem(resId, setTopItems).catch((err) =>
           console.error("Top items:", err)
@@ -249,36 +254,23 @@ export const Stat = () => {
       }
     };
 
-    // Wait briefly for first orders snapshot; never hang the dashboard forever
-    if (ordersLoading && ordersCount === 0) {
-      const timeoutId = setTimeout(() => {
-        if (!cancelled) run();
-      }, 4000);
-      return () => {
-        cancelled = true;
-        clearTimeout(timeoutId);
-      };
-    }
-
     run();
     return () => {
       cancelled = true;
     };
-    // orders / latestOrderId refresh stats without depending on array identity each render
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- orders used for stats payload; identity intentionally omitted
-  }, [
-    restaurantId,
-    resId,
-    isRestaurantAdmin,
-    ordersLoading,
-    ordersCount,
-    latestOrderId,
-  ]);
+  }, [restaurantId, resId, isRestaurantAdmin]);
+
+  useEffect(() => {
+    const uniqueCustomers = new Set(
+      (orders || []).map((order) => order.CustomerId).filter(Boolean)
+    );
+    setCountCustomer(uniqueCustomers.size);
+  }, [orders]);
 
   const applyDateRange = async (nextStart = startDate, nextEnd = endDate) => {
     setRangeLoading(true);
     try {
-      await fetchPartnerOrdersData(
+      const summary = await fetchPartnerOrdersData(
         restaurantId,
         nextStart,
         nextEnd,
@@ -291,6 +283,7 @@ export const Stat = () => {
         resId,
         orders
       );
+      if (summary) setOrderSummary(summary);
     } finally {
       setRangeLoading(false);
     }
@@ -355,7 +348,7 @@ export const Stat = () => {
     );
   }
 
-  const showInitialSpinner = !statsReady && ordersLoading;
+  const showInitialSpinner = !statsReady;
 
   return (
     <DashboardTheme>
@@ -450,6 +443,7 @@ export const Stat = () => {
                 restaurantId={restaurantId}
                 startDate={startDate}
                 endDate={endDate}
+                summary={orderSummary}
               />
             </Suspense>
           </DashSection>

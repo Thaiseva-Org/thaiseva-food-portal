@@ -3,10 +3,6 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
-import {
-  initializeAppCheck,
-  ReCaptchaEnterpriseProvider,
-} from "firebase/app-check";
 
 const requiredEnv = (key) => {
   const value = import.meta.env[key];
@@ -34,11 +30,31 @@ const auth = getAuth(app);
 const functions = getFunctions(app, "asia-southeast1");
 
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
-if (appCheckSiteKey && typeof window !== "undefined") {
-  initializeAppCheck(app, {
-    provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
-    isTokenAutoRefreshEnabled: true,
-  });
-}
+const appCheckReady =
+  appCheckSiteKey && typeof window !== "undefined"
+    ? new Promise((resolve) => {
+        const initialize = () => {
+          import("firebase/app-check")
+            .then(({ initializeAppCheck, ReCaptchaEnterpriseProvider }) =>
+              resolve(
+                initializeAppCheck(app, {
+                  provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+                  isTokenAutoRefreshEnabled: true,
+                })
+              )
+            )
+            .catch((error) => {
+              console.error("Firebase App Check could not initialize:", error);
+              resolve(null);
+            });
+        };
 
-export { auth, db, storage, functions, app };
+        if (typeof window.requestIdleCallback === "function") {
+          window.requestIdleCallback(initialize, { timeout: 1200 });
+        } else {
+          window.setTimeout(initialize, 0);
+        }
+      })
+    : Promise.resolve(null);
+
+export { auth, db, storage, functions, app, appCheckReady };

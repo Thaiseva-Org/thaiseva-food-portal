@@ -31,18 +31,6 @@ const {
   cleanImageUrl,
 } = require("../functions/src/lib/restaurants");
 const { getRoleFromToken, ROLES } = require("../functions/src/lib/auth");
-const {
-  BOOKING_TRANSITIONS,
-  notificationForBooking,
-  cleanName,
-  cleanPhone,
-  cleanParty,
-  cleanNotes,
-  parseScheduledAt,
-  serializeBooking,
-  restaurantAcceptsDineIn,
-} = require("../functions/src/lib/bookings");
-
 test("order workflow cannot skip or move backwards", () => {
   assert.deepEqual(nextAllowedStatuses("New Order"), ["Order Confirm", "Cancelled"]);
   assert.deepEqual(nextAllowedStatuses("Order Confirm"), ["Preparing", "Cancelled"]);
@@ -182,65 +170,6 @@ test("restaurant and menu input lengths and image URLs are bounded", () => {
   assert.throws(() => cleanText("x".repeat(21), "name", 20));
   assert.throws(() => cleanImageUrl("javascript:alert(1)"));
   assert.throws(() => cleanOptionalImageUrl("http://example.com/a.jpg"));
-});
-
-test("booking transitions and notifications are explicit", () => {
-  assert.deepEqual(BOOKING_TRANSITIONS.Pending, ["Accepted", "Canceled"]);
-  assert.deepEqual(BOOKING_TRANSITIONS.Accepted, ["Canceled"]);
-  assert.match(notificationForBooking("Accepted", "Riya").desc, /Riya/);
-  assert.equal(notificationForBooking("Canceled", "Riya").type, "canceled");
-  assert.equal(restaurantAcceptsDineIn({ serviceType: "Both" }), true);
-  assert.equal(restaurantAcceptsDineIn({ serviceType: "Dine-in" }), true);
-  assert.equal(restaurantAcceptsDineIn({ serviceType: "Delivery" }), false);
-});
-
-test("app booking payload validation rejects unsafe party and contact data", () => {
-  assert.deepEqual(cleanParty(2, 1), { adults: 2, children: 1 });
-  assert.deepEqual(cleanParty(2, undefined), { adults: 2, children: 0 });
-  assert.equal(cleanName("  Ada  Lovelace  "), "Ada Lovelace");
-  assert.equal(cleanPhone("08 123 4567"), "08 123 4567");
-  assert.equal(cleanNotes(""), "");
-  assert.throws(() => cleanParty(0, 0), /adults/);
-  assert.throws(() => cleanParty(21, 0), /adults/);
-  assert.throws(() => cleanParty(2, 21), /children/);
-  assert.throws(() => cleanName("A"), /customerName/);
-  assert.throws(() => cleanPhone("12"), /phoneNumber/);
-  assert.throws(() => cleanNotes("n".repeat(401)), /notes/);
-});
-
-test("app booking schedule must be in the near future", () => {
-  const soon = new Date(Date.now() + 20 * 60 * 1000);
-  assert.equal(parseScheduledAt(soon.toISOString()).toISOString(), soon.toISOString());
-  assert.throws(() => parseScheduledAt(new Date(Date.now() + 5 * 60 * 1000)), /15 minutes/);
-  assert.throws(
-    () => parseScheduledAt(new Date(Date.now() + 100 * 24 * 60 * 60 * 1000)),
-    /90 days/
-  );
-  assert.throws(() => parseScheduledAt("not-a-date"), /valid/);
-});
-
-test("booking serializer exposes a stable app contract", () => {
-  const scheduled = new Date("2026-09-01T12:30:00.000Z");
-  const view = serializeBooking("bk_1", {
-    ownerId: "rest_1",
-    restaurantId: "AB12",
-    restaurantName: "Cafe",
-    userId: "user_1",
-    customerName: "Riya",
-    phoneNumber: "0812345678",
-    adults: 2,
-    children: 1,
-    notes: "Window",
-    status: "Pending",
-    scheduledTimestamp: scheduled,
-    bookingTimestamp: scheduled,
-  });
-  assert.equal(view.bookingId, "bk_1");
-  assert.equal(view.scheduledAt, "2026-09-01T12:30:00.000Z");
-  assert.equal(view.status, "Pending");
-  assert.equal(view.children, 1);
-  assert.equal(restaurantAcceptsDineIn({ serviceType: "Delivery" }), false);
-  assert.equal(restaurantAcceptsDineIn({}), true);
 });
 
 test("food roles use namespaced claims without trusting unrelated app roles", () => {

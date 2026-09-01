@@ -67,7 +67,7 @@ function mapRecordDoc(snap) {
   };
 }
 
-export const fetchBookingsTotalPages = async (
+export const fetchOrderRecordsTotalPages = async (
   setTotalPages,
   startDate,
   endDate,
@@ -83,7 +83,7 @@ export const fetchBookingsTotalPages = async (
   setTotalPages(Math.ceil(pages.data().count / PAGE_SIZE));
 };
 
-export const todayBooking = async (
+export const fetchOrderRecords = async (
   setData,
   setLoading,
   startDate,
@@ -120,7 +120,7 @@ export const todayBooking = async (
     setData(delivered);
     return delivered;
   } catch (error) {
-    console.error("Error fetching bookings:", error);
+    console.error("Error fetching order records:", error);
     setData([]);
     return [];
   } finally {

@@ -13,7 +13,7 @@ import DateRangeFilter from "../../../components/DateRangeFilter";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import StatusBadge from "../../../components/StatusBadge";
-import { useBookings } from "../../../context/BookingsProvider";
+import { useOrders } from "../../../context/OrdersProvider";
 import { db } from "../../../../firebaseConfig";
 import { fetchOrders, fetchOrdersTotalPages } from "../../../services/GetOrders";
 import {
@@ -69,7 +69,7 @@ const matchesSearch = (item, query) => {
 };
 
 const OurKitchenOrders = () => {
-  const { orders, ordersLoading, ordersError } = useBookings();
+  const { orders, ordersLoading, ordersError } = useOrders();
   const [orderDetailsRecord, setOrderDetailsRecord] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

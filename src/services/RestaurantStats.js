@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { resolveOrderAccounting } from "../utils/commission";
-import { mapOrderDoc, mapReservationDoc } from "./GetOrders";
+import { mapOrderDoc } from "./GetOrders";
 
 const PAGE_SIZE = 10;
 const AGGREGATE_PAGE_SIZE = 10;
@@ -105,22 +105,6 @@ export async function fetchMenuCounts(ownerId) {
     available,
     unavailable: Math.max(0, total - available),
   };
-}
-
-export async function fetchReservationCount(ownerId, startDate, endDate) {
-  const { start, end } = toDayBounds(startDate, endDate);
-  // orderBy desc matches the existing dineInBookings index
-  // (ownerId ASC + bookingTimestamp DESC). A range-only count
-  // without orderBy asks Firestore for a second ASC index.
-  const q = query(
-    collection(db, "dineInBookings"),
-    where("ownerId", "==", ownerId),
-    where("bookingTimestamp", ">=", start),
-    where("bookingTimestamp", "<=", end),
-    orderBy("bookingTimestamp", "desc")
-  );
-  const snap = await getCountFromServer(q);
-  return snap.data().count;
 }
 
 export async function aggregateDeliveredAccounting({
@@ -248,21 +232,6 @@ export function subscribeRestaurantOrders(ownerId, onChange, onError) {
   return onSnapshot(
     q,
     (snapshot) => onChange(snapshot.docs.map(mapOrderDoc)),
-    (error) => onError?.(error)
-  );
-}
-
-export function subscribeRestaurantReservations(ownerId, onChange, onError) {
-  const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const q = query(
-    collection(db, "dineInBookings"),
-    where("ownerId", "==", ownerId),
-    where("bookingTimestamp", ">=", last24Hours),
-    orderBy("bookingTimestamp", "desc")
-  );
-  return onSnapshot(
-    q,
-    (snapshot) => onChange(snapshot.docs.map(mapReservationDoc)),
     (error) => onError?.(error)
   );
 }

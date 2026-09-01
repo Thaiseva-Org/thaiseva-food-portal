@@ -7,7 +7,7 @@ rules_version = '2';
 //
 // Food portal changes ONLY:
 //   - helpers under "FOOD PORTAL HELPERS ONLY"
-//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders, dineInBookings,
+//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders,
 //     restaurants, restaurantApplications, foodRiders, food_items items, food notifications, Earnings, auditLogs,
 //     users food signup, settings/categories)
 //
@@ -427,19 +427,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Food portal dine-in: restaurant owner is ownerId (production fields unchanged)
-    match /dineInBookings/{bookingId} {
-      allow create: if isAuthenticated() && isSafeBookingCreate();
-      allow read: if isAdmin() || isFoodAdmin()
-        || isOwner('uid')
-        || isOwner('userId')
-        || isOwner('ownerId');
-      // Status transitions for food owners go through Cloud Functions (Admin SDK).
-      // Production customer cancel path kept as-is.
-      allow update: if isAdmin() || isFoodAdmin() || isOwnerCancelOnly();
-      allow delete: if isAdmin() || isFoodAdmin();
-    }
-
     // Soft holds (legacy) — Functions only
     match /hotelBookingHolds/{holdId} {
       allow read: if isAdmin() ||
@@ -736,16 +723,22 @@ service cloud.firestore {
     // ============================================================
 
     match /chatRooms/{roomId} {
-      allow read: if isAdmin() || isChatParticipant();
+      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant();
       allow create: if isAdmin() || chatCreateSelf();
-      allow update: if isAdmin() || isChatParticipant();
+      allow update: if isAdmin() || isFoodAdmin() || isChatParticipant() || (
+        isAuthenticated() && roomId == "CustomerSupport" &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([request.auth.uid]) &&
+        request.resource.data[request.auth.uid].userId == request.auth.uid &&
+        request.resource.data[request.auth.uid].userInfo.uid == request.auth.uid &&
+        request.resource.data[request.auth.uid].userInfo.serviceCategory == "Restaurant"
+      );
       allow delete: if isAdmin();
     }
 
     match /chats/{chatId} {
-      allow read: if isAdmin() || isChatParticipant();
-      allow create: if isAdmin() || chatCreateSelf();
-      allow update: if isAdmin() || isChatParticipant();
+      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant();
+      allow create: if isAdmin() || isFoodAdmin() || chatCreateSelf();
+      allow update: if isAdmin() || isFoodAdmin() || isChatParticipant();
       allow delete: if isAdmin();
     }
 

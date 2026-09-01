@@ -1,11 +1,12 @@
 import { Link } from "react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../../firebaseConfig";
 import CategorySelect from "../../components/CategorySelect";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import { partnerPath } from "../../../utils/partnerRoutes";
+import { useAuth } from "../../../AuthContext";
 
 const fieldClass = (hasError) =>
   `modern-input !py-2.5 ${
@@ -46,11 +47,17 @@ const Template = ({
   active = false,
   setActive,
   itemId,
+  cuisine = "",
+  setCuisine,
+  assignedRestaurants = [],
+  setAssignedRestaurants,
 }) => {
+  const { isMasterAdmin } = useAuth();
   const modalRef = useRef(null);
   const fileInputId = useId();
   const inlineFileId = useId();
   const [categories, setCategories] = useState([]);
+  const [allRestaurants, setAllRestaurants] = useState([]);
   const [dragOverPhoto, setDragOverPhoto] = useState(false);
   const isEdit = mode === "edit";
 
@@ -93,6 +100,35 @@ const Template = ({
     };
     fetchCategories();
   }, []);
+
+  // Fetch all verified restaurants for Master Admin assignment
+  useEffect(() => {
+    if (!isMasterAdmin) return;
+    const fetchRestaurants = async () => {
+      try {
+        const q = query(
+          collection(db, "restaurants"),
+          where("status", "==", "Verified")
+        );
+        const snap = await getDocs(q);
+        const list = snap.docs.map((d) => ({
+          uid: d.id,
+          name: d.data().name || d.id,
+        }));
+        setAllRestaurants(list);
+      } catch (e) {
+        console.error("Error fetching restaurants:", e);
+      }
+    };
+    fetchRestaurants();
+  }, [isMasterAdmin]);
+
+  const toggleRestaurant = (uid) => {
+    if (!setAssignedRestaurants) return;
+    setAssignedRestaurants((prev) =>
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
+    );
+  };
 
   useEffect(() => {
     if (!dropdownOpen) return undefined;
@@ -527,6 +563,74 @@ const Template = ({
                   )}
                 </fieldset>
               </div>
+
+              {/* Cuisine field (Master Admin only) */}
+              {isMasterAdmin && setCuisine && (
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-ink">
+                    Cuisine
+                  </span>
+                  <input
+                    type="text"
+                    value={cuisine}
+                    onChange={(e) => setCuisine(e.target.value)}
+                    className={fieldClass(fieldErrors.cuisine)}
+                    placeholder="e.g. Thai, Indian, Italian"
+                    maxLength={100}
+                  />
+                  {fieldErrors.cuisine && (
+                    <p className="mt-1 text-xs font-medium text-danger-600">
+                      {fieldErrors.cuisine}
+                    </p>
+                  )}
+                </label>
+              )}
+
+              {/* Assign restaurants (Master Admin only) */}
+              {isMasterAdmin && setAssignedRestaurants && (
+                <div className="rounded-xl border border-neutral-100 bg-neutral-50 px-3.5 py-3">
+                  <p className="text-sm font-semibold text-ink mb-1">
+                    Assign to restaurants
+                  </p>
+                  <p className="text-xs text-ink-muted mb-2.5">
+                    Select which restaurants can prepare this dish.
+                  </p>
+                  {allRestaurants.length === 0 ? (
+                    <p className="text-xs text-ink-muted italic">
+                      No verified restaurants found.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                      {allRestaurants.map((rest) => {
+                        const checked = assignedRestaurants.includes(rest.uid);
+                        return (
+                          <label
+                            key={rest.uid}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer transition-colors ${
+                              checked
+                                ? "border-brand-500 bg-brand-50 text-brand-800 font-medium"
+                                : "border-neutral-200 bg-white text-ink hover:bg-neutral-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRestaurant(rest.uid)}
+                              className="accent-brand-600 h-4 w-4 rounded"
+                            />
+                            <span className="truncate">{rest.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {assignedRestaurants.length > 0 && (
+                    <p className="mt-2 text-xs font-medium text-brand-700">
+                      {assignedRestaurants.length} restaurant{assignedRestaurants.length !== 1 ? "s" : ""} assigned
+                    </p>
+                  )}
+                </div>
+              )}
 
               {isEdit && typeof setActive === "function" && (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-100 bg-neutral-50 px-3.5 py-2.5">

@@ -31,7 +31,6 @@ const REQUIRED_FIELD_SIGNATURES = [
   "car_bookings::driverId|bookingStatus",
   "car_bookings::vehicleId|bookingStatus",
   "car_bookings::status|timestamp",
-  "dineInBookings::ownerId|bookingTimestamp",
   "hotelBookingData::authUid|createdAt",
   "hotelBookingData::packageId|status|createdAt",
   "hotelBookingData::hotelUid|status|createdAt",
@@ -70,7 +69,6 @@ test("all production multi-app indexes remain (do not delete on deploy)", () => 
 test("food portal indexes are present", () => {
   const present = new Set(indexesDoc.indexes.map(fieldSignature));
   assert.ok(present.has("orders::Restaurant.ownerId|timestamp"));
-  assert.ok(present.has("dineInBookings::ownerId|bookingTimestamp"));
 });
 
 test("no duplicate field signatures", () => {

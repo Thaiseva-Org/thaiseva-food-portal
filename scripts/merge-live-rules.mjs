@@ -9,7 +9,7 @@ const header = `rules_version = '2';
 //
 // Food portal changes ONLY:
 //   - helpers under "FOOD PORTAL HELPERS ONLY"
-//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders, dineInBookings,
+//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders,
 //     restaurants, restaurantApplications, food_items items, food notifications, Earnings, auditLogs,
 //     users food signup, settings/categories)
 //

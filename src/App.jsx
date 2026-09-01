@@ -1,9 +1,7 @@
-import { Suspense } from "react";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { AuthProvider } from "./AuthContext";
 import Loading from "./components/Loading";
-import { BookingsProvider } from "./context/BookingsProvider";
-import { NotificationsProvider } from "./context/NotificationsProvider";
 import { MasterStat } from "./masterAdmin/component";
 import {
   Categories,
@@ -16,21 +14,16 @@ import {
   RestaDetailsView,
   RestaurantReqDet,
   RestaurantStatsFinance,
-  RestaurantStatsList,
   RestaurantStatsManage,
   RestaurantStatsOrders,
-  RestaurantStatsReservations,
   RestaurantStatsShell,
   MonitorOrderView,
   RestRequests,
   Riders,
   RiderOverview,
-  TableBookings,
+  RestaurantChat as MasterRestaurantChat,
   TodayOrders,
 } from "./masterAdmin/pages";
-import OurKitchenLayout from "./masterAdmin/pages/platform/OurKitchenLayout";
-import OurKitchenOrders from "./masterAdmin/pages/platform/OurKitchenOrders";
-import OurOrdersLayout from "./masterAdmin/pages/platform/OurOrdersLayout";
 import {
   AuthPage,
   LogOutPage,
@@ -54,17 +47,26 @@ import {
   RestaInformation,
   Restaurant,
   ResturantAdminHome,
-  TableBooking,
+  RestaurantChat,
 } from "./restaurantAdmin/pages";
 import { PARTNER_BASE } from "./utils/partnerRoutes";
+
+const RealtimeProviders = lazy(() => import("./context/RealtimeProviders"));
+const OurKitchenLayout = lazy(() =>
+  import("./masterAdmin/pages/platform/OurKitchenLayout")
+);
+const OurKitchenOrders = lazy(() =>
+  import("./masterAdmin/pages/platform/OurKitchenOrders")
+);
+const OurOrdersLayout = lazy(() =>
+  import("./masterAdmin/pages/platform/OurOrdersLayout")
+);
 
 const App = () => {
   return (
     <>
       <AuthProvider>
-        <NotificationsProvider>
-          <BookingsProvider>
-            <BrowserRouter>
+        <BrowserRouter>
               <Suspense
                 fallback={
                   <div className="min-h-screen w-full flex items-center justify-center bg-page-gradient">
@@ -101,20 +103,21 @@ const App = () => {
                 <Route
                   element={<PrivateRoute allowedRoles={["restaurantAdmin"]} />}
                 >
-                  <Route
-                    path={PARTNER_BASE}
-                    element={
-                      <Suspense
-                        fallback={
-                          <div className="w-screen h-[100vh] flex items-center">
-                            <Loading />
-                          </div>
-                        }
-                      >
-                        <ResturantAdminHome />
-                      </Suspense>
-                    }
-                  >
+                  <Route element={<RealtimeProviders />}>
+                    <Route
+                      path={PARTNER_BASE}
+                      element={
+                        <Suspense
+                          fallback={
+                            <div className="w-screen h-[100vh] flex items-center">
+                              <Loading />
+                            </div>
+                          }
+                        >
+                          <ResturantAdminHome />
+                        </Suspense>
+                      }
+                    >
                     <Route index element={<Stat />} />
                     <Route path="manageOrder" element={<ManageOrder />} />
                     <Route
@@ -146,7 +149,7 @@ const App = () => {
                         <Navigate to={`${PARTNER_BASE}/manageOrder`} replace />
                       }
                     />
-                    <Route path="tableReservation" element={<TableBooking />} />
+                    <Route path="restaurantChat" element={<RestaurantChat />} />
                     <Route path="foodItem" element={<FoodItem />} />
                     <Route path="foodItem/addItem" element={<AddItem />} />
                     <Route
@@ -166,11 +169,12 @@ const App = () => {
                       path="restaurant/addrestaurant/restaInformation"
                       element={<RestaInformation />}
                     />
+                    </Route>
+                    <Route
+                      path={`${PARTNER_BASE}/logOutPage`}
+                      element={<LogOutPage />}
+                    />
                   </Route>
-                  <Route
-                    path={`${PARTNER_BASE}/logOutPage`}
-                    element={<LogOutPage />}
-                  />
                   {/* Legacy /{firebaseUid}/... bookmarks → /partner/... */}
                   <Route path="/:legacyUid/*" element={<LegacyPartnerRedirect />} />
                   <Route path="/:legacyUid" element={<LegacyPartnerRedirect />} />
@@ -180,20 +184,21 @@ const App = () => {
                 <Route
                   element={<PrivateRoute allowedRoles={["masterAdmin"]} />}
                 >
-                  <Route
-                    path="/foodAdmin"
-                    element={
-                      <Suspense
-                        fallback={
-                          <div className="w-screen h-[100vh] flex items-center">
-                            <Loading />
-                          </div>
-                        }
-                      >
-                        <MasterHome />
-                      </Suspense>
-                    }
-                  >
+                  <Route element={<RealtimeProviders />}>
+                    <Route
+                      path="/foodAdmin"
+                      element={
+                        <Suspense
+                          fallback={
+                            <div className="w-screen h-[100vh] flex items-center">
+                              <Loading />
+                            </div>
+                          }
+                        >
+                          <MasterHome />
+                        </Suspense>
+                      }
+                    >
                     <Route index element={<MasterStat />} />
                     <Route path="categories" element={<Categories />} />
                     <Route path="restaRequest" element={<RestRequests />} />
@@ -212,7 +217,7 @@ const App = () => {
                     />
                     <Route
                       path="restaurantStats"
-                      element={<RestaurantStatsList />}
+                      element={<Navigate to="/foodAdmin" replace />}
                     />
                     <Route
                       path="restaurantStats/:ownerId"
@@ -232,15 +237,11 @@ const App = () => {
                         element={<MonitorOrderView />}
                       />
                       <Route
-                        path="reservations"
-                        element={<RestaurantStatsReservations />}
-                      />
-                      <Route
                         path="finance"
                         element={<RestaurantStatsFinance />}
                       />
                     </Route>
-                    <Route path="bookings-record" element={<TodayOrders />} />
+                    <Route path="records" element={<TodayOrders />} />
                     <Route path="ordersDetails" element={<OrdersDetails />} />
                     <Route path="ourKitchen" element={<OurKitchenLayout />}>
                       <Route index element={<FoodItem />} />
@@ -278,21 +279,18 @@ const App = () => {
                     </Route>
                     <Route path="riders" element={<Riders />} />
                     <Route
-                      path="riders/overview"
-                      element={<RiderOverview />}
-                    />
-                    <Route
                       path="riders/:riderId"
                       element={<RiderOverview />}
                     />
                     <Route
-                      path="tableReservation"
-                      element={<TableBookings />}
+                      path="restaurantChat"
+                      element={<MasterRestaurantChat />}
                     />
                     <Route
                       path="ordersDetails/ordersDetView/:orderId"
                       element={<OrdersDetView />}
                     />
+                    </Route>
                   </Route>
                 </Route>
 
@@ -302,9 +300,7 @@ const App = () => {
                 <Route path="*" element={<NotFound />} />
               </Routes>
               </Suspense>
-            </BrowserRouter>
-          </BookingsProvider>
-        </NotificationsProvider>
+        </BrowserRouter>
       </AuthProvider>
     </>
   );

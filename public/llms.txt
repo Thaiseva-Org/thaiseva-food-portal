@@ -1,0 +1,7 @@
+# Thaiseva Food Portal
+
+Thaiseva is a private restaurant and food-order management portal.
+
+## Access
+
+The application requires an authorized account. Public indexing is limited to the sign-in page.

@@ -43,7 +43,6 @@ These match the shared project console list. Do not remove entries when adding f
 | `car_bookings` | `driverId`, `bookingStatus` |
 | `car_bookings` | `vehicleId`, `bookingStatus` |
 | `car_bookings` | `status`, `timestamp` |
-| `dineInBookings` | `ownerId`, `bookingTimestamp` |
 | `hotelBookingData` | `authUid`, `createdAt` |
 | `hotelBookingData` | `packageId`, `status`, `createdAt` |
 | `hotelBookingData` | `hotelUid`, `status`, `createdAt` |
@@ -64,14 +63,12 @@ These match the shared project console list. Do not remove entries when adding f
 | `vanBookings` | `vehicleId`, `bookingStatus` |
 | `vanBookings` | `driverId`, `bookingStatus` |
 
-Food portal recent-orders / dine-in / all-time counts use:
+Food portal recent-order and all-time counts use:
 
 - `orders`: `Restaurant.ownerId` + `timestamp` (desc)
 - `orders`: `Restaurant.ownerId` + `currentStatus`
 - `orders`: `Restaurant.ownerId` + `currentStatus` + `timestamp` (desc)
-- `dineInBookings`: `ownerId` + `bookingTimestamp` (desc)
 
-Customer `listMyDineInBookings` queries `userId` equality only (Admin SDK) and sorts in memory. **Do not** add a food-only `userId + bookingTimestamp` index unless you also keep every production hotel/car/van index in this file.
 
 ---
 
@@ -79,7 +76,7 @@ Customer `listMyDineInBookings` queries `userId` equality only (Admin SDK) and s
 
 | Don’t | Why |
 |-------|-----|
-| Commit only food indexes (`orders` + `dineInBookings`) | Next deploy **deletes** hotel/car/van indexes |
+| Commit only food indexes (`orders`) | Next deploy **deletes** hotel/car/van indexes |
 | “Clean up unused indexes” without multi-app review | Other apps still query them |
 | Deploy indexes from a fork that never imported production | Same deletion risk |
 | Assume ASC/DESC doesn’t matter | Wrong direction = new index + possible delete of the old one |

@@ -318,7 +318,6 @@ async function main() {
       "restaurants",
       "orders",
       "foodRiders",
-      "dineInBookings",
       "restaurantApplications",
     ]) {
       const rows = await runQuery(token, {
@@ -658,32 +657,6 @@ async function main() {
     );
   }
 
-  const bookingStatuses = ["Pending", "Accepted", "Canceled"];
-  let b = 0;
-  for (const p of PARTNERS) {
-    for (const status of bookingStatuses) {
-      b += 1;
-      writes.push(
-        updateWrite(`dineInBookings/seed-m-book-${String(b).padStart(2, "0")}`, {
-          masterSeed: true,
-          ownerId: p.uid,
-          restaurantId: p.uid.slice(-6).toUpperCase(),
-          restaurantName: p.name,
-          userId: `seed-diner-${b}`,
-          customerName: customers[b % customers.length].name,
-          phoneNumber: customers[b % customers.length].phone,
-          adults: 2 + (b % 3),
-          children: b % 2,
-          notes: b % 2 ? "Window table" : "",
-          status,
-          Amount: "0.00",
-          bookingTimestamp: hoursAgo(b * 5),
-          scheduledTimestamp: new Date(Date.now() + b * 8 * 60 * 60 * 1000),
-        })
-      );
-    }
-  }
-
   const todayId = new Date().toISOString().slice(0, 10);
   writes.push(
     updateWrite(`Earnings/Admin/dailyEarnings/${todayId}`, {
@@ -727,7 +700,7 @@ async function main() {
     await commitWrites(token, writes.slice(i, i + 40));
   }
   console.log(
-    "✓ sections: kitchen menu, partners, requests, orders, riders, bookings, earnings"
+    "✓ sections: kitchen menu, partners, requests, orders, riders, earnings"
   );
 
   await patchDoc(token, "notifications/restaurants", { seedMarker: true }).catch(
@@ -737,7 +710,6 @@ async function main() {
     { type: "resreq", title: "New restaurant request", desc: "Isaan Grill House applied." },
     { type: "order", title: "New network order", desc: "A partner has a new kitchen ticket." },
     { type: "out", title: "Out for delivery", desc: "A ticket needs delivery confirmation." },
-    { type: "booking", title: "New table booking", desc: "Pending reservation at Bangkok Garden." },
   ];
   for (let i = 0; i < notifs.length; i++) {
     await patchDoc(
@@ -759,7 +731,6 @@ Master admin backend seed complete.
 Kitchen menu + every order status (Ready with/without rider, Out, Delivered, Cancelled)
 Partners + pending/rejected requests
 Riders for every vehicle type + inactive
-Bookings Pending / Accepted / Canceled
 Records: delivered with cleared and open settlement
 
 Open http://localhost:5000/foodAdmin

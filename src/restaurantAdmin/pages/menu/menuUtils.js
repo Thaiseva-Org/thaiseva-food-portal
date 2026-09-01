@@ -14,6 +14,7 @@ export const DEFAULT_FILTERS = {
   searchQuery: "",
   category: "all",
   itemType: "all",
+  cuisine: "all",
   hasDiscount: false,
   hasPhoto: false,
   sortBy: "name",
@@ -80,6 +81,7 @@ export function itemMatchesSearch(item, query) {
     item.description,
     item.category,
     item.itemType,
+    item.cuisine,
   ]
     .filter(Boolean)
     .join(" ")
@@ -96,6 +98,9 @@ export function filterMenuItems(items, filters) {
       return false;
     }
     if (filters.itemType !== "all" && item.itemType !== filters.itemType) {
+      return false;
+    }
+    if (filters.cuisine !== "all" && item.cuisine !== filters.cuisine) {
       return false;
     }
     if (filters.hasDiscount && !(Number(item.discount) > 0)) return false;
@@ -195,12 +200,24 @@ export function collectCategoryOptions(settingsCategories, items) {
   );
 }
 
+export function collectCuisineOptions(items) {
+  const set = new Set();
+  (items || []).forEach((i) => {
+    const v = String(i.cuisine || "").trim();
+    if (v) set.add(v);
+  });
+  return [...set].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+}
+
 export function filtersAreActive(filters) {
   return (
     filters.status !== "all" ||
     Boolean((filters.searchQuery || "").trim()) ||
     filters.category !== "all" ||
     filters.itemType !== "all" ||
+    filters.cuisine !== "all" ||
     filters.hasDiscount ||
     filters.hasPhoto ||
     filters.sortBy !== "name"

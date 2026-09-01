@@ -145,6 +145,8 @@ const RestRequests = () => {
                   <div className="flex items-center gap-4 w-full">
                     <img
                       src={item.imageUrl || item.photo}
+                      loading="lazy"
+                      decoding="async"
                       className="w-[25%] rounded-md aspect-square object-cover"
                       alt="Restaurant Image"
                     />

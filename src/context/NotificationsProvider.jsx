@@ -9,32 +9,8 @@ import {
 } from "react";
 import { db } from "../../firebaseConfig";
 import { useAuth } from "../AuthContext";
-import {
-  CompletedOrderImage1,
-  CompletedOrderImage2,
-  NewOrderImage1,
-  NewOrderImage2,
-  NewOrderImage3,
-} from "../assets/index.js";
 
 const NotificationsContext = createContext();
-const NEW_ORDER_IMAGES = [NewOrderImage1, NewOrderImage2, NewOrderImage3];
-const COMPLETED_ORDER_IMAGES = [CompletedOrderImage1, CompletedOrderImage2];
-
-const getStableImage = (images, id = "") => {
-  const hash = [...id].reduce((total, char) => total + char.charCodeAt(0), 0);
-  return images[hash % images.length];
-};
-
-const getRelatedImage = (type, id) => {
-  if (type === "order" || type === "booking") {
-    return getStableImage(NEW_ORDER_IMAGES, id);
-  }
-  if (type === "cmpo" || type === "completed") {
-    return getStableImage(COMPLETED_ORDER_IMAGES, id);
-  }
-  return null;
-};
 
 const timestampToMillis = (timestamp) => {
   if (typeof timestamp?.toMillis === "function") return timestamp.toMillis();
@@ -88,7 +64,6 @@ export const NotificationsProvider = ({ children }) => {
             const data = notificationDoc.data();
             return {
               id: notificationDoc.id || "N/A",
-              imageUrl: getRelatedImage(data.type, notificationDoc.id),
               ...data,
             };
           });

@@ -17,7 +17,6 @@ import {
   FaExclamationCircle,
   FaClipboardList,
   FaImages,
-  FaCalendarAlt,
   FaArrowRight,
 } from "react-icons/fa";
 import { Logo as logo } from "../../assets";
@@ -46,12 +45,6 @@ const HIGHLIGHTS = [
     label: "Menu & photos",
     detail: "What you keep here is what customers see on ThaiSeva.",
     tile: "bg-secondary-500 text-white",
-  },
-  {
-    icon: FaCalendarAlt,
-    label: "Table reservations",
-    detail: "Bookings made on ThaiSeva show up here for the floor.",
-    tile: "bg-white/15 text-white",
   },
 ];
 
@@ -325,9 +318,8 @@ const AuthPageAdmin = () => {
               Customers order on ThaiSeva. You handle them here.
             </h1>
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-white/75">
-              This portal receives the orders and bookings people place on the
-              ThaiSeva app and website. Sign in to run the kitchen, keep your
-              menu live, and review the floor.
+              This portal receives food orders placed on the ThaiSeva app and
+              website. Sign in to run the kitchen and keep your menu live.
             </p>
           </div>
 

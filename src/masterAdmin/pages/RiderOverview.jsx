@@ -10,14 +10,11 @@ import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
 import {
-  RIDER_JOB_SCAN_LIMIT,
   fetchFoodRiders,
   fetchJobsForRider,
-  fetchJobsInDateRange,
 } from "../../services/RiderOrders";
 import { formatOrderAmount } from "../../utils/orderStatus";
 import {
-  groupJobsByRider,
   isActiveRiderJob,
   isCompletedRiderJob,
   jobsToCsvRows,
@@ -49,7 +46,6 @@ const matchesSearch = (job, query) => {
     job.CustomerPhone,
     job.Location,
     job.RestaurantName,
-    job.riderName,
     job.Status,
   ]
     .filter(Boolean)
@@ -76,13 +72,11 @@ const RiderOverview = () => {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    document.title = riderId
-      ? "Thaiseva | Rider overview"
-      : "Thaiseva | Rider jobs";
-  }, [riderId]);
+    document.title = "Thaiseva | Rider overview";
+  }, []);
 
   useEffect(() => {
-    if (!isMasterAdmin) return undefined;
+    if (!isMasterAdmin || !riderId) return undefined;
     let cancelled = false;
     const load = async () => {
       setLoading(true);
@@ -90,9 +84,7 @@ const RiderOverview = () => {
       try {
         const [riderRows, jobRows] = await Promise.all([
           fetchFoodRiders(),
-          riderId
-            ? fetchJobsForRider(riderId, startDate, endDate)
-            : fetchJobsInDateRange(startDate, endDate),
+          fetchJobsForRider(riderId, startDate, endDate),
         ]);
         if (cancelled) return;
         setRiders(riderRows);
@@ -110,16 +102,11 @@ const RiderOverview = () => {
     return () => {
       cancelled = true;
     };
-  }, [isMasterAdmin, riderId, refetch]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isMasterAdmin, riderId, startDate, endDate, refetch]);
 
   const selectedRider = useMemo(
     () => riders.find((rider) => rider.id === riderId) || null,
     [riders, riderId]
-  );
-
-  const riderGroups = useMemo(
-    () => groupJobsByRider(jobs, riderId ? [] : riders),
-    [jobs, riders, riderId]
   );
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -158,7 +145,7 @@ const RiderOverview = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [riderId, statusFilter, normalizedQuery, refetch]);
+  }, [statusFilter, normalizedQuery, refetch]);
 
   const applyDateRange = (nextStart = startDate, nextEnd = endDate) => {
     setStartDate(nextStart);
@@ -169,24 +156,22 @@ const RiderOverview = () => {
   const csvRows = jobsToCsvRows(
     statusFilter === "all" ? jobs.filter((job) => matchesSearch(job, normalizedQuery)) : filteredJobs
   );
-  const fileSlug = riderId
-    ? `rider-${(selectedRider?.name || riderId).replace(/\s+/g, "-").toLowerCase()}`
-    : "all-riders";
+  const fileSlug = `rider-${(selectedRider?.name || riderId).replace(/\s+/g, "-").toLowerCase()}`;
   const fileName = `${fileSlug}-${startDate || "all"}-${endDate || "all"}.csv`;
 
   const headingName =
     selectedRider?.name ||
-    jobs.find((job) => job.assignedRiderId === riderId)?.riderName ||
-    (riderId ? "Rider" : "All riders");
+    jobs[0]?.riderName ||
+    "Rider overview";
 
   return (
     <div className="page-shell animate-fade-in px-4 py-8 md:px-6 md:py-10">
       <Link
-        to={riderId ? "/foodAdmin/riders/overview" : "/foodAdmin/riders"}
+        to="/foodAdmin/riders"
         className="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-700 focus-ring rounded-lg"
       >
         <i className="bi bi-arrow-left" aria-hidden="true" />
-        {riderId ? "All rider jobs" : "Rider directory"}
+        Back to Rider Directory
       </Link>
 
       <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
@@ -195,14 +180,12 @@ const RiderOverview = () => {
             Master admin
           </p>
           <h1 className="page-header">
-            {riderId ? headingName : "Rider overview"}
+            {headingName}
           </h1>
           <p className="page-subtext mt-1 max-w-2xl">
-            {riderId
-              ? "Completed drop-offs, live jobs, and delivery addresses for this rider."
-              : "Every rider job in the selected dates — completed orders, addresses, and a sheet you can export."}
+            Completed drop-offs, live jobs, and delivery addresses for this rider.
           </p>
-          {riderId && (selectedRider || jobs[0]) && (
+          {(selectedRider || jobs[0]) && (
             <p className="mt-2 text-sm text-ink-muted">
               {riderLabel(
                 selectedRider || {
@@ -215,9 +198,6 @@ const RiderOverview = () => {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to="/foodAdmin/riders" className="btn-ghost">
-            Manage riders
-          </Link>
           {csvRows.length > 0 && (
             <CSVLink
               data={csvRows}
@@ -253,16 +233,8 @@ const RiderOverview = () => {
           <InfoMessage type="error" message={error} />
         </div>
       )}
-      {!riderId && jobs.length >= RIDER_JOB_SCAN_LIMIT && (
-        <div className="mt-4">
-          <InfoMessage
-            type="warning"
-            message="Showing the latest 500 rider jobs in this range. Narrow the dates or open one rider for the full list."
-          />
-        </div>
-      )}
 
-      <StatGrid columns={4}>
+      <StatGrid columns={4} className="mt-6">
         <DataBoxes
           data={completedJobs.length}
           title="Completed"
@@ -295,90 +267,7 @@ const RiderOverview = () => {
         </div>
       ) : (
         <>
-          {!riderId && (
-            <section className="table-shell mt-6 overflow-hidden">
-              <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-4 py-3">
-                <h2 className="section-title">Riders in this range</h2>
-                <p className="text-xs text-ink-muted">
-                  {riderGroups.filter((g) => g.jobs.length > 0).length} with
-                  jobs
-                </p>
-              </div>
-              {riderGroups.filter((g) => g.jobs.length > 0).length === 0 ? (
-                <div className="empty-state py-12">
-                  <p className="font-semibold">No rider jobs in this range</p>
-                  <p className="page-subtext mt-1">
-                    Assign a rider when an order is ready for pickup, then
-                    completed trips will show here.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-auto">
-                  <table className="w-full min-w-[760px] text-left text-sm">
-                    <thead className="table-head text-xs uppercase tracking-wide">
-                      <tr>
-                        <th className="px-4 py-3.5">Rider</th>
-                        <th className="px-4 py-3.5">Completed</th>
-                        <th className="px-4 py-3.5">Active</th>
-                        <th className="px-4 py-3.5">Amount</th>
-                        <th className="px-4 py-3.5">Latest address</th>
-                        <th className="px-4 py-3.5" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-100">
-                      {riderGroups
-                        .filter((group) => group.jobs.length > 0)
-                        .map((group) => {
-                          const latest =
-                            group.completed[0] || group.jobs[0] || {};
-                          const amount = group.completed.reduce((sum, job) => {
-                            const n = Number(job.Amount);
-                            return sum + (Number.isFinite(n) ? n : 0);
-                          }, 0);
-                          return (
-                            <tr
-                              key={group.rider.id}
-                              className="bg-white hover:bg-brand-50/40"
-                            >
-                              <td className="px-4 py-4">
-                                <p className="font-semibold text-ink">
-                                  {group.rider.name || "Rider"}
-                                </p>
-                                <p className="text-xs text-ink-muted">
-                                  {group.rider.phone || "—"}
-                                </p>
-                              </td>
-                              <td className="px-4 py-4 tabular-nums">
-                                {group.completed.length}
-                              </td>
-                              <td className="px-4 py-4 tabular-nums">
-                                {group.active.length}
-                              </td>
-                              <td className="px-4 py-4 font-semibold tabular-nums">
-                                {formatOrderAmount(amount)}
-                              </td>
-                              <td className="px-4 py-4 text-ink-muted">
-                                {latest.Location || "—"}
-                              </td>
-                              <td className="px-4 py-4 text-right">
-                                <Link
-                                  to={`/foodAdmin/riders/${encodeURIComponent(group.rider.id)}`}
-                                  className="btn-ghost !py-1.5"
-                                >
-                                  Open
-                                </Link>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          )}
-
-          {riderId && addresses.length > 0 && (
+          {addresses.length > 0 && (
             <section className="panel mt-6">
               <h2 className="section-title">Frequent drop-off addresses</h2>
               <p className="mt-1 text-xs text-ink-muted">
@@ -461,7 +350,6 @@ const RiderOverview = () => {
                   <thead className="table-head text-xs uppercase tracking-wide">
                     <tr>
                       <th className="px-4 py-3.5">Placed</th>
-                      {!riderId && <th className="px-4 py-3.5">Rider</th>}
                       <th className="px-4 py-3.5">Customer</th>
                       <th className="px-4 py-3.5">Delivery address</th>
                       <th className="px-4 py-3.5">Restaurant</th>
@@ -477,19 +365,6 @@ const RiderOverview = () => {
                         className="bg-white hover:bg-brand-50/40"
                       >
                         <td className="px-4 py-4 font-medium">{job.Date || "—"}</td>
-                        {!riderId && (
-                          <td className="px-4 py-4">
-                            <Link
-                              to={`/foodAdmin/riders/${encodeURIComponent(job.assignedRiderId)}`}
-                              className="font-semibold text-brand-700 hover:text-brand-800"
-                            >
-                              {job.riderName || "Rider"}
-                            </Link>
-                            <p className="text-xs text-ink-muted">
-                              {job.riderPhone || "—"}
-                            </p>
-                          </td>
-                        )}
                         <td className="px-4 py-4">
                           <p className="font-medium">
                             {job.CustomerName || "—"}

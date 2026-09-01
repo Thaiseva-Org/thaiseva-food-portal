@@ -2,15 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import axios from "axios";
 import { MdLocationOn, MdCheckCircle } from "react-icons/md";
-import {
-  FaImages,
-  FaStore,
-  FaMapMarkerAlt,
-  FaCamera,
-  FaClipboardCheck,
-  FaFileAlt,
-  FaUserTie,
-} from "react-icons/fa";
+import { FaImages } from "react-icons/fa";
 import AddressAutocomplete from "../../../components/AddressAutoComplete";
 import { submitPublicRestaurantApplication } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
@@ -35,13 +27,8 @@ const FOOD_TYPES = [
 ];
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
 const STEPS = [
-  { id: 0, label: "Welcome", icon: FaStore },
-  { id: 1, label: "Basics", icon: FaClipboardCheck },
-  { id: 2, label: "Business", icon: FaUserTie },
-  { id: 3, label: "Location", icon: FaMapMarkerAlt },
-  { id: 4, label: "Photo", icon: FaCamera },
-  { id: 5, label: "Documents", icon: FaFileAlt },
-  { id: 6, label: "Review", icon: MdCheckCircle },
+  { id: 0, label: "Application" },
+  { id: 1, label: "Preview" },
 ];
 
 const Field = ({ label, htmlFor, hint, children }) => (
@@ -146,39 +133,37 @@ const PublicApply = () => {
     }
   };
 
-  const validateStep = (s) => {
-    if (s === 1 && (!restaurantName.trim() || !ownerName.trim() || !phoneNumber.trim() || !emailId.trim() || !foodType)) {
+  const validateForm = () => {
+    if (!restaurantName.trim() || !ownerName.trim() || !phoneNumber.trim() || !emailId.trim() || !foodType) {
       return "Fill restaurant name, owner name, phone, email, and cuisine.";
     }
-    if (s === 2 && (!businessRegistrationNumber.trim() || !serviceType || !openingHours.trim())) {
+    if (!businessRegistrationNumber.trim() || !serviceType || !openingHours.trim()) {
       return "Fill registration number, service type, and opening hours.";
     }
-    if (s === 3 && !location.trim()) return "Add your restaurant address.";
-    if (s === 4 && (!image || !description.trim())) return "Add a cover photo and description.";
-    if (s === 5 && (!docs.businessLicense.url || !docs.ownerId.url)) {
+    if (!location.trim()) return "Add your restaurant address.";
+    if (!image || !description.trim()) return "Add a cover photo and description.";
+    if (!docs.businessLicense.url || !docs.ownerId.url) {
       return "Business license and owner ID are required.";
     }
     return "";
   };
 
   const next = () => {
-    const msg = validateStep(step);
+    const msg = validateForm();
     if (msg) {
       setError(msg);
       return;
     }
     setError("");
-    setStep((n) => Math.min(n + 1, 6));
+    setStep(1);
   };
 
   const handleSubmit = async () => {
-    for (let s = 1; s <= 5; s++) {
-      const msg = validateStep(s);
-      if (msg) {
-        setError(msg);
-        setStep(s);
-        return;
-      }
+    const validationMessage = validateForm();
+    if (validationMessage) {
+      setError(validationMessage);
+      setStep(0);
+      return;
     }
     try {
       setSubmitting(true);
@@ -246,7 +231,7 @@ const PublicApply = () => {
     );
   }
 
-  const progressPct = Math.round((step / (STEPS.length - 1)) * 100);
+  const progressPct = step === 0 ? 50 : 100;
 
   return (
     <div className="min-h-screen bg-page-gradient">
@@ -284,18 +269,11 @@ const PublicApply = () => {
           )}
 
           {step === 0 && (
-            <div className="py-6 text-center">
-              <h1 className="page-header">Apply to join Thaiseva</h1>
-              <p className="mx-auto mt-3 max-w-lg text-ink-muted">
-                Send your restaurant details. You do not create a login now.
-                After we accept, we create your username and password and share
-                them with you.
-              </p>
-            </div>
-          )}
-
-          {step === 1 && (
             <div className="max-w-xl space-y-4">
+              <div>
+                <h1 className="page-header">Partner application</h1>
+                <p className="page-subtext mt-2">Fill in all restaurant details, then continue to preview your application.</p>
+              </div>
               <h2 className="section-title">Restaurant basics</h2>
               <Field label="Restaurant name">
                 <input className="modern-input" value={restaurantName} onChange={(e) => setRestaurantName(e.target.value)} />
@@ -319,7 +297,7 @@ const PublicApply = () => {
             </div>
           )}
 
-          {step === 2 && (
+          {step === 0 && (
             <div className="max-w-xl space-y-4">
               <h2 className="section-title">Business</h2>
               <Field label="Business registration number">
@@ -341,7 +319,7 @@ const PublicApply = () => {
             </div>
           )}
 
-          {step === 3 && (
+          {step === 0 && (
             <div className="max-w-xl space-y-4">
               <h2 className="section-title">Location</h2>
               <div className="flex gap-2">
@@ -367,7 +345,7 @@ const PublicApply = () => {
             </div>
           )}
 
-          {step === 4 && (
+          {step === 0 && (
             <div className="max-w-xl space-y-4">
               <h2 className="section-title">Photo & description</h2>
               <button type="button" className="w-full rounded-2xl border-2 border-dashed p-6" onClick={() => fileInputRef.current?.click()}>
@@ -381,7 +359,7 @@ const PublicApply = () => {
             </div>
           )}
 
-          {step === 5 && (
+          {step === 0 && (
             <div className="max-w-xl space-y-4">
               <h2 className="section-title">Documents</h2>
               {[
@@ -399,13 +377,44 @@ const PublicApply = () => {
             </div>
           )}
 
-          {step === 6 && (
-            <div className="max-w-xl space-y-3">
-              <h2 className="section-title">Review</h2>
-              <p className="text-sm"><strong>{restaurantName}</strong> · {ownerName}</p>
-              <p className="text-sm text-ink-muted">{emailId} · {phoneNumber}</p>
-              <p className="text-sm text-ink-muted">{location}</p>
-              <p className="text-sm text-ink-muted">{foodType} · {serviceType}</p>
+          {step === 1 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="section-title">Preview your application</h2>
+                <p className="page-subtext mt-1">Check every detail before sending it for review.</p>
+              </div>
+              <div className="grid gap-5 md:grid-cols-[220px_1fr]">
+                {image && <img src={image} alt={restaurantName} className="h-48 w-full rounded-2xl object-cover" />}
+                <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                  {[
+                    ["Restaurant", restaurantName],
+                    ["Owner", ownerName],
+                    ["Phone", phoneNumber],
+                    ["Email", emailId],
+                    ["Cuisine", foodType],
+                    ["Service", serviceType],
+                    ["Opening hours", openingHours],
+                    ["Registration number", businessRegistrationNumber],
+                    ["Tax ID", taxId || "—"],
+                    ["Address", location],
+                    ["Landmark", landmark || "—"],
+                    ["Description", description],
+                  ].map(([label, value]) => (
+                    <div key={label} className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">{label}</p>
+                      <p className="mt-0.5 font-medium text-ink break-words">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-neutral-100 bg-neutral-50 p-4 text-sm">
+                <p className="mb-2 font-semibold text-ink">Documents</p>
+                <ul className="space-y-1 text-ink-muted">
+                  <li>Business license: {docs.businessLicense.name}</li>
+                  <li>Owner ID: {docs.ownerId.name}</li>
+                  <li>Food safety certificate: {docs.foodSafety.name || "Not provided"}</li>
+                </ul>
+              </div>
               <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-900">
                 No login is created yet. After we accept, we will create your username and password.
               </p>
@@ -416,7 +425,7 @@ const PublicApply = () => {
             <button type="button" className="btn-ghost" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
               Back
             </button>
-            {step < 6 ? (
+            {step === 0 ? (
               <button type="button" className="btn-primary" onClick={next}>Continue</button>
             ) : (
               <button type="button" className="btn-primary" disabled={submitting} onClick={handleSubmit}>

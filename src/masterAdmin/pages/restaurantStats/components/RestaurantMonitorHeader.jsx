@@ -10,7 +10,6 @@ const RestaurantMonitorHeader = ({ restaurant, onUpdateCommission }) => {
   const tabs = [
     { to: base, end: true, label: "Information", icon: "bi-shop" },
     { to: `${base}/orders`, label: "Orders", icon: "bi-receipt" },
-    { to: `${base}/reservations`, label: "Reservations", icon: "bi-calendar2-check" },
     { to: `${base}/finance`, label: "Finance", icon: "bi-wallet2" },
   ];
 

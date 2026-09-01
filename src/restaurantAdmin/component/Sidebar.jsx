@@ -5,23 +5,19 @@ import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
 import FastfoodRoundedIcon from "@mui/icons-material/FastfoodRounded";
 import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
-import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
+import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import { useAuth } from "../../AuthContext";
 import NavBadge from "../../components/NavBadge";
-import { useBookings } from "../../context/BookingsProvider";
-import { normalizeBookingStatus } from "../../utils/bookingStatus";
+import { useOrders } from "../../context/OrdersProvider";
 import { ORDER_STATUS } from "../../utils/orderStatus";
 import { PARTNER_BASE, partnerPath } from "../../utils/partnerRoutes";
 
 const Sidebar = ({ show, toggle }) => {
   const { isRestaurantAdmin, onboardingPhase } = useAuth();
-  const { orders, bookings } = useBookings() || {};
+  const { orders } = useOrders() || {};
   const verified = isRestaurantAdmin || onboardingPhase === "complete";
   const newOrders = (orders || []).filter(
     (row) => row.Status === ORDER_STATUS.NEW
-  ).length;
-  const pendingBookings = (bookings || []).filter(
-    (row) => normalizeBookingStatus(row.status) === "pending"
   ).length;
 
   const mainLinks = [
@@ -55,12 +51,10 @@ const Sidebar = ({ show, toggle }) => {
 
   const bottomLinks = [
     {
-      icon: <TableRestaurantRoundedIcon fontSize="small" />,
-      label: "Table Reservations",
-      to: partnerPath("tableReservation"),
+      icon: <ChatRoundedIcon fontSize="small" />,
+      label: "Restaurant Chat",
+      to: partnerPath("restaurantChat"),
       requiresVerified: true,
-      badge: pendingBookings,
-      badgeTone: "warning",
     },
     {
       icon: <ExitToAppRoundedIcon fontSize="small" />,
@@ -141,7 +135,7 @@ const Sidebar = ({ show, toggle }) => {
 
         <div className="p-4 border-t border-neutral-100">
           <div className="rounded-xl bg-brand-soft px-3 py-3 text-xs text-brand-800 font-medium">
-            Manage menu, orders &amp; reservations from one place.
+            Manage your restaurant and talk with Thaiseva support.
           </div>
         </div>
       </aside>

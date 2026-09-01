@@ -10,7 +10,6 @@ import MasterApexChart from "../../component/ChartTwo";
 import {
   aggregateDeliveredAccounting,
   fetchMenuCounts,
-  fetchReservationCount,
   periodToRange,
 } from "../../../services/RestaurantStats";
 import { formatCount, formatMoney } from "../../../utils/format";
@@ -43,7 +42,6 @@ const RestaurantStatsOverview = () => {
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [menu, setMenu] = useState({ total: 0, available: 0, unavailable: 0 });
-  const [reservations, setReservations] = useState(0);
   const [chartPeriod, setChartPeriod] = useState("today");
 
   const range = useMemo(() => {
@@ -58,7 +56,7 @@ const RestaurantStatsOverview = () => {
       setError(null);
       try {
         const rate = restaurant.comission || 0;
-        const [aggResult, menuResult, reservationResult] = await Promise.allSettled([
+        const [aggResult, menuResult] = await Promise.allSettled([
           aggregateDeliveredAccounting({
             ownerId,
             startDate: range.startDate,
@@ -66,11 +64,10 @@ const RestaurantStatsOverview = () => {
             restaurantRate: rate,
           }),
           fetchMenuCounts(ownerId),
-          fetchReservationCount(ownerId, range.startDate, range.endDate),
         ]);
         if (cancelled) return;
 
-        const failures = [aggResult, menuResult, reservationResult]
+        const failures = [aggResult, menuResult]
           .filter((result) => result.status === "rejected")
           .map((result) => result.reason?.message || "A statistic failed to load.");
 
@@ -78,12 +75,6 @@ const RestaurantStatsOverview = () => {
         else setStats(EMPTY_STATS);
 
         if (menuResult.status === "fulfilled") setMenu(menuResult.value);
-        if (reservationResult.status === "fulfilled") {
-          setReservations(reservationResult.value);
-        } else {
-          setReservations(0);
-        }
-
         setError(failures.length ? failures.join(" ") : null);
       } catch (err) {
         console.error(err);
@@ -118,7 +109,6 @@ const RestaurantStatsOverview = () => {
       gmv: stats?.gmv ?? 0,
       platformCommission: stats?.platform ?? 0,
       restaurantPayout: stats?.payout ?? 0,
-      reservations,
       averageOrderValue: stats?.avgOrderValue ?? 0,
       currentCommission: restaurant.comission || 0,
       partial: stats?.partial ? "yes" : "no",
@@ -187,7 +177,7 @@ const RestaurantStatsOverview = () => {
             </p>
           )}
 
-          <StatGrid columns={6}>
+          <StatGrid columns={5}>
             <DataBoxes data={stats.delivered} title="Orders" icon="bi-clipboard2-check" color="blue" />
             <DataBoxes data={stats.gmv} title="GMV (฿)" icon="bi-cash-stack" color="green" />
             <DataBoxes
@@ -201,12 +191,6 @@ const RestaurantStatsOverview = () => {
               title="Restaurant payout (฿)"
               icon="bi-wallet2"
               color="yellow"
-            />
-            <DataBoxes
-              data={reservations}
-              title="Reservations"
-              icon="bi-calendar2-check"
-              color="red"
             />
             <DataBoxes
               data={stats.avgOrderValue}

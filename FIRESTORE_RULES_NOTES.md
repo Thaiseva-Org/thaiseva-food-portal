@@ -64,7 +64,6 @@ If you need a rules change, it should land in one of these **food-related** plac
 |------|-----------------|-----|
 | **Helpers (food section)** | `isFoodAdmin()`, order owner/receiver helpers, `isSafeFoodPortalUserCreate()`, `restaurantLockedFieldsUnchanged()`, `isFoodOrderCustomerCancel()` | Food identity without changing `isAdmin()` |
 | **`orders`** | `isFoodAdmin` read; client update is cancel-only before Out; kitchen / rider / money writes Admin SDK | Rider gate + earnings stay on Functions |
-| **`dineInBookings`** | `isFoodAdmin`, `isOwner('ownerId')`; customer create still `isSafeBookingCreate`; customer update is cancel-only | **Preferred writes:** Cloud Functions (`APP_BOOKING_API.md`). Restaurant accept/reject is Admin SDK (`setDineInBookingStatus`). |
 | **`users`** | Food signup OR; lock `isMasterAdmin` / `isRestaurantAdmin` on self-update; optional `isFoodAdmin` read | Onboarding |
 | **`restaurants`** | Owner create; update with locked money/verify fields | Commission integrity |
 | **`restaurantApplications`** | Master/food-admin read; **write false** | Public apply via Functions; user created on accept |

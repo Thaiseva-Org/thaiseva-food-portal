@@ -340,6 +340,8 @@ const MonitorOrderView = () => {
                           <img
                             src={item.imageUrl}
                             alt=""
+                            loading="lazy"
+                            decoding="async"
                             className="h-12 w-16 rounded-md object-cover"
                           />
                         )}

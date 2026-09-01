@@ -5,15 +5,6 @@ import TotalOrdersIcon from "../assets/icons/TotalOrdersIcon.svg";
 import ItemsSoldIcon from "../assets/icons/ItemsSoldIcon.svg";
 import TotalCustomersIcon from "../assets/icons/TotalCustomersIcon.svg";
 
-// New Order Images
-import NewOrderImage1 from "../assets/notification/NewOrder/NewOrder1.jpg";
-import NewOrderImage2 from "../assets/notification/NewOrder/NewOrder2.jpg";
-import NewOrderImage3 from "../assets/notification/NewOrder/NewOrder3.jpg";
-
-// Order Completed Image
-import CompletedOrderImage1 from "../assets/notification/Completed/Completed1.jpg";
-import CompletedOrderImage2 from "../assets/notification/Completed/Completed2.jpg";
-
 import Taco from "../assets/masterAdmin/activeRest.png";
 import TacoTwo from "../assets/masterAdmin/unactiveRest.png";
 
@@ -28,11 +19,6 @@ export {
   TotalOrdersIcon,
   ItemsSoldIcon,
   TotalCustomersIcon,
-  NewOrderImage1,
-  NewOrderImage2,
-  NewOrderImage3,
-  CompletedOrderImage1,
-  CompletedOrderImage2,
   Taco,
   TacoTwo,
   Logo,

@@ -194,7 +194,7 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
     throw new HttpsError("failed-precondition", "Restaurant no longer exists.");
   }
 
-  const itemRoots = [...new Set([ownerId, resPublicId].filter(Boolean))];
+  const itemRoots = [...new Set([ownerId, resPublicId, "thaiseva-platform"].filter(Boolean))];
   const verifiedItems = [];
   for (const item of items) {
     const itemId = item.ItemId || item.itemId;
@@ -226,11 +226,17 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
   const amount = Math.round(
     verifiedItems.reduce((total, item) => total + item.lineAmount, 0) * 100
   ) / 100;
+  
   const commissionPct = resolveCommissionPct(orderData, restaurantSnap.data());
-  const adminShare = Math.round(amount * commissionPct) / 100;
-  const partnerShare = Math.round((amount - adminShare) * 100) / 100;
+  const deliveryCharge = Number(orderData.deliveryCharge) || 0;
+  const foodAdminShare = Math.round(amount * commissionPct) / 100;
+  
+  const adminShare = Math.round((foodAdminShare + deliveryCharge) * 100) / 100;
+  const partnerShare = Math.round((amount - foodAdminShare) * 100) / 100;
+  const totalAmount = Math.round((amount + deliveryCharge) * 100) / 100;
+
   return {
-    amount,
+    amount: totalAmount,
     ownerId,
     restaurantRef,
     commissionPct,
@@ -638,10 +644,222 @@ async function clearOrderPayment(caller, { orderId, idempotencyKey }) {
   return { orderId, isPaymentClear: true, alreadyApplied: false };
 }
 
+async function assignOrderRestaurant(caller, { orderId, restaurantUid, idempotencyKey }) {
+  if (!orderId) {
+    throw new HttpsError("invalid-argument", "orderId is required.");
+  }
+  if (!restaurantUid) {
+    throw new HttpsError("invalid-argument", "restaurantUid is required.");
+  }
+  if (caller.role !== ROLES.MASTER) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only master admin can reassign orders to restaurants."
+    );
+  }
+
+  const safeKey = validateIdempotencyKey(idempotencyKey);
+  const db = getFirestore();
+  const orderRef = db.collection("orders").doc(orderId);
+  const restaurantRef = db.collection("restaurants").doc(restaurantUid);
+
+  const result = await db.runTransaction(async (tx) => {
+    const [orderSnap, restSnap] = await Promise.all([
+      tx.get(orderRef),
+      tx.get(restaurantRef)
+    ]);
+
+    if (!orderSnap.exists) throw new HttpsError("not-found", "Order not found.");
+    if (!restSnap.exists) throw new HttpsError("not-found", "Target restaurant not found.");
+
+    const orderData = orderSnap.data() || {};
+    const current = normalizeStoredStatus(orderData.currentStatus || "New Order");
+    const previousOwnerId = orderData.Restaurant?.ownerId;
+
+    if (safeKey && orderData.idempotencyKeys?.[safeKey]) {
+      return { alreadyApplied: true, current, newRestaurant: orderData.Restaurant };
+    }
+
+    if (current === "Delivered" || current === CANCELLED) {
+      throw new HttpsError("failed-precondition", "Terminal order cannot change.");
+    }
+    if (previousOwnerId === restaurantUid) {
+      if (safeKey) {
+        tx.update(orderRef, { [`idempotencyKeys.${safeKey}`]: true });
+      }
+      return { alreadyApplied: true, current, newRestaurant: orderData.Restaurant };
+    }
+
+    const restData = restSnap.data();
+    const newRestaurantObj = {
+      ownerId: restaurantUid,
+      name: restData.name || "Unknown Restaurant",
+      id: restData.publicId || restData.id || restaurantUid
+    };
+
+    tx.update(orderRef, {
+      Restaurant: newRestaurantObj,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: caller.uid,
+      ...(safeKey ? { [`idempotencyKeys.${safeKey}`]: true } : {}),
+    });
+
+    const restNote = {
+      title: "New Order Assigned!",
+      desc: `#${orderId} has been assigned to your restaurant. Please confirm and start preparing.`,
+      type: "order",
+      image: "",
+      timestamp: FieldValue.serverTimestamp(),
+    };
+
+    tx.set(
+      db.collection("notifications").doc("restaurants").collection(restaurantUid).doc(),
+      restNote
+    );
+
+    writeAuditLogTx(tx, db, {
+      actorUid: caller.uid,
+      actorRole: caller.role,
+      action: "order.assign_restaurant",
+      targetType: "order",
+      targetId: orderId,
+      tenantId: restaurantUid,
+      before: { Restaurant: orderData.Restaurant },
+      after: { Restaurant: newRestaurantObj },
+      requestId: safeKey,
+    });
+    return { alreadyApplied: false, current, newRestaurant: newRestaurantObj };
+  });
+
+  return {
+    orderId,
+    currentStatus: result.current,
+    alreadyApplied: result.alreadyApplied,
+    restaurant: result.newRestaurant,
+  };
+}
+
+async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, deliveryCharge = 0, idempotencyKey }) {
+  if (caller.role !== ROLES.MASTER) {
+    throw new HttpsError("permission-denied", "Only master admin can perform unified confirmation.");
+  }
+  if (!orderId || !restaurantUid || !riderId) {
+    throw new HttpsError("invalid-argument", "orderId, restaurantUid, and riderId are required.");
+  }
+  
+  const safeKey = validateIdempotencyKey(idempotencyKey);
+  const db = getFirestore();
+  const orderRef = db.collection("orders").doc(orderId);
+  const restaurantRef = db.collection("restaurants").doc(restaurantUid);
+  
+  const result = await db.runTransaction(async (tx) => {
+    const [orderSnap, restSnap] = await Promise.all([
+      tx.get(orderRef),
+      tx.get(restaurantRef)
+    ]);
+    
+    if (!orderSnap.exists) throw new HttpsError("not-found", "Order not found.");
+    if (!restSnap.exists) throw new HttpsError("not-found", "Target restaurant not found.");
+    
+    const orderData = orderSnap.data() || {};
+    const current = normalizeStoredStatus(orderData.currentStatus || "New Order");
+    
+    if (safeKey && orderData.idempotencyKeys?.[safeKey]) {
+      return { alreadyApplied: true, current, newRestaurant: orderData.Restaurant };
+    }
+    
+    if (current === "Delivered" || current === CANCELLED) {
+      throw new HttpsError("failed-precondition", "Terminal order cannot change.");
+    }
+    if (current !== "New Order" && current !== "Order Confirm") {
+      throw new HttpsError("failed-precondition", "Order has already progressed beyond confirmation.");
+    }
+    
+    const rider = await loadActiveRiderSnapshot(tx, db, riderId);
+    
+    const restData = restSnap.data();
+    const newRestaurantObj = {
+      ownerId: restaurantUid,
+      name: restData.name || "Unknown Restaurant",
+      id: restData.publicId || restData.id || restaurantUid
+    };
+
+    const finalDeliveryCharge = Number(deliveryCharge) || 0;
+    const currentAmount = Number(orderData.Amount) || 0;
+    
+    const statusEntry = {
+      status: "Order Confirm",
+      timestamp: new Date(),
+      by: caller.uid,
+    };
+    
+    tx.update(orderRef, {
+      currentStatus: "Order Confirm",
+      Status: FieldValue.arrayUnion(statusEntry),
+      Restaurant: newRestaurantObj,
+      DeliveryPartner: rider,
+      assignedRiderId: rider.id,
+      assignedAt: FieldValue.serverTimestamp(),
+      assignedBy: caller.uid,
+      deliveryCharge: finalDeliveryCharge,
+      Amount: Math.round((currentAmount + finalDeliveryCharge) * 100) / 100,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: caller.uid,
+      ...(safeKey ? { [`idempotencyKeys.${safeKey}`]: true } : {}),
+    });
+    
+    const restNote = {
+      title: "New Order Assigned!",
+      desc: `#${orderId} has been assigned to your restaurant. A rider is already assigned. Please confirm and start preparing.`,
+      type: "order",
+      image: "",
+      timestamp: FieldValue.serverTimestamp(),
+    };
+    tx.set(
+      db.collection("notifications").doc("restaurants").collection(restaurantUid).doc(),
+      restNote
+    );
+    
+    const riderNote = {
+      title: "New Delivery Assigned!",
+      desc: `You have been assigned to order #${orderId} for pickup at ${restData.name}.`,
+      type: "order",
+      image: "",
+      timestamp: FieldValue.serverTimestamp(),
+    };
+    tx.set(
+      db.collection("notifications").doc("foodRiders").collection(rider.id).doc(),
+      riderNote
+    );
+    
+    writeAuditLogTx(tx, db, {
+      actorUid: caller.uid,
+      actorRole: caller.role,
+      action: "order.master_confirm",
+      targetType: "order",
+      targetId: orderId,
+      tenantId: restaurantUid,
+      after: { Restaurant: newRestaurantObj, rider, deliveryCharge: finalDeliveryCharge },
+      requestId: safeKey,
+    });
+    
+    return { alreadyApplied: false, current, newRestaurant: newRestaurantObj };
+  });
+  
+  return {
+    orderId,
+    currentStatus: "Order Confirm",
+    alreadyApplied: result.alreadyApplied,
+    restaurant: result.newRestaurant,
+  };
+}
+
 module.exports = {
   transitionOrderStatus,
   markOrderDelivered,
   assignOrderRider,
+  assignOrderRestaurant,
+  masterConfirmOrder,
   clearOrderPayment,
   nextAllowedStatuses,
   assignedRiderIdFromOrder,

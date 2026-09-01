@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  fetchBookingsTotalPages,
-  todayBooking,
+  fetchOrderRecordsTotalPages,
+  fetchOrderRecords,
 } from "../../services/DailyRecords";
 import { CSVLink } from "react-csv";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
@@ -33,7 +33,7 @@ const TodayOrders = () => {
 
   useEffect(() => {
     if (isMasterAdmin) {
-      fetchBookingsTotalPages(setTotalPages, startDate, endDate);
+      fetchOrderRecordsTotalPages(setTotalPages, startDate, endDate);
       loadData();
     }
   }, [isMasterAdmin, page, refetch]); // eslint-disable-line react-hooks/exhaustive-deps -- date values and cursors are applied only by explicit submit/page triggers
@@ -74,7 +74,7 @@ const TodayOrders = () => {
   };
 
   const loadData = async () => {
-    const data = await todayBooking(
+    const data = await fetchOrderRecords(
       setOrderDetails,
       setLoading,
       startDate,

@@ -46,6 +46,20 @@ export const assignOrderRider = ({ orderId, riderId }) =>
     riderId,
     idempotencyKey: newIdempotencyKey("assign"),
   });
+export const assignOrderRestaurant = ({ orderId, restaurantUid }) =>
+  callApi("assignOrderRestaurant", {
+    orderId,
+    restaurantUid,
+    idempotencyKey: newIdempotencyKey("route"),
+  });
+export const masterConfirmOrder = ({ orderId, restaurantUid, riderId, deliveryCharge }) =>
+  callApi("masterConfirmOrder", {
+    orderId,
+    restaurantUid,
+    riderId,
+    deliveryCharge,
+    idempotencyKey: newIdempotencyKey("confirm"),
+  });
 export const createFoodRider = (data) =>
   callApi("createFoodRider", {
     ...data,
@@ -59,22 +73,6 @@ export const clearOrderPayment = ({ orderId }) =>
     orderId,
     idempotencyKey: newIdempotencyKey("pay"),
   });
-// Dine-in bookings — customer app contract: APP_BOOKING_API.md
-export const createDineInBooking = (data) =>
-  callApi("createDineInBooking", {
-    ...data,
-    idempotencyKey: data?.idempotencyKey || newIdempotencyKey("booking"),
-  });
-export const listMyDineInBookings = (data) =>
-  callApi("listMyDineInBookings", data);
-export const getDineInBooking = (data) => callApi("getDineInBooking", data);
-export const updateDineInBooking = (data) =>
-  callApi("updateDineInBooking", data);
-export const cancelDineInBooking = (data) =>
-  callApi("cancelDineInBooking", data);
-export const setDineInBookingStatus = (data) =>
-  callApi("setDineInBookingStatus", data);
-
 // Menu
 export const createFoodItem = (data) => callApi("createFoodItem", data);
 export const updateFoodItem = (data) => callApi("updateFoodItem", data);

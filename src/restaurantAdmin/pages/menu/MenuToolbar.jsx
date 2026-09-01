@@ -10,6 +10,7 @@ const MenuToolbar = ({
   filters,
   onChange,
   categories,
+  cuisines,
   resultCount,
   hasActiveFilters,
   onClear,
@@ -29,7 +30,7 @@ const MenuToolbar = ({
             type="search"
             value={filters.searchQuery}
             onChange={(e) => set({ searchQuery: e.target.value })}
-            placeholder="Search name, ID, category, description…"
+            placeholder="Search name, ID, category, cuisine, description…"
             className={`modern-input !pl-10 ${hasSearch ? "!pr-10" : ""}`}
             aria-label="Search menu items"
           />
@@ -95,7 +96,7 @@ const MenuToolbar = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 min-w-0">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 min-w-0">
         <label className="block min-w-0">
           <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Status
@@ -141,6 +142,24 @@ const MenuToolbar = ({
             <option value="all">All types</option>
             <option value="Veg">Veg</option>
             <option value="Non Veg">Non Veg</option>
+          </select>
+        </label>
+        
+        <label className="block min-w-0">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            Cuisine
+          </span>
+          <select
+            className="modern-select"
+            value={filters.cuisine}
+            onChange={(e) => set({ cuisine: e.target.value })}
+          >
+            <option value="all">All cuisines</option>
+            {cuisines?.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
           </select>
         </label>
 

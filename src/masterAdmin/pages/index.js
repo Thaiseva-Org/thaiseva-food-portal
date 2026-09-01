@@ -13,7 +13,7 @@ const OrdersDetails = lazy(() => import("./OrdersDetails"));
 const RestaDetails = lazy(() => import("./RestaDetails"));
 const RestRequests = lazy(() => import("./RestRequests"));
 const TodayOrders = lazy(() => import("./TodayOrders"));
-const TableBookings = lazy(() => import("./TableBooking"));
+const RestaurantChat = lazy(() => import("./RestaurantChat"));
 const RestaurantStatsList = lazy(() =>
   import("./restaurantStats/RestaurantStatsList")
 );
@@ -28,9 +28,6 @@ const RestaurantStatsManage = lazy(() =>
 );
 const RestaurantStatsOrders = lazy(() =>
   import("./restaurantStats/RestaurantStatsOrders")
-);
-const RestaurantStatsReservations = lazy(() =>
-  import("./restaurantStats/RestaurantStatsReservations")
 );
 const RestaurantStatsFinance = lazy(() =>
   import("./restaurantStats/RestaurantStatsFinance")
@@ -55,13 +52,12 @@ export {
   RestaDetails,
   RestRequests,
   TodayOrders,
-  TableBookings,
+  RestaurantChat,
   RestaurantStatsList,
   RestaurantStatsShell,
   RestaurantStatsOverview,
   RestaurantStatsManage,
   RestaurantStatsOrders,
-  RestaurantStatsReservations,
   RestaurantStatsFinance,
   MonitorOrderView,
   Riders,

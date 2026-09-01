@@ -6,31 +6,24 @@ import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import TwoWheelerRoundedIcon from "@mui/icons-material/TwoWheelerRounded";
-import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import RestaurantMenuRoundedIcon from "@mui/icons-material/RestaurantMenuRounded";
-import RoomServiceRoundedIcon from "@mui/icons-material/RoomServiceRounded";
+import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import NavBadge from "../../components/NavBadge";
-import { useBookings } from "../../context/BookingsProvider";
+import { useOrders } from "../../context/OrdersProvider";
 import { usePendingRequestCount } from "../../hooks/usePendingRequestCount";
 import { ORDER_STATUS } from "../../utils/orderStatus";
 import { hasAssignedRider } from "../../utils/orderRider";
-import { isPlatformOrder } from "../../utils/platformRestaurant";
+import { useRestaurantChatCount } from "../../hooks/useRestaurantChatCount";
 
 const MasterSidebar = ({ show, toggle }) => {
-  const { orders } = useBookings() || {};
+  const { orders } = useOrders() || {};
   const pendingRequests = usePendingRequestCount();
+  const restaurantChatCount = useRestaurantChatCount();
   const pendingOrders = (orders || []).filter(
     (row) =>
-      !isPlatformOrder(row) &&
-      (row.Status === ORDER_STATUS.OUT ||
-        row.Status === ORDER_STATUS.NEW ||
-        (row.Status === ORDER_STATUS.READY && !hasAssignedRider(row)))
-  ).length;
-  const kitchenOrders = (orders || []).filter(
-    (row) =>
-      isPlatformOrder(row) &&
-      row.Status !== ORDER_STATUS.DELIVERED &&
-      row.Status !== ORDER_STATUS.CANCELLED
+      row.Status === ORDER_STATUS.OUT ||
+      row.Status === ORDER_STATUS.NEW ||
+      (row.Status === ORDER_STATUS.READY && !hasAssignedRider(row))
   ).length;
 
   const links = [
@@ -49,24 +42,12 @@ const MasterSidebar = ({ show, toggle }) => {
       badgeTone: "warning",
     },
     {
-      icon: <BarChartRoundedIcon fontSize="small" />,
-      label: "Restaurant Monitor",
-      to: "restaurantStats",
-      path: "/foodAdmin/restaurantStats",
-    },
-    {
       icon: <RestaurantMenuRoundedIcon fontSize="small" />,
       label: "Our kitchen",
       to: "ourKitchen",
       path: "/foodAdmin/ourKitchen",
     },
-    {
-      icon: <RoomServiceRoundedIcon fontSize="small" />,
-      label: "Our orders",
-      to: "ourOrders",
-      path: "/foodAdmin/ourOrders",
-      badge: kitchenOrders,
-    },
+
     {
       icon: <ListAltRoundedIcon fontSize="small" />,
       label: "Orders",
@@ -84,8 +65,16 @@ const MasterSidebar = ({ show, toggle }) => {
     {
       icon: <ReceiptLongRoundedIcon fontSize="small" />,
       label: "Records",
-      to: "bookings-record",
-      path: "/foodAdmin/bookings-record",
+      to: "records",
+      path: "/foodAdmin/records",
+    },
+    {
+      icon: <ChatRoundedIcon fontSize="small" />,
+      label: "Restaurant Chat",
+      to: "restaurantChat",
+      path: "/foodAdmin/restaurantChat",
+      badge: restaurantChatCount,
+      badgeTone: "danger",
     },
     {
       icon: <ExitToAppRoundedIcon fontSize="small" />,

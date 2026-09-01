@@ -16,11 +16,11 @@ import { formatCount } from "../../utils/format";
 ChartJS.register(CategoryScale, ArcElement, Tooltip, Legend);
 
 const COLORS = {
-  delivered: "#22c55e",
-  cancelled: "#ef4444",
+  delivered: "#10b981", // emerald-500
+  cancelled: "#f43f5e", // rose-500
 };
 
-const MasterChartPage = ({ startDate = "", endDate = "" }) => {
+const MasterChartPage = ({ startDate = "", endDate = "", summary = null }) => {
   const [data, setData] = useState({
     total: 0,
     delivered: 0,
@@ -28,6 +28,11 @@ const MasterChartPage = ({ startDate = "", endDate = "" }) => {
   });
 
   useEffect(() => {
+    if (summary) {
+      setData(summary);
+      return undefined;
+    }
+
     let cancelled = false;
     async function fetchData() {
       const next = await fetchOrdersDoughnutData(startDate, endDate);
@@ -37,7 +42,7 @@ const MasterChartPage = ({ startDate = "", endDate = "" }) => {
     return () => {
       cancelled = true;
     };
-  }, [startDate, endDate]);
+  }, [startDate, endDate, summary]);
 
   const slices = [
     { label: "Delivered", value: data.delivered, color: COLORS.delivered },
@@ -48,7 +53,7 @@ const MasterChartPage = ({ startDate = "", endDate = "" }) => {
     slices.unshift({
       label: "In process",
       value: other,
-      color: "#2563eb",
+      color: "#6366f1", // indigo-500
     });
   }
   const hasChartData = slices.some((s) => s.value > 0);
@@ -67,47 +72,68 @@ const MasterChartPage = ({ startDate = "", endDate = "" }) => {
       </Stack>
 
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,11rem)_1fr] gap-5 items-center min-w-0">
-        <div className="mx-auto h-44 w-44 max-w-full">
+        <div className="mx-auto h-44 w-44 max-w-full relative">
           {hasChartData ? (
-            <Doughnut
-              data={{
-                labels: slices.map((s) => s.label),
-                datasets: [
-                  {
-                    data: slices.map((s) => s.value),
-                    backgroundColor: slices.map((s) => s.color),
-                    borderWidth: 0,
+            <>
+              <Doughnut
+                data={{
+                  labels: slices.map((s) => s.label),
+                  datasets: [
+                    {
+                      data: slices.map((s) => s.value),
+                      backgroundColor: slices.map((s) => s.color),
+                      borderWidth: 2,
+                      borderColor: "transparent",
+                      hoverOffset: 6,
+                    },
+                  ],
+                }}
+                options={{
+                  maintainAspectRatio: true,
+                  cutout: "75%",
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      backgroundColor: "rgba(17, 24, 39, 0.9)",
+                      titleFont: { family: "Inter, sans-serif", size: 13 },
+                      bodyFont: { family: "Inter, sans-serif", size: 13, weight: "bold" },
+                      padding: 10,
+                      cornerRadius: 8,
+                      displayColors: true,
+                    }
                   },
-                ],
-              }}
-              options={{
-                maintainAspectRatio: true,
-                cutout: "68%",
-                plugins: { legend: { display: false } },
-              }}
-            />
+                }}
+              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xs text-ink-subtle font-medium uppercase tracking-wider">Total</span>
+                <span className="text-2xl font-bold text-ink leading-tight">{formatCount(data.total)}</span>
+              </div>
+            </>
           ) : (
             <p className="flex h-full items-center justify-center text-sm text-ink-subtle">
               No orders in this period
             </p>
           )}
         </div>
-        <ul className="min-w-0 space-y-2">
+        <ul className="min-w-0 space-y-3">
           {slices.map((row) => {
             const pct =
               data.total > 0 ? Math.round((row.value / data.total) * 100) : 0;
             return (
-              <li key={row.label} className="flex items-center gap-2.5">
+              <li
+                key={row.label}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors duration-200"
+              >
                 <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  className="h-3 w-3 shrink-0 rounded-full shadow-sm"
                   style={{ backgroundColor: row.color }}
                   aria-hidden="true"
                 />
-                <span className="min-w-0 flex-1 text-sm text-ink">{row.label}</span>
-                <span className="text-sm font-semibold tabular-nums text-ink">
+                <span className="min-w-0 flex-1 text-sm font-medium text-ink/80">{row.label}</span>
+                <span className="text-sm font-bold tabular-nums text-ink">
                   {formatCount(row.value)}
                 </span>
-                <span className="w-10 text-right text-xs tabular-nums text-ink-subtle">
+                <span className="w-12 text-right text-xs font-semibold tabular-nums text-ink-subtle bg-slate-100 py-0.5 px-1.5 rounded-md">
                   {pct}%
                 </span>
               </li>

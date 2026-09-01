@@ -7,12 +7,9 @@ import {
   FaImages,
   FaRegImage,
   FaStore,
-  FaMapMarkerAlt,
-  FaCamera,
   FaClipboardCheck,
   FaIdCard,
   FaFileAlt,
-  FaUserTie,
 } from "react-icons/fa";
 import { useAuth } from "../../../AuthContext";
 import { storage } from "../../../../firebaseConfig";
@@ -38,13 +35,8 @@ const FOOD_TYPES = [
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
 
 const STEPS = [
-  { id: 0, label: "Welcome", icon: FaStore },
-  { id: 1, label: "Basics", icon: FaClipboardCheck },
-  { id: 2, label: "Business", icon: FaUserTie },
-  { id: 3, label: "Location", icon: FaMapMarkerAlt },
-  { id: 4, label: "Photo & bio", icon: FaCamera },
-  { id: 5, label: "Documents", icon: FaFileAlt },
-  { id: 6, label: "Review", icon: MdCheckCircle },
+  { id: 0, label: "Application", icon: FaClipboardCheck },
+  { id: 1, label: "Preview", icon: MdCheckCircle },
 ];
 
 const DOC_KEYS = {
@@ -133,13 +125,12 @@ const OwnerOnboarding = () => {
 
   const progressPct = useMemo(() => {
     if (phase === "pending" || phase === "rejected") return 100;
-    return Math.round((step / (STEPS.length - 1)) * 100);
+    return step === 0 ? 50 : 100;
   }, [step, phase]);
 
   const anyDocUploading = Object.values(documents).some((d) => d.uploading);
 
-  const validateStep = (s) => {
-    if (s === 1) {
+  const validateForm = () => {
       if (!restaurantName.trim()) return "Restaurant name is required.";
       if (!ownerName.trim()) return "Owner full name is required.";
       if (!phoneNumber.trim()) return "Phone number is required.";
@@ -149,39 +140,30 @@ const OwnerOnboarding = () => {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailId.trim()))
         return "Enter a valid email address.";
       if (!foodType.trim()) return "Select a food type.";
-    }
-    if (s === 2) {
       if (!businessRegistrationNumber.trim())
         return "Business registration number is required.";
       if (!serviceType.trim()) return "Select a service type.";
       if (!openingHours.trim()) return "Opening hours are required.";
-    }
-    if (s === 3) {
       if (!location.trim()) return "Location is required.";
-    }
-    if (s === 4) {
       if (!description.trim()) return "Description is required.";
       if (description.trim().length < 20)
         return "Description should be at least 20 characters.";
       if (!image) return "Please upload a restaurant cover photo.";
-    }
-    if (s === 5) {
       if (!documents[DOC_KEYS.businessLicense].url)
         return "Upload your business license / registration document.";
       if (!documents[DOC_KEYS.ownerId].url)
         return "Upload an owner ID document (national ID or passport).";
-    }
     return "";
   };
 
   const next = () => {
-    const msg = validateStep(step);
+    const msg = validateForm();
     if (msg) {
       setError(msg);
       return;
     }
     setError("");
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    setStep(1);
   };
 
   const back = () => {
@@ -330,13 +312,11 @@ const OwnerOnboarding = () => {
   };
 
   const handleSubmit = async () => {
-    for (let s = 1; s <= 5; s++) {
-      const msg = validateStep(s);
-      if (msg) {
-        setError(msg);
-        setStep(s);
-        return;
-      }
+    const validationMessage = validateForm();
+    if (validationMessage) {
+      setError(validationMessage);
+      setStep(0);
+      return;
     }
     try {
       setSubmitting(true);
@@ -401,7 +381,7 @@ const OwnerOnboarding = () => {
         restaurant={resData}
         onReapply={() => {
           prefillFromRestaurant(resData);
-          setStep(1);
+          setStep(0);
         }}
         onLogout={() => navigate("/partner/logOutPage")}
       />
@@ -522,7 +502,7 @@ const OwnerOnboarding = () => {
           )}
 
           {/* Step 1 — Basics */}
-          {step === 1 && (
+          {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
                 <h2 className="section-title">Restaurant basics</h2>
@@ -602,7 +582,7 @@ const OwnerOnboarding = () => {
           )}
 
           {/* Step 2 — Business */}
-          {step === 2 && (
+          {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
                 <h2 className="section-title">Business information</h2>
@@ -677,7 +657,7 @@ const OwnerOnboarding = () => {
           )}
 
           {/* Step 3 — Location */}
-          {step === 3 && (
+          {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
                 <h2 className="section-title">Location</h2>
@@ -730,7 +710,7 @@ const OwnerOnboarding = () => {
           )}
 
           {/* Step 4 — Photo & description */}
-          {step === 4 && (
+          {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
                 <h2 className="section-title">Photo & description</h2>
@@ -818,7 +798,7 @@ const OwnerOnboarding = () => {
           )}
 
           {/* Step 5 — Documents */}
-          {step === 5 && (
+          {step === 0 && (
             <div className="space-y-5 max-w-2xl min-w-0">
               <div>
                 <h2 className="section-title">Verification documents</h2>
@@ -887,7 +867,7 @@ const OwnerOnboarding = () => {
           )}
 
           {/* Step 6 — Review */}
-          {step === 6 && (
+          {step === 1 && (
             <div className="space-y-5 min-w-0">
               <div>
                 <h2 className="section-title">Review & submit</h2>

@@ -14,6 +14,7 @@ const MenuItemDetail = ({
   onToggleActive,
   onDelete,
   busyId,
+  isMasterAdmin,
 }) => {
   const closeRef = useRef(null);
   const isBusy = busyId === getItemKey(item);
@@ -101,31 +102,35 @@ const MenuItemDetail = ({
                 {item.itemType}
               </span>
             )}
-            {discount > 0 && (
+            {isMasterAdmin && discount > 0 && (
               <span className="badge-warning">{discount}% discount</span>
             )}
           </div>
 
           <div>
-            {discount > 0 ? (
-              <div className="flex flex-wrap items-baseline gap-2">
-                <p className="text-2xl font-bold text-ink-heading">
-                  {formatPrice(salePrice)}
-                </p>
-                <p className="text-base text-ink-muted line-through">
-                  {formatPrice(item.price)}
-                </p>
-              </div>
-            ) : (
-              <p className="text-2xl font-bold text-ink-heading">
-                {formatPrice(item.price)}
-              </p>
-            )}
-            {Number(item.earning) > 0 && (
-              <p className="mt-1 text-sm text-ink-muted">
-                Total sales {formatPrice(item.earning)}
-                {item.count != null ? ` · ${item.count} orders` : ""}
-              </p>
+            {isMasterAdmin && (
+              <>
+                {discount > 0 ? (
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <p className="text-2xl font-bold text-ink-heading">
+                      {formatPrice(salePrice)}
+                    </p>
+                    <p className="text-base text-ink-muted line-through">
+                      {formatPrice(item.price)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-ink-heading">
+                    {formatPrice(item.price)}
+                  </p>
+                )}
+                {Number(item.earning) > 0 && (
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Total sales {formatPrice(item.earning)}
+                    {item.count != null ? ` · ${item.count} orders` : ""}
+                  </p>
+                )}
+              </>
             )}
             {!item.active && (
               <p className="mt-2 text-sm font-medium text-warning-700 bg-warning-50 border border-warning-200 rounded-lg px-3 py-2">
@@ -143,14 +148,16 @@ const MenuItemDetail = ({
           )}
 
           <div className="flex flex-col gap-2 border-t border-neutral-100 pt-4 sm:flex-row sm:flex-wrap">
-            <button
-              type="button"
-              className="btn-primary flex-1 !min-h-11"
-              onClick={() => onEdit(item)}
-            >
-              <i className="bi bi-pencil" aria-hidden="true" />
-              Edit item
-            </button>
+            {isMasterAdmin && (
+              <button
+                type="button"
+                className="btn-primary flex-1 !min-h-11"
+                onClick={() => onEdit(item)}
+              >
+                <i className="bi bi-pencil" aria-hidden="true" />
+                Edit item
+              </button>
+            )}
             <button
               type="button"
               disabled={isBusy}
@@ -163,15 +170,17 @@ const MenuItemDetail = ({
                   ? "Deactivate"
                   : "Activate"}
             </button>
-            <button
-              type="button"
-              disabled={isBusy}
-              className="btn-danger !min-h-11 sm:w-auto"
-              onClick={() => onDelete(item)}
-            >
-              <i className="bi bi-trash" aria-hidden="true" />
-              Delete
-            </button>
+            {isMasterAdmin && (
+              <button
+                type="button"
+                disabled={isBusy}
+                className="btn-danger !min-h-11 sm:w-auto"
+                onClick={() => onDelete(item)}
+              >
+                <i className="bi bi-trash" aria-hidden="true" />
+                Delete
+              </button>
+            )}
           </div>
         </div>
       </div>

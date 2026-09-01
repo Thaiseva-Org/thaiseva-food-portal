@@ -9,7 +9,6 @@ import { RestaurantStatsProvider } from "./components/RestaurantContext";
 
 function bannerTone(pathname) {
   if (pathname.includes("/orders")) return "orders";
-  if (pathname.includes("/reservations")) return "reservations";
   if (pathname.includes("/finance")) return "finance";
   return "manage";
 }
@@ -78,9 +77,9 @@ const RestaurantStatsShell = () => {
   if (error || !restaurant) {
     return (
       <div className="page-shell px-4 py-8 md:px-6">
-        <Link to="/foodAdmin/restaurantStats" className="btn-ghost">
+        <Link to="/foodAdmin" className="btn-ghost">
           <i className="bi bi-arrow-left" aria-hidden="true" />
-          Back to restaurants
+          Back to Dashboard
         </Link>
         <div className="empty-state mt-10 py-16">
           <i className="bi bi-shop text-4xl text-brand-300" aria-hidden="true" />
@@ -99,11 +98,11 @@ const RestaurantStatsShell = () => {
     <RestaurantStatsProvider value={contextValue}>
       <div className="page-shell animate-fade-in px-4 py-6 md:px-6 md:py-8">
         <Link
-          to="/foodAdmin/restaurantStats"
+          to="/foodAdmin"
           className="inline-flex items-center gap-2 rounded-lg px-1 py-1 text-sm font-semibold text-brand-700 hover:bg-brand-50 hover:text-brand-800"
         >
           <i className="bi bi-arrow-left" aria-hidden="true" />
-          Back to restaurants
+          Back to Dashboard
         </Link>
 
         <div className="mt-4">

@@ -36,23 +36,6 @@ const fetchRestroRequests = async (
             where("timestamp", ">=", new Date(startTimestamp)),
             where("timestamp", "<=", new Date(endTimestamp))
           );
-    const pendingCountSnapshot = await getCountFromServer(pendingQuery);
-
-    let applicationPending = 0;
-    if (startDate === "" && endDate === "") {
-      try {
-        const appsSnap = await getCountFromServer(
-          query(
-            collection(db, "restaurantApplications"),
-            where("status", "==", "Pending")
-          )
-        );
-        applicationPending = appsSnap.data().count;
-      } catch {
-        applicationPending = 0;
-      }
-    }
-
     // Count query for Verified
     const verifiedQuery =
       startDate === "" && endDate === ""
@@ -63,22 +46,39 @@ const fetchRestroRequests = async (
             where("timestamp", ">=", new Date(startTimestamp)),
             where("timestamp", "<=", new Date(endTimestamp))
           );
-    const verifiedCountSnapshot = await getCountFromServer(verifiedQuery);
+    const applicationPendingPromise =
+      startDate === "" && endDate === ""
+        ? getCountFromServer(
+            query(
+              collection(db, "restaurantApplications"),
+              where("status", "==", "Pending")
+            )
+          ).catch(() => null)
+        : Promise.resolve(null);
 
-    const totalQuery = query(reqRef, where("status", "==", "Verified"));
-    const totalres = await getCountFromServer(totalQuery);
-    const totalCount = totalres.data().count;
+    const [pendingCountSnapshot, appsSnap, verifiedCountSnapshot] =
+      await Promise.all([
+        getCountFromServer(pendingQuery),
+        applicationPendingPromise,
+        getCountFromServer(verifiedQuery),
+      ]);
+    const applicationPending = appsSnap?.data().count || 0;
 
     setReqData(pendingCountSnapshot.data().count + applicationPending);
     setTotalRes(verifiedCountSnapshot.data().count);
 
     if (setActiveRes !== "" && setInactiveRes !== "") {
+      const totalQuery = query(reqRef, where("status", "==", "Verified"));
       const activeQuery = query(
         reqRef,
         where("status", "==", "Verified"),
         where("active", "==", true)
       );
-      const activeCountSnapshot = await getCountFromServer(activeQuery);
+      const [totalres, activeCountSnapshot] = await Promise.all([
+        getCountFromServer(totalQuery),
+        getCountFromServer(activeQuery),
+      ]);
+      const totalCount = totalres.data().count;
       const activeCount = activeCountSnapshot.data().count;
 
       setActiveRes({
@@ -185,21 +185,33 @@ const fetchPartnerOrdersData = async (
       ...rangeClauses,
       where("currentStatus", "==", "Cancelled")
     );
+    const newOrderQuery = query(
+      reqRef,
+      owner,
+      ...rangeClauses,
+      where("currentStatus", "==", "New Order")
+    );
 
     const itemsRef = collection(db, `food_items/${resId}/items`);
     const soldQuery = query(itemsRef, where("count", ">", 0));
 
-    const [totalSnap, deliveredSnap, cancelledSnap, soldSnap] =
+    const [totalSnap, deliveredSnap, cancelledSnap, newOrderSnap, soldSnap] =
       await Promise.all([
         getCountFromServer(totalQuery),
         getCountFromServer(deliveredQuery),
         getCountFromServer(cancelledQuery),
+        getCountFromServer(newOrderQuery),
         getCountFromServer(soldQuery),
       ]);
 
-    setOrderCount(totalSnap.data().count);
-    setDelivered(deliveredSnap.data().count);
-    setCanceled(cancelledSnap.data().count);
+    const total = totalSnap.data().count;
+    const delivered = deliveredSnap.data().count;
+    const cancelled = cancelledSnap.data().count;
+    const newOrder = newOrderSnap.data().count;
+
+    setOrderCount(total);
+    setDelivered(delivered);
+    setCanceled(cancelled);
     setSoldCount(soldSnap.data().count);
 
     const uniqueCustomers = new Set();
@@ -207,9 +219,17 @@ const fetchPartnerOrdersData = async (
       if (item.CustomerId) uniqueCustomers.add(item.CustomerId);
     });
     setTotalCus(uniqueCustomers.size);
+    return {
+      total,
+      delivered,
+      cancelled,
+      newOrder,
+      inprocess: Math.max(0, total - newOrder - delivered - cancelled),
+    };
   } catch (error) {
     setError(error);
     console.error("Error fetching orders data: ", error);
+    return null;
   }
 };
 

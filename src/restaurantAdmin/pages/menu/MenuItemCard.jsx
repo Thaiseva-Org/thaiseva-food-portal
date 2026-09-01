@@ -6,7 +6,7 @@ import {
   getSalePrice,
 } from "./menuUtils";
 
-const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId }) => {
+const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, isMasterAdmin }) => {
   const key = getItemKey(item);
   const isBusy = busyId === key;
   const discount = getDiscountPct(item);
@@ -35,8 +35,9 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId }) => {
             <img
               src={item.imageUrl}
               alt=""
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
               loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-neutral-400">
@@ -47,7 +48,7 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId }) => {
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
           <div className="absolute left-2 top-2 flex max-w-[70%] flex-wrap gap-1.5">
             <StatusBadge status={item.active ? "Active" : "Inactive"} />
-            {discount > 0 && (
+            {isMasterAdmin && discount > 0 && (
               <span className="badge-warning">{discount}% off</span>
             )}
           </div>
@@ -71,29 +72,31 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId }) => {
           )}
         </div>
 
-        <div className="flex items-end justify-between gap-2">
-          <div className="min-w-0">
-            {discount > 0 ? (
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        {isMasterAdmin && (
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              {discount > 0 ? (
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <p className="text-lg font-bold text-ink-heading">
+                    {formatPrice(salePrice)}
+                  </p>
+                  <p className="text-sm text-ink-muted line-through">
+                    {formatPrice(item.price)}
+                  </p>
+                </div>
+              ) : (
                 <p className="text-lg font-bold text-ink-heading">
-                  {formatPrice(salePrice)}
-                </p>
-                <p className="text-sm text-ink-muted line-through">
                   {formatPrice(item.price)}
                 </p>
-              </div>
-            ) : (
-              <p className="text-lg font-bold text-ink-heading">
-                {formatPrice(item.price)}
+              )}
+            </div>
+            {Number(item.earning) > 0 && (
+              <p className="shrink-0 text-xs font-medium text-ink-muted tabular-nums">
+                Sales {formatPrice(item.earning)}
               </p>
             )}
           </div>
-          {Number(item.earning) > 0 && (
-            <p className="shrink-0 text-xs font-medium text-ink-muted tabular-nums">
-              Sales {formatPrice(item.earning)}
-            </p>
-          )}
-        </div>
+        )}
 
         {item.description && (
           <p className="line-clamp-2 text-sm text-ink-muted">{item.description}</p>
@@ -108,14 +111,16 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId }) => {
             <i className="bi bi-eye" aria-hidden="true" />
             View
           </button>
-          <button
-            type="button"
-            className="btn-outline !min-h-9 !px-2.5 !py-1.5 text-xs"
-            onClick={() => onEdit(item)}
-          >
-            <i className="bi bi-pencil" aria-hidden="true" />
-            Edit
-          </button>
+          {isMasterAdmin && (
+            <button
+              type="button"
+              className="btn-outline !min-h-9 !px-2.5 !py-1.5 text-xs"
+              onClick={() => onEdit(item)}
+            >
+              <i className="bi bi-pencil" aria-hidden="true" />
+              Edit
+            </button>
+          )}
           <button
             type="button"
             disabled={isBusy}

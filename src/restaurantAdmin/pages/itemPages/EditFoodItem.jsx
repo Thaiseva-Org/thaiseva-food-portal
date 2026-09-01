@@ -8,15 +8,17 @@ import { updateFoodItem } from "../../../api";
 import { useKitchenScope } from "../../../hooks/useKitchenScope";
 import { getMenuRootId } from "../../../utils/tenant";
 import { partnerPath } from "../../../utils/partnerRoutes";
+import { PLATFORM_OWNER_ID } from "../../../utils/platformRestaurant";
 import Template from "./Template";
 
 const EditItem = () => {
-  const { roleData, currentUser, resData } = useAuth();
+  const { roleData, currentUser, resData, isMasterAdmin } = useAuth();
   const itemidParam = useParams();
   const navigate = useNavigate();
   const itemid = decodeURIComponent(itemidParam["itemId"]);
   const kitchen = useKitchenScope();
   const ownerUid =
+    isMasterAdmin ? PLATFORM_OWNER_ID :
     kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
   const cleanItemId = String(itemid).replace("#", "");
   const [itemName, setItemName] = useState("");
@@ -35,6 +37,8 @@ const EditItem = () => {
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [formSuccess, setFormSuccess] = useState(null);
+  const [cuisine, setCuisine] = useState("");
+  const [assignedRestaurants, setAssignedRestaurants] = useState([]);
 
   useEffect(() => {
     document.title = "Thaiseva | Edit menu item";
@@ -54,6 +58,8 @@ const EditItem = () => {
           setDescription(data.description || "");
           setActive(Boolean(data.active));
           setImage(data.imageUrl || null);
+          setCuisine(data.cuisine || "");
+          setAssignedRestaurants(Array.isArray(data.assignedRestaurants) ? data.assignedRestaurants : []);
         } else {
           setFormError("No such item exists.");
         }
@@ -176,10 +182,16 @@ const EditItem = () => {
         price: Number(price),
         discount: Number(discount) || 0,
         category: String(category).trim(),
+        cuisine: String(cuisine).trim(),
         itemType,
         description: String(description).trim(),
         imageUrl,
         active,
+        assignedRestaurants,
+        restaurantStatus: assignedRestaurants.reduce((acc, uid) => {
+          acc[uid] = { active: true };
+          return acc;
+        }, {}),
       });
 
       setFormSuccess("Item updated successfully.");
@@ -225,6 +237,10 @@ const EditItem = () => {
       loadingItem={loadingItem}
       active={active}
       setActive={setActive}
+      cuisine={cuisine}
+      setCuisine={setCuisine}
+      assignedRestaurants={assignedRestaurants}
+      setAssignedRestaurants={setAssignedRestaurants}
     />
   );
 };

@@ -18,6 +18,8 @@ const NotificationArtwork = ({ notification }) => {
       src={source}
       className="h-14 w-14 shrink-0 rounded-xl border border-neutral-100 object-cover"
       alt=""
+      loading="lazy"
+      decoding="async"
       onError={() => setImageFailed(true)}
     />
   );

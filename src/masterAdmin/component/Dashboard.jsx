@@ -18,23 +18,17 @@ import {
   DashboardTheme,
   DashSection,
   KpiStatCard,
-  RankRowList,
-  StatusMeter,
 } from "../../components/dashboard";
 import { useNotifications } from "../../context/NotificationsProvider";
 import {
-  fetchOrdersData,
+  fetchOrdersDoughnutData,
   fetchRestroRequests,
-  fetchTopRestro,
 } from "../../services/DashboardData";
 import MasterChartPage from "./ChartPage";
 import MasterApexChart from "./ChartTwo";
-import { useBookings } from "../../context/BookingsProvider";
-import {
-  formatCount,
-  formatCountFull,
-  formatPercent,
-} from "../../utils/format";
+import NetworkMonitorSection from "../pages/restaurantStats/components/NetworkMonitorSection";
+import { useOrders } from "../../context/OrdersProvider";
+
 
 const MasterDashboard = ({ toggle, show }) => {
   useEffect(() => {
@@ -268,15 +262,17 @@ const TopNav = ({ toggle, show }) => {
 };
 
 export const MasterStat = () => {
-  const { orders } = useBookings();
+  const { orders } = useOrders();
   const [reqData, setReqData] = useState(0);
   const [totalRes, setTotalRes] = useState(0);
-  const [activeRes, setActiveRes] = useState({ count: 0, data: 0 });
-  const [inactiveRes, setInactiveRes] = useState({ count: 0, data: 0 });
   const [orderCount, setOrderCount] = useState(0);
   const [soldCount, setSoldCount] = useState(0);
   const [totalCus, setTotalCus] = useState(0);
-  const [topRest, setTopRest] = useState([]);
+  const [orderSummary, setOrderSummary] = useState({
+    total: 0,
+    delivered: 0,
+    cancelled: 0,
+  });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -286,37 +282,49 @@ export const MasterStat = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     fetchRestroRequests(
       "",
       "",
       setReqData,
       setTotalRes,
-      setActiveRes,
-      setInactiveRes
+      "",
+      ""
     );
-    fetchTopRestro(setTopRest);
-    fetchOrdersData("", "", setOrderCount, setTotalCus, setSoldCount, orders);
+    fetchOrdersDoughnutData().then((summary) => {
+      if (cancelled) return;
+      setOrderSummary(summary);
+      setOrderCount(summary.total);
+      setSoldCount(summary.delivered);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const uniqueCustomers = new Set(
+      (orders || []).map((order) => order.CustomerId).filter(Boolean)
+    );
+    setTotalCus(uniqueCustomers.size);
   }, [orders]);
 
-  const applyDateRange = (nextStart = startDate, nextEnd = endDate) => {
+  const applyDateRange = async (nextStart = startDate, nextEnd = endDate) => {
     fetchRestroRequests(nextStart, nextEnd, setReqData, setTotalRes, "", "");
-    fetchTopRestro(setTopRest);
-    fetchOrdersData(
-      nextStart,
-      nextEnd,
-      setOrderCount,
-      setTotalCus,
-      setSoldCount,
-      orders
-    );
+    const summary = await fetchOrdersDoughnutData(nextStart, nextEnd);
+    setOrderSummary(summary);
+    setOrderCount(summary.total);
+    setSoldCount(summary.delivered);
   };
 
-  const resetDateRange = () => {
+  const resetDateRange = async () => {
     setStartDate("");
     setEndDate("");
-    fetchRestroRequests("", "", setReqData, setTotalRes, setActiveRes, setInactiveRes);
-    fetchTopRestro(setTopRest);
-    fetchOrdersData("", "", setOrderCount, setTotalCus, setSoldCount, orders);
+    fetchRestroRequests("", "", setReqData, setTotalRes, "", "");
+    const summary = await fetchOrdersDoughnutData();
+    setOrderSummary(summary);
+    setOrderCount(summary.total);
+    setSoldCount(summary.delivered);
   };
 
   const boxesData = [
@@ -420,7 +428,11 @@ export const MasterStat = () => {
             title="Orders summary"
             subtitle="Network-wide order mix"
           >
-            <MasterChartPage startDate={startDate} endDate={endDate} />
+            <MasterChartPage
+              startDate={startDate}
+              endDate={endDate}
+              summary={orderSummary}
+            />
           </DashSection>
 
           <DashSection
@@ -431,46 +443,8 @@ export const MasterStat = () => {
           </DashSection>
         </Box>
 
-        <Box
-          sx={{
-            mt: 2.5,
-            pb: 5,
-            display: "grid",
-            gap: 2,
-            gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" },
-          }}
-        >
-          <DashSection
-            title="Restaurant status"
-            subtitle="Active vs inactive partners"
-          >
-            <StatusMeter
-              label="Active restaurants"
-              valueLabel={`${formatCount(activeRes.count)} (${formatPercent(activeRes.data)})`}
-              percent={activeRes.data}
-              color="warning"
-            />
-            <StatusMeter
-              label="Inactive restaurants"
-              valueLabel={`${formatCount(inactiveRes.count)} (${formatPercent(inactiveRes.data)})`}
-              percent={inactiveRes.data}
-              color="error"
-            />
-          </DashSection>
-
-          <DashSection title="Top restaurants" subtitle="Highest order volume">
-            <RankRowList
-              emptyLabel="No restaurant rankings yet."
-              items={topRest.map((item, index) => ({
-                id: item.restId || index,
-                image: item.restImage,
-                title: item.restName,
-                subtitle: `#${item.restId}`,
-                value: `${formatCount(item.orderCount)} orders`,
-                valueTitle: `${formatCountFull(item.orderCount)} orders`,
-              }))}
-            />
-          </DashSection>
+        <Box sx={{ mt: 2.5, pb: 5 }}>
+          <NetworkMonitorSection />
         </Box>
       </Box>
     </DashboardTheme>

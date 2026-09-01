@@ -7,10 +7,11 @@ import { createFoodItem } from "../../../api";
 import { useKitchenScope } from "../../../hooks/useKitchenScope";
 import { getMenuRootId } from "../../../utils/tenant";
 import { partnerPath } from "../../../utils/partnerRoutes";
+import { PLATFORM_OWNER_ID } from "../../../utils/platformRestaurant";
 import Template from "./Template";
 
 const AddItem = () => {
-  const { resData, currentUser, roleData } = useAuth();
+  const { resData, currentUser, roleData, isMasterAdmin } = useAuth();
   const kitchen = useKitchenScope();
   const [itemName, setItemName] = useState("");
   const [itemId, setItemId] = useState("");
@@ -27,7 +28,10 @@ const AddItem = () => {
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [formSuccess, setFormSuccess] = useState(null);
+  const [cuisine, setCuisine] = useState("");
+  const [assignedRestaurants, setAssignedRestaurants] = useState([]);
   const ownerUid =
+    isMasterAdmin ? PLATFORM_OWNER_ID :
     kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
 
   const navigate = useNavigate();
@@ -150,9 +154,15 @@ const AddItem = () => {
         price: Number(price),
         discount: Number(discount) || 0,
         category: String(category).trim(),
+        cuisine: String(cuisine).trim(),
         itemType,
         description: String(description).trim(),
         imageUrl,
+        assignedRestaurants,
+        restaurantStatus: assignedRestaurants.reduce((acc, uid) => {
+          acc[uid] = { active: true };
+          return acc;
+        }, {}),
       });
 
       setFormSuccess(
@@ -210,6 +220,10 @@ const AddItem = () => {
       formError={formError}
       formSuccess={formSuccess}
       mode="add"
+      cuisine={cuisine}
+      setCuisine={setCuisine}
+      assignedRestaurants={assignedRestaurants}
+      setAssignedRestaurants={setAssignedRestaurants}
     />
   );
 };
