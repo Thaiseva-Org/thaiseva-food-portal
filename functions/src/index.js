@@ -32,6 +32,7 @@ const {
   assignOrderRestaurant,
   masterConfirmOrder,
   clearOrderPayment,
+  createFoodOrder,
 } = require("./lib/orders");
 const {
   createFoodItem,
@@ -161,6 +162,10 @@ exports.ensurePlatformRestaurant = wrap(async (caller, data) => {
 });
 
 // ─── Orders / money ───────────────────────────────────────
+exports.createFoodOrder = wrap(async (caller, data) => {
+  return createFoodOrder(caller, data); // Uses direct authentication check inside createFoodOrder
+});
+
 exports.transitionOrderStatus = wrap(async (caller, data) => {
   requireOwnerOrMaster(caller);
   return transitionOrderStatus(caller, data);

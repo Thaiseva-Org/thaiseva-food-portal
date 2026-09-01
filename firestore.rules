@@ -449,15 +449,8 @@ service cloud.firestore {
 
     // Production order rules kept; food schema adds Restaurant.ownerId / Receiver / Sender.
     match /orders/{orderId} {
-      allow create: if isAuthenticated() && (
-        ownsIncoming('uid') || ownsIncoming('userId')
-        || (
-          request.resource.data.keys().hasAny(['Receiver'])
-          && request.resource.data.Receiver.keys().hasAny(['id'])
-          && request.resource.data.Receiver.id == request.auth.uid
-        )
-      ) &&
-        request.resource.data.get('isPaymentDone', false) == false;
+      // Order creation shifted to Cloud Functions (createFoodOrder) for secure price verification
+      allow create: if false;
       // Recent-orders list for restaurant admins filters Restaurant.ownerId == uid
       allow read: if isAdmin() || isFoodAdmin()
         || isOwner('uid')

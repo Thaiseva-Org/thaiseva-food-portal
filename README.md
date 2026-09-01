@@ -62,7 +62,7 @@ Designed for individual restaurant owners to manage their day-to-day operations:
 │   ├── index.css          # Global Tailwind CSS and fonts configuration
 │   └── main.jsx           # App entry point
 ├── functions/             # Cloud Functions (trusted API, region asia-southeast1)
-├── APP_BOOKING_API.md     # Customer-app booking implementation contract
+├── CUSTOMER_ORDER_BOOKING_API.md # Customer-app order placement ("take booking") contract
 ├── firebaseConfig.js      # Firebase SDK client initialization
 ├── tailwind.config.js     # Tailwind CSS theme customization
 └── vite.config.js         # Vite dev-server and build configs
@@ -123,12 +123,15 @@ Enterprise site key before deploying.
 
 ## 📚 Documentation
 
-| Doc | What it covers |
-|-----|----------------|
-| [`HOW_BOTH_PANELS_WORK.md`](HOW_BOTH_PANELS_WORK.md) | Master vs restaurant partner panels |
-| [`DEPLOY_SECURITY.md`](DEPLOY_SECURITY.md) | Deploy order, App Check, full callable list |
-| [`FIRESTORE_RULES_NOTES.md`](FIRESTORE_RULES_NOTES.md) | Shared multi-app rules — what this repo may change |
-| [`FIRESTORE_INDEXES_NOTES.md`](FIRESTORE_INDEXES_NOTES.md) | Shared indexes — never deploy a food-only file |
+| Document | Description & Coverage |
+| :--- | :--- |
+| [`PROJECT_DOCUMENTATION.md`](PROJECT_DOCUMENTATION.md) | **Master Specification**: Full architecture, schemas, callable APIs, state machines & dev setup |
+| [`CUSTOMER_ORDER_BOOKING_API.md`](CUSTOMER_ORDER_BOOKING_API.md) | **Customer Booking Contract**: API specification for placing food orders ("take booking") |
+| [`HOW_BOTH_PANELS_WORK.md`](HOW_BOTH_PANELS_WORK.md) | Detailed comparison and workflows for Master Admin vs Restaurant Partner panels |
+| [`MENU_SYSTEM_USER_APP.md`](MENU_SYSTEM_USER_APP.md) | Centralized Menu catalog architecture, User App query formulas & CSV importer format |
+| [`DEPLOY_SECURITY.md`](DEPLOY_SECURITY.md) | Deployment security protocol, App Check configuration, and full HTTPS callable API list |
+| [`FIRESTORE_RULES_NOTES.md`](FIRESTORE_RULES_NOTES.md) | Multi-app Firestore security rules policy & repo scope guidelines |
+| [`FIRESTORE_INDEXES_NOTES.md`](FIRESTORE_INDEXES_NOTES.md) | Shared composite database indexes & query guidelines |
 
 Food orders: kitchen one step at a time → master assigns a rider at **Ready for pickup** → kitchen marks **Out for delivery** → master confirms **Delivered** (earnings post then).
 

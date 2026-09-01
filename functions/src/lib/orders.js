@@ -220,7 +220,16 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
       throw new HttpsError("failed-precondition", `Menu item ${cleanId} has invalid pricing.`);
     }
     const lineAmount = Math.round(unitPrice * (1 - discount / 100) * quantity * 100) / 100;
-    verifiedItems.push({ ref: selected.ref, itemId: cleanId, quantity, unitPrice, discount, lineAmount });
+    verifiedItems.push({ 
+      ref: selected.ref, 
+      itemId: cleanId, 
+      itemName: selected.data.itemName || cleanId,
+      imageUrl: selected.data.imageUrl || "",
+      quantity, 
+      unitPrice, 
+      discount, 
+      lineAmount 
+    });
   }
 
   const amount = Math.round(
@@ -854,6 +863,114 @@ async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, del
   };
 }
 
+async function createFoodOrder(caller, payload) {
+  if (!caller.uid) {
+    throw new HttpsError("unauthenticated", "User must be logged in to create an order.");
+  }
+  const safeKey = validateIdempotencyKey(payload?.idempotencyKey);
+  const db = getFirestore();
+  
+  if (!payload?.Restaurant?.ownerId) {
+    throw new HttpsError("invalid-argument", "Restaurant information is missing.");
+  }
+  if (!payload?.Receiver?.name || !payload?.Receiver?.address || !payload?.Receiver?.phoneNumber) {
+    throw new HttpsError("invalid-argument", "Complete Receiver information is required.");
+  }
+
+  const result = await db.runTransaction(async (tx) => {
+    if (safeKey) {
+      const existingQuery = await tx.get(
+        db.collection("orders").where(`idempotencyKeys.${safeKey}`, "==", true).limit(1)
+      );
+      if (!existingQuery.empty) {
+        return { 
+          alreadyApplied: true, 
+          orderId: existingQuery.docs[0].id,
+          amount: existingQuery.docs[0].data().Amount || 0
+        };
+      }
+    }
+    
+    // Verify pricing securely via the master catalog
+    const dummyOrder = { ...payload, comission: null };
+    const prepared = await prepareVerifiedAccounting(tx, db, dummyOrder);
+    
+    const restSnap = await tx.get(prepared.restaurantRef);
+    if (restSnap.data()?.active !== true) {
+      throw new HttpsError("failed-precondition", "Restaurant is currently closed.");
+    }
+    
+    const finalItems = prepared.verifiedItems.map(item => ({
+      ItemId: item.itemId,
+      ItemName: item.itemName,
+      imageUrl: item.imageUrl,
+      Quantity: item.quantity,
+      price: item.unitPrice,
+      discount: item.discount,
+    }));
+    
+    const date = new Date();
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const orderId = `ORD-${yyyy}-${mm}${dd}-${rand}`;
+    const orderRef = db.collection("orders").doc(orderId);
+    
+    const statusEntry = {
+      status: "New Order",
+      timestamp: date,
+      by: caller.uid,
+    };
+    
+    const orderDoc = {
+      orderId,
+      Restaurant: {
+        ownerId: prepared.ownerId,
+        id: restSnap.data()?.id || prepared.ownerId,
+        name: restSnap.data()?.name || payload.Restaurant.name || "Unknown Restaurant"
+      },
+      Receiver: {
+        id: caller.uid,
+        name: String(payload.Receiver.name).slice(0, 120),
+        phoneNumber: String(payload.Receiver.phoneNumber).slice(0, 30),
+        address: String(payload.Receiver.address).slice(0, 500),
+        location: payload.Receiver.location || null,
+        landmark: payload.Receiver.landmark || ""
+      },
+      Items: finalItems,
+      deliveryCharge: Number(payload.deliveryCharge) || 0,
+      paymentMethod: payload.paymentMethod || "Cash on Delivery",
+      Amount: prepared.amount,
+      comission: prepared.commissionPct,
+      currentStatus: "New Order",
+      Status: [statusEntry],
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      isPaymentDone: false,
+      isPaymentClear: false,
+      ...(safeKey ? { idempotencyKeys: { [safeKey]: true } } : {}),
+    };
+    
+    tx.set(orderRef, orderDoc);
+    
+    tx.set(
+      db.collection("notifications").doc("restaurants").collection(prepared.ownerId).doc(),
+      {
+        title: "New Order Received!",
+        desc: `You have received a new order #${orderId}.`,
+        type: "order",
+        image: "",
+        timestamp: FieldValue.serverTimestamp(),
+      }
+    );
+    
+    return { alreadyApplied: false, orderId, amount: prepared.amount };
+  });
+  
+  return result;
+}
+
 module.exports = {
   transitionOrderStatus,
   markOrderDelivered,
@@ -861,6 +978,7 @@ module.exports = {
   assignOrderRestaurant,
   masterConfirmOrder,
   clearOrderPayment,
+  createFoodOrder,
   nextAllowedStatuses,
   assignedRiderIdFromOrder,
   storedRiderSnapshot,
