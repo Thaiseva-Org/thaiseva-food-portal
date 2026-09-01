@@ -385,8 +385,8 @@ service cloud.firestore {
     // ============================================================
 
     match /hotelBookingData/{bookingId} {
-      // Creates only via Cloud Functions (Admin SDK). No client create.
-      allow create: if false;
+      // APP ISSUE: Allow app users to create hotel bookings.
+      allow create: if request.auth != null && request.resource.data.authUid == request.auth.uid;
       allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
       allow update: if isAdmin() || isOwnerCancelOnly();
       allow delete: if isAdmin();
@@ -716,23 +716,25 @@ service cloud.firestore {
     // ============================================================
 
     match /chatRooms/{roomId} {
-      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant();
+      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant() || (isAuthenticated() && roomId == "CustomerSupport");
       allow create: if isAdmin() || chatCreateSelf();
       allow update: if isAdmin() || isFoodAdmin() || isChatParticipant() || (
-        isAuthenticated() && roomId == "CustomerSupport" &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([request.auth.uid]) &&
-        request.resource.data[request.auth.uid].userId == request.auth.uid &&
-        request.resource.data[request.auth.uid].userInfo.uid == request.auth.uid &&
-        request.resource.data[request.auth.uid].userInfo.serviceCategory == "Restaurant"
+        isAuthenticated() && roomId == "CustomerSupport"
       );
+      // APP ISSUE: Allow write to CustomerSupport for authenticated users (handled via update and read above, plus createSelf if they create it)
       allow delete: if isAdmin();
     }
 
     match /chats/{chatId} {
-      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant();
-      allow create: if isAdmin() || isFoodAdmin() || chatCreateSelf();
-      allow update: if isAdmin() || isFoodAdmin() || isChatParticipant();
+      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant() || (isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport");
+      allow create: if isAdmin() || isFoodAdmin() || chatCreateSelf() || (isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport");
+      allow update: if isAdmin() || isFoodAdmin() || isChatParticipant() || (isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport");
       allow delete: if isAdmin();
+      
+      // APP ISSUE: Subcollection messages rule for CustomerSupport
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport";
+      }
     }
 
     match /messages/{messageId} {
@@ -840,21 +842,6 @@ service cloud.firestore {
 
     match /{document=**} {
       allow read, write: if false;
-    }
-    
-    
-    // APP ISSUE Permission
-     match /chats/{chatId} {
-
-      // Customer support chat ID:
-      // {uid}_CustomerSupport
-      allow read, write: if request.auth != null
-        && chatId == request.auth.uid + "_CustomerSupport";
-
-      match /messages/{messageId} {
-        allow read, write: if request.auth != null
-          && chatId == request.auth.uid + "_CustomerSupport";
-      }
     }
   }
 }

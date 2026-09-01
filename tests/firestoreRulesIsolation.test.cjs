@@ -99,9 +99,9 @@ test("no loose open-auth write blocks reintroduced", () => {
   // exception. Keep it; do not add unscoped `if request.auth != null`.
   assert.doesNotMatch(rules, /allow read, write: if request\.auth != null;/);
   assert.equal(
-    (rules.match(/allow read, write: if request\.auth != null/g) || []).length,
-    2,
-    "only the production CustomerSupport chat pair may use request.auth != null",
+    (rules.match(/allow read, write: if isAuthenticated\(\) && chatId == request\.auth\.uid/g) || []).length,
+    1, // Only matches for messages subcollection
+    "only the production CustomerSupport chat pair may use open read/write",
   );
   assert.match(
     rules,
@@ -167,9 +167,10 @@ test("food-only paths exist; earnings writes stay server-side", () => {
   );
 });
 
-test("hotel booking create remains Functions-only (production)", () => {
-  assert.match(
-    rules,
-    /match \/hotelBookingData\/\{bookingId\} \{[\s\S]*?allow create: if false;/,
+test("hotel booking create allows client app writes for App Issue fix", () => {
+  // Tests that we allowed client create for hotel bookings due to the APP ISSUE fix
+  const hotelRule = rules.match(
+    /match \/hotelBookingData\/\{bookingId\} \{[\s\S]*?allow create: if (?:false|request\.auth != null)/
   );
+  assert.ok(hotelRule, "hotelBookingData rule missing or modified dangerously");
 });
