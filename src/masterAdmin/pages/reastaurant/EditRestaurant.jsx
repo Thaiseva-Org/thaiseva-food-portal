@@ -13,6 +13,8 @@ import {
   updateRestaurantProfile,
 } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 
 const EditRestaurantAdmin = () => {
   const { restaId } = useParams();
@@ -108,6 +110,10 @@ const EditRestaurantAdmin = () => {
   };
 
   const handleSubmit = async () => {
+    if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
+      alert("Please enter a valid phone number.");
+      return;
+    }
     try {
       await updateRestaurantProfile({
         ownerUid,
@@ -188,30 +194,7 @@ const EditRestaurantAdmin = () => {
     };
   }, []);
 
-  const formatPhoneNumber = (value) => {
-    // Remove all non-numeric characters
-    let cleaned = value.replace(/\D/g, "");
 
-    // Limit to 10 digits
-    cleaned = cleaned.slice(0, 10);
-
-    // Apply spacing format: XXX XXX XXXX
-    let formatted = cleaned;
-    if (cleaned.length > 3)
-      formatted = `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
-    if (cleaned.length > 6)
-      formatted = `${cleaned.slice(0, 3)} ${cleaned.slice(
-        3,
-        6
-      )} ${cleaned.slice(6)}`;
-
-    return formatted;
-  };
-
-  const handleChange = (e) => {
-    const inputValue = e.target.value;
-    setPhoneNumber(formatPhoneNumber(inputValue));
-  };
 
   return (
     <div className="px-8 pt-10">
@@ -329,13 +312,14 @@ const EditRestaurantAdmin = () => {
                     >
                       Phone Number
                     </label>
-                    <input
+                    <PhoneInput
                       className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                       id="phone-number"
-                      type="text"
+                      defaultCountry="TH"
+                      limitMaxLength={true}
                       placeholder="Phone Number"
                       value={phoneNumber}
-                      onChange={handleChange}
+                      onChange={setPhoneNumber}
                     />
                   </div>
 

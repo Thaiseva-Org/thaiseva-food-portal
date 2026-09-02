@@ -228,101 +228,18 @@ async function main() {
   }
 
   const now = new Date();
-  const riderWrites = RIDERS.map((r) =>
-    updateWrite(`foodRiders/${r.id}`, {
-      name: r.name,
-      phone: r.phone,
-      vehicleType: r.vehicleType,
-      vehicleNumber: r.vehicleNumber,
-      active: r.active,
-      demoSeed: true,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: "demo-seed",
-      updatedBy: "demo-seed",
-    })
-  );
-
-  const customers = [
-    { name: "Ananya Siri", phone: "0891112233", email: "ananya.demo@example.com" },
-    { name: "James Wilson", phone: "0865557788", email: "james.demo@example.com" },
-    { name: "Mei Lin", phone: "0923334455", email: "mei.demo@example.com" },
-    { name: "Somchai T.", phone: "0837778899", email: "somchai.demo@example.com" },
-    { name: "Emily Chen", phone: "0904445566", email: "emily.demo@example.com" },
-    { name: "Nattapong W.", phone: "0821213434", email: "natt.demo@example.com" },
+  const writes = [
+    ...RIDERS.map((r) =>
+      updateWrite(`foodRiders/${r.id}`, {
+        ...r,
+        timestamp: now,
+        updatedAt: now,
+      })
+    ),
   ];
-
-  const itemsPadThai = {
-    ItemId: "demo-pad-thai",
-    ItemName: "Pad Thai",
-    Quantity: 2,
-    Price: 120,
-    Label: "Mains",
-    imageUrl:
-      "https://images.unsplash.com/photo-1559314809-0d155014e29e?w=400&q=80",
-  };
-  const itemsCurry = {
-    ItemId: "demo-green-curry",
-    ItemName: "Green Curry",
-    Quantity: 1,
-    Price: 150,
-    Label: "Mains",
-    imageUrl:
-      "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=400&q=80",
-  };
-
-  const orderSpecs = [
-    { id: "01", status: "Out for Delivery", hours: 0.4, items: [itemsPadThai, itemsCurry], amount: 390 },
-    { id: "02", status: "Out for Delivery", hours: 1.1, items: [itemsPadThai], amount: 240 },
-    { id: "03", status: "Out for Delivery", hours: 2.0, items: [itemsCurry, itemsCurry], amount: 300 },
-    { id: "04", status: "New Order", hours: 0.2, items: [itemsPadThai], amount: 240 },
-    { id: "05", status: "Preparing", hours: 0.8, items: [itemsPadThai, itemsCurry], amount: 390 },
-    { id: "06", status: "Delivered", hours: 3.5, items: [itemsCurry], amount: 150 },
-  ];
-
-  const orderWrites = orderSpecs.map((spec, i) => {
-    const customer = customers[i];
-    const when = hoursAgo(spec.hours);
-    const delivered =
-      spec.status === "Delivered"
-        ? {
-            id: RIDERS[0].id,
-            name: RIDERS[0].name,
-            phone: RIDERS[0].phone,
-            vehicleType: RIDERS[0].vehicleType,
-            vehicleNumber: RIDERS[0].vehicleNumber,
-          }
-        : null;
-    return updateWrite(`orders/demo-ui-order-${spec.id}`, {
-      demoSeed: true,
-      Restaurant: {
-        ownerId: restaurant.ownerId,
-        id: restaurant.id,
-        name: restaurant.name,
-      },
-      Receiver: {
-        id: `demo-ui-customer-${spec.id}`,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email,
-      },
-      Sender: { id: `demo-ui-customer-${spec.id}`, name: customer.name },
-      Location: `${12 + i} Sukhumvit Soi ${11 + i}, Bangkok`,
-      Amount: spec.amount.toFixed(2),
-      currentStatus: spec.status,
-      Status: historyFor(spec.status),
-      Items: spec.items,
-      timestamp: when,
-      isPaymentDone: spec.status === "Delivered",
-      isPaymentClear: false,
-      DeliveryPartner: delivered,
-      deliveredByRiderId: delivered ? delivered.id : null,
-    });
-  });
-
-  await commitWrites(token, [...riderWrites, ...orderWrites]);
-  console.log(`✓ riders (${RIDERS.length}) — 4 active, 1 inactive`);
-  console.log(`✓ orders (6) — 3 Out for Delivery, plus New / Preparing / Delivered`);
+  await commitWrites(token, writes);
+  console.log(`✓ Seeded ${RIDERS.length} demo riders.`);
+  
   console.log(`
 Open:
   http://localhost:5000/foodAdmin/riders

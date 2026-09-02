@@ -241,7 +241,7 @@ const RestaDetailsView = () => {
                     Phone Number
                   </p>
                   <p className="text-slate-500 mt-1 text-lg">
-                    +66 {restaurants.phoneNumber}
+                    {restaurants.phoneNumber}
                   </p>
                 </div>
                 <div className="col-span-1 border-s hidden lg:block mx-auto border-slate-400"></div>

@@ -1,10 +1,13 @@
 import { httpsCallable } from "firebase/functions";
-import { functions } from "../../firebaseConfig";
+import { functions, appCheckReady } from "../../firebaseConfig";
 
 /**
  * Call a Firebase HTTPS callable and normalize errors for the UI.
  */
 export async function callApi(name, payload = {}) {
+  if (appCheckReady) {
+    await appCheckReady;
+  }
   const fn = httpsCallable(functions, name);
   try {
     const result = await fn(payload);

@@ -310,7 +310,7 @@ const RestaurantReqDet = () => {
                 label="Phone"
                 value={
                   restaurantData.phoneNumber
-                    ? `+66 ${restaurantData.phoneNumber}`
+                    ? `${restaurantData.phoneNumber}`
                     : null
                 }
               />

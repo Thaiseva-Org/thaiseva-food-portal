@@ -241,11 +241,16 @@ input:checked ~ span:last-child {
       placeholder:text-neutral-400
       shadow-sm
       transition-[border-color,box-shadow,background-color] duration-fast
-      focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
+      focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
+      focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20;
   }
 
   .modern-select {
     @apply modern-input pr-8;
+  }
+
+  .PhoneInputInput {
+    @apply border-none bg-transparent outline-none p-0 w-full focus:ring-0 text-sm text-ink shadow-none;
   }
 
   .btn {

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import axios from "axios";
-import { MdLocationOn, MdCheckCircle } from "react-icons/md";
+import { MdCheckCircle } from "react-icons/md";
 import { FaImages } from "react-icons/fa";
-import AddressAutocomplete from "../../../components/AddressAutoComplete";
+import MapLocationPicker from "../../../components/MapLocationPicker";
 import { submitPublicRestaurantApplication } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import {
@@ -12,6 +12,9 @@ import {
 } from "../../../utils/publicApplyUpload";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
+import { extractCityFromPlace } from "../../../utils/location";
 
 const FOOD_TYPES = [
   "Thai",
@@ -26,27 +29,21 @@ const FOOD_TYPES = [
   "Other",
 ];
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STEPS = [
   { id: 0, label: "Application" },
   { id: 1, label: "Preview" },
 ];
 
 const Field = ({ label, htmlFor, hint, children }) => (
-  <label className="block" htmlFor={htmlFor}>
-    <span className="mb-1.5 block text-sm font-semibold text-ink">{label}</span>
+  <div className="block">
+    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-semibold text-ink">{label}</label>
     {children}
     {hint && <span className="mt-1 block text-xs text-ink-subtle">{hint}</span>}
-  </label>
+  </div>
 );
 
-const formatPhoneNumber = (value) => {
-  let cleaned = value.replace(/\D/g, "").slice(0, 10);
-  if (cleaned.length > 6) {
-    return `${cleaned.slice(0, 3)} ${cleaned.slice(3, 6)} ${cleaned.slice(6)}`;
-  }
-  if (cleaned.length > 3) return `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
-  return cleaned;
-};
+
 
 const PublicApply = () => {
   const [applicationId, setApplicationId] = useState("");
@@ -59,8 +56,13 @@ const PublicApply = () => {
   const [businessRegistrationNumber, setBusinessRegistrationNumber] = useState("");
   const [taxId, setTaxId] = useState("");
   const [serviceType, setServiceType] = useState("");
-  const [openingHours, setOpeningHours] = useState("");
+  const [selectedDays, setSelectedDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  const [openTime, setOpenTime] = useState("");
+  const [closeTime, setCloseTime] = useState("");
   const [location, setLocation] = useState("");
+  const [city, setCity] = useState("");
+  const [latitude, setLatitude] = useState(null);
+  const [longitude, setLongitude] = useState(null);
   const [landmark, setLandmark] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
@@ -134,14 +136,23 @@ const PublicApply = () => {
   };
 
   const validateForm = () => {
-    if (!restaurantName.trim() || !ownerName.trim() || !phoneNumber.trim() || !emailId.trim() || !foodType) {
+    if (!restaurantName.trim() || !ownerName.trim() || !phoneNumber || !emailId.trim() || !foodType) {
       return "Fill restaurant name, owner name, phone, email, and cuisine.";
     }
-    if (!businessRegistrationNumber.trim() || !serviceType || !openingHours.trim()) {
-      return "Fill registration number, service type, and opening hours.";
+    if (phoneNumber.length < 8) {
+      return "Enter a valid phone number.";
     }
-    if (!location.trim()) return "Add your restaurant address.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailId.trim())) {
+      return "Enter a valid email address.";
+    }
+    if (!businessRegistrationNumber.trim() || !serviceType || !openTime || !closeTime || selectedDays.length === 0) {
+      return "Fill registration number, service type, and opening schedule (including days and times).";
+    }
+    if (!location.trim() || latitude === null || longitude === null) return "Add your restaurant location from the map.";
     if (!image || !description.trim()) return "Add a cover photo and description.";
+    if (description.trim().length < 20) {
+      return "Description should be at least 20 characters.";
+    }
     if (!docs.businessLicense.url || !docs.ownerId.url) {
       return "Business license and owner ID are required.";
     }
@@ -173,14 +184,17 @@ const PublicApply = () => {
         applicationId: id,
         name: restaurantName.trim(),
         ownerName: ownerName.trim(),
-        phoneNumber: phoneNumber.trim(),
+        phoneNumber,
         emailId: emailId.trim(),
         foodType: foodType.trim(),
         businessRegistrationNumber: businessRegistrationNumber.trim(),
         taxId: taxId.trim() || null,
         serviceType,
-        openingHours: openingHours.trim(),
+        openingHours: `${selectedDays.length === 7 ? "Mon-Sun" : selectedDays.join(", ")} ${openTime} - ${closeTime}`,
         location: location.trim(),
+        city: city.trim(),
+        latitude,
+        longitude,
         landmark: landmark.trim() || null,
         description: description.trim(),
         imageUrl: imagePath || image,
@@ -204,9 +218,9 @@ const PublicApply = () => {
       const response = await axios.get(
         `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_API_KEY}`
       );
-      return response.data.status === "OK" ? response.data.results[0].formatted_address : "";
+      return response.data.status === "OK" ? response.data.results[0] : null;
     } catch {
-      return "";
+      return null;
     }
   };
 
@@ -282,7 +296,7 @@ const PublicApply = () => {
                 <input className="modern-input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
               </Field>
               <Field label="Phone">
-                <input className="modern-input" value={phoneNumber} onChange={(e) => setPhoneNumber(formatPhoneNumber(e.target.value))} />
+                <PhoneInput defaultCountry="TH" className="modern-input" limitMaxLength={true} value={phoneNumber} onChange={setPhoneNumber} />
               </Field>
               <Field label="Email">
                 <input className="modern-input" type="email" value={emailId} onChange={(e) => setEmailId(e.target.value)} />
@@ -313,8 +327,34 @@ const PublicApply = () => {
                   </button>
                 ))}
               </div>
-              <Field label="Opening hours">
-                <input className="modern-input" value={openingHours} onChange={(e) => setOpeningHours(e.target.value)} placeholder="Mon–Sun 10:00 – 22:00" />
+              <Field label="Opening schedule">
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDays((prev) =>
+                            prev.includes(d) ? prev.filter((day) => day !== d) : [...prev, d]
+                          );
+                        }}
+                        className={`rounded-full px-3 py-1.5 text-sm font-semibold border transition-all duration-fast ${
+                          selectedDays.includes(d)
+                            ? "bg-brand-500 text-white border-brand-500 shadow-sm"
+                            : "bg-white text-ink-muted border-neutral-200 hover:border-brand-300 hover:text-brand-700"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input type="time" className="modern-input flex-1" value={openTime} onChange={(e) => setOpenTime(e.target.value)} />
+                    <span className="text-ink-muted text-sm font-medium">to</span>
+                    <input type="time" className="modern-input flex-1" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} />
+                  </div>
+                </div>
               </Field>
             </div>
           )}
@@ -322,23 +362,31 @@ const PublicApply = () => {
           {step === 0 && (
             <div className="max-w-xl space-y-4">
               <h2 className="section-title">Location</h2>
-              <div className="flex gap-2">
-                <div className="min-w-0 flex-1">
-                  <AddressAutocomplete onSelect={(p) => p?.formatted_address && setLocation(p.formatted_address)} location={location} setLocation={setLocation} />
-                </div>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() =>
-                    navigator.geolocation?.getCurrentPosition(async (pos) => {
-                      const addr = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
-                      if (addr) setLocation(addr);
-                    })
+              <MapLocationPicker
+                location={location}
+                setLocation={setLocation}
+                latitude={latitude}
+                longitude={longitude}
+                onPlaceSelect={(place) => {
+                  if (place?.geometry?.location) {
+                    setLatitude(place.geometry.location.lat());
+                    setLongitude(place.geometry.location.lng());
                   }
-                >
-                  <MdLocationOn size={20} />
-                </button>
-              </div>
+                  if (place?.formatted_address) {
+                    setLocation(place.formatted_address);
+                    setCity(extractCityFromPlace(place));
+                  }
+                }}
+                onMapClick={async (lat, lng) => {
+                  setLatitude(lat);
+                  setLongitude(lng);
+                  const place = await reverseGeocode(lat, lng);
+                  if (place?.formatted_address) {
+                    setLocation(place.formatted_address);
+                    setCity(extractCityFromPlace(place));
+                  }
+                }}
+              />
               <Field label="Landmark (optional)">
                 <input className="modern-input" value={landmark} onChange={(e) => setLandmark(e.target.value)} />
               </Field>
@@ -393,10 +441,11 @@ const PublicApply = () => {
                     ["Email", emailId],
                     ["Cuisine", foodType],
                     ["Service", serviceType],
-                    ["Opening hours", openingHours],
+                    ["Opening hours", `${selectedDays.length === 7 ? "Mon-Sun" : selectedDays.join(", ")} ${openTime} - ${closeTime}`],
                     ["Registration number", businessRegistrationNumber],
                     ["Tax ID", taxId || "—"],
                     ["Address", location],
+                    ["City", city || "—"],
                     ["Landmark", landmark || "—"],
                     ["Description", description],
                   ].map(([label, value]) => (

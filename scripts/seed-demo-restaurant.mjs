@@ -282,62 +282,7 @@ async function main() {
     }
   }
 
-  const publicId = "DEMO" + OWNER_UID.slice(0, 4).toUpperCase();
-  const restaurantName = "Global Food Hub (Demo)";
-  const now = new Date();
 
-  await patchDoc(token, `users/${OWNER_UID}`, {
-    name: "Demo Partner",
-    email: EMAIL,
-    role: "restaurantOwner",
-    serviceCategory: "Restaurant",
-    isRestaurantAdmin: true,
-    isMasterAdmin: false,
-    restaurantId: publicId,
-    restaurantOwnerUid: OWNER_UID,
-    applicationStatus: "Verified",
-    userId: OWNER_UID,
-    demoSeed: true,
-  });
-
-  await patchDoc(token, `restaurants/${OWNER_UID}`, {
-    id: publicId,
-    publicId,
-    name: restaurantName,
-    phoneNumber: "081 234 5678",
-    emailId: EMAIL,
-    foodType: "Multi-Cuisine",
-    location: "123 Sukhumvit Rd, Khlong Toei, Bangkok 10110, Thailand",
-    description: "QA demo restaurant with full sample data across multiple cuisines.",
-    imageUrl: IMG.restaurant,
-    active: true,
-    orderCount: 45,
-    lifetimeEarning: 45000.50,
-    comission: 12,
-    status: "Verified",
-    ownerId: OWNER_UID,
-    demoSeed: true,
-  });
-  console.log("✓ user + restaurant");
-
-  await patchDoc(token, "settings/categories", {
-    data: [
-      "Appetizer",
-      "Main Course",
-      "Soup",
-      "Salad",
-      "Dessert",
-      "Beverage",
-      "Seafood",
-      "Vegetarian",
-      "Special",
-      "Pizza",
-      "Pasta",
-      "Bread",
-    ],
-    demoSeed: true,
-  });
-  console.log("✓ categories");
 
   const menuItems = [];
   const cuisines = ["Thai", "Italian", "Indian"];
@@ -530,151 +475,15 @@ async function main() {
   }
   console.log(`✓ menu (${menuItems.length} items across 3 cuisines)`);
 
-  const ORDER_FLOW = [
-    "New Order",
-    "Order Confirm",
-    "Preparing",
-    "Ready for pickup",
-    "Out for Delivery",
-    "Delivered",
-    "Cancelled",
-  ];
-  const customers = [
-    { name: "Ananya S.", phone: "089 111 2233" },
-    { name: "James Wilson", phone: "086 555 7788" },
-    { name: "Mei Lin", phone: "092 333 4455" },
-    { name: "Carlos R.", phone: "081 999 0011" },
-    { name: "Priya K.", phone: "088 222 3344" },
-  ];
 
-  const orderPlan = [];
-  for (const status of ORDER_FLOW) {
-    orderPlan.push({ status, tag: "std" });
-    orderPlan.push({ status, tag: "multi" });
-  }
-  orderPlan.push(
-    { status: "New Order", tag: "single" },
-    { status: "Delivered", tag: "high" },
-    { status: "Delivered", tag: "discount" },
-  );
-
-  writes = [];
-  let orderIdx = 0;
-  for (const plan of orderPlan) {
-    orderIdx++;
-    const i = orderIdx - 1;
-    const status = plan.status;
-    const customer = customers[i % customers.length];
-    const when = hoursAgo(Math.min(22, i * 0.65 + 0.1));
-    const itemA = menuItems[i % menuItems.length];
-    const itemB = menuItems[(i + 15) % menuItems.length];
-    const itemC = menuItems[(i + 30) % menuItems.length];
-
-    let basket;
-    if (plan.tag === "single") basket = [{ m: itemA, qty: 1 }];
-    else if (plan.tag === "multi") basket = [{ m: itemA, qty: 2 }, { m: itemB, qty: 1 }, { m: itemC, qty: 1 }];
-    else basket = [{ m: itemA, qty: 1 + (i % 2) }, { m: itemB, qty: 1 }];
-
-    let subtotal = 0;
-    const Items = basket.map(({ m, qty }) => {
-      const line = m.price * qty * (1 - (m.discount || 0) / 100);
-      subtotal += line;
-      return {
-        itemId: m.id,
-        ItemName: m.itemName,
-        itemName: m.itemName,
-        Quantity: qty,
-        quantity: qty,
-        Price: m.price,
-        price: m.price,
-        discount: m.discount || 0,
-        imageUrl: m.imageUrl,
-      };
-    });
-    const amount = subtotal + 30;
-
-    const history = [{ status: "New Order", timestamp: hoursAgo(i * 0.65 + 2.2), by: "system" }];
-    if (status !== "New Order") {
-      const flowIdx = ORDER_FLOW.indexOf(status);
-      if (status === "Cancelled") {
-        history.push({ status: "Cancelled", timestamp: when, by: OWNER_UID });
-      } else if (flowIdx > 0) {
-        for (let s = 1; s <= flowIdx; s++) {
-          history.push({
-            status: ORDER_FLOW[s],
-            timestamp: hoursAgo(i * 0.65 + 2.2 - s * 0.25),
-            by: OWNER_UID,
-          });
-        }
-      }
-    }
-
-    const orderId = `demo-order-${OWNER_UID.slice(0, 6)}-${String(orderIdx).padStart(2, "0")}`;
-    writes.push(
-      updateWrite(`orders/${orderId}`, {
-        demoSeed: true,
-        Restaurant: {
-          ownerId: OWNER_UID,
-          id: publicId,
-          name: restaurantName,
-          imageUrl: IMG.restaurant,
-        },
-        Receiver: { id: `demo-customer-${orderIdx}`, name: customer.name, phone: customer.phone },
-        Sender: { id: `demo-customer-${orderIdx}`, name: customer.name },
-        Location: "123 Main St",
-        Amount: money(amount),
-        amountTHB: amount,
-        subtotal,
-        currentStatus: status,
-        Status: history,
-        Items,
-        timestamp: when,
-        isPaymentDone: status === "Delivered",
-      })
-    );
-  }
-  for (let i = 0; i < writes.length; i += 400) {
-    await commitWrites(token, writes.slice(i, i + 400));
-  }
-  console.log(`✓ orders (${orderPlan.length})`);
-
-  writes = [];
-  const todayId = now.toISOString().slice(0, 10);
-  const hourlyMap = {};
-  const hourlyArr = [];
-  for (let h = 0; h <= now.getHours(); h++) {
-    const hour = `${String(h).padStart(2, "0")}:00`;
-    const earnings = h % 5 === 0 && h > 0 ? 0 : Math.round(50 + Math.random() * 500 + h * 15);
-    hourlyMap[hour] = earnings;
-    hourlyArr.push({ hour, earnings });
-  }
-  writes.push(
-    updateWrite(`Earnings/${OWNER_UID}/dailyEarnings/${todayId}`, {
-      date: todayId,
-      totalAmount: hourlyArr.reduce((s, x) => s + x.earnings, 0),
-      hourlyEarnings: hourlyArr,
-      hourlyEarningsMap: hourlyMap,
-      demoSeed: true,
-    })
-  );
-  for (let i = 0; i < writes.length; i += 400) {
-    await commitWrites(token, writes.slice(i, i + 400));
-  }
-  console.log("✓ earnings");
 
   console.log(`
 ══════════════════════════════════════════════════════════
- FULL DUMMY DATA LOADED
+ DUMMY MENU DATA LOADED
 ══════════════════════════════════════════════════════════
  Login  : ${EMAIL}
  Open   : http://localhost:5000/partner
  UID    : ${OWNER_UID}
-
- Check these screens:
-   /partner                  Dashboard boxes + charts
-   /partner/manageOrder      All order statuses + edges
-   /partner/foodItem         Active menu (+ toggle inactive)
-   /partner/restaurant       Verified profile
 ══════════════════════════════════════════════════════════
 `);
 }

@@ -1,8 +1,8 @@
 import {
-  finalizePublicUpload,
-  getPublicApplicationUploadUrl,
   startPublicRestaurantApplication,
 } from "../api";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../../firebaseConfig";
 
 export async function ensurePublicApplicationId(existingId) {
   if (existingId) return existingId;
@@ -11,20 +11,16 @@ export async function ensurePublicApplicationId(existingId) {
 }
 
 export async function uploadPublicApplicationFile(applicationId, kind, file) {
-  const { uploadUrl, path, contentType } = await getPublicApplicationUploadUrl({
-    applicationId,
-    kind,
-    contentType: file.type || "application/octet-stream",
-    fileName: file.name,
-  });
-  const put = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: file,
-  });
-  if (!put.ok) {
+  const safeName = String(file.name || "file").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+  const path = `applications/${applicationId}/${kind}_${Date.now()}_${safeName}`;
+  const storageRef = ref(storage, path);
+
+  try {
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    return { url, path };
+  } catch (err) {
+    console.error("Public upload failed:", err);
     throw new Error("File upload failed. Please try again.");
   }
-  const done = await finalizePublicUpload({ applicationId, path });
-  return { url: done.url, path: done.path || path };
 }

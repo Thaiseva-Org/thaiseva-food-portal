@@ -134,7 +134,7 @@ const Restaurant = () => {
 
   const isVerified = restaurantData.status === "Verified";
   const phoneDisplay = restaurantData.phoneNumber
-    ? `+66 ${restaurantData.phoneNumber}`
+    ? `${restaurantData.phoneNumber}`
     : "—";
   const commission = restaurantData.comission ?? restaurantData.commission ?? 0;
 

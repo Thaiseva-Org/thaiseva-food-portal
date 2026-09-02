@@ -20,6 +20,9 @@ const PROFILE_SAFE_FIELDS = [
   "serviceType",
   "openingHours",
   "landmark",
+  "city",
+  "latitude",
+  "longitude",
 ];
 
 const PROFILE_FIELD_LIMITS = {
@@ -35,6 +38,9 @@ const PROFILE_FIELD_LIMITS = {
   serviceType: 40,
   openingHours: 120,
   landmark: 200,
+  city: 100,
+  latitude: 50,
+  longitude: 50,
 };
 
 const SERVICE_TYPES = new Set(["Delivery", "Dine-in", "Both"]);
@@ -175,6 +181,9 @@ async function submitRestaurantApplication(caller, payload) {
     serviceType,
     openingHours: cleanText(payload?.openingHours, "openingHours", 120),
     landmark: cleanOptionalText(payload?.landmark, "landmark", 200),
+    city: cleanOptionalText(payload?.city, "city", 100),
+    latitude: typeof payload?.latitude === "number" ? payload.latitude : null,
+    longitude: typeof payload?.longitude === "number" ? payload.longitude : null,
     businessLicenseUrl,
     businessLicenseName: cleanFileName(
       payload?.businessLicenseName || "business-license",

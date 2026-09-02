@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import axios from "axios";
-import { MdLocationOn, MdCheckCircle, MdUploadFile } from "react-icons/md";
+import { MdCheckCircle, MdUploadFile } from "react-icons/md";
 import {
   FaImages,
   FaRegImage,
@@ -13,12 +13,14 @@ import {
 } from "react-icons/fa";
 import { useAuth } from "../../../AuthContext";
 import { storage } from "../../../../firebaseConfig";
-import AddressAutocomplete from "../../../components/AddressAutoComplete";
+import MapLocationPicker from "../../../components/MapLocationPicker";
 import { submitRestaurantApplication } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
-
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
+import { extractCityFromPlace } from "../../../utils/location";
 const FOOD_TYPES = [
   "Thai",
   "Chinese",
@@ -33,6 +35,7 @@ const FOOD_TYPES = [
 ];
 
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const STEPS = [
   { id: 0, label: "Application", icon: FaClipboardCheck },
@@ -47,14 +50,6 @@ const DOC_KEYS = {
 
 const emptyDoc = () => ({ url: null, name: "", uploading: false });
 
-const formatPhoneNumber = (value) => {
-  let cleaned = value.replace(/\D/g, "").slice(0, 10);
-  let formatted = cleaned;
-  if (cleaned.length > 3) formatted = `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
-  if (cleaned.length > 6)
-    formatted = `${cleaned.slice(0, 3)} ${cleaned.slice(3, 6)} ${cleaned.slice(6)}`;
-  return formatted;
-};
 
 const OwnerOnboarding = () => {
   const {
@@ -81,8 +76,13 @@ const OwnerOnboarding = () => {
   const [businessRegistrationNumber, setBusinessRegistrationNumber] = useState("");
   const [taxId, setTaxId] = useState("");
   const [serviceType, setServiceType] = useState("");
-  const [openingHours, setOpeningHours] = useState("");
+  const [selectedDays, setSelectedDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  const [openTime, setOpenTime] = useState("");
+  const [closeTime, setCloseTime] = useState("");
   const [location, setLocation] = useState("");
+  const [city, setCity] = useState("");
+  const [latitude, setLatitude] = useState(null);
+  const [longitude, setLongitude] = useState(null);
   const [landmark, setLandmark] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState(null);
@@ -133,9 +133,9 @@ const OwnerOnboarding = () => {
   const validateForm = () => {
       if (!restaurantName.trim()) return "Restaurant name is required.";
       if (!ownerName.trim()) return "Owner full name is required.";
-      if (!phoneNumber.trim()) return "Phone number is required.";
-      if (phoneNumber.replace(/\D/g, "").length < 9)
-        return "Enter a valid phone number (at least 9 digits).";
+      if (!phoneNumber) return "Phone number is required.";
+      if (phoneNumber.length < 8)
+        return "Enter a valid phone number.";
       if (!emailId.trim()) return "Email is required.";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailId.trim()))
         return "Enter a valid email address.";
@@ -143,8 +143,8 @@ const OwnerOnboarding = () => {
       if (!businessRegistrationNumber.trim())
         return "Business registration number is required.";
       if (!serviceType.trim()) return "Select a service type.";
-      if (!openingHours.trim()) return "Opening hours are required.";
-      if (!location.trim()) return "Location is required.";
+      if (!openTime || !closeTime || selectedDays.length === 0) return "Opening schedule is required.";
+      if (!location.trim() || latitude === null || longitude === null) return "Please select your location on the map.";
       if (!description.trim()) return "Description is required.";
       if (description.trim().length < 20)
         return "Description should be at least 20 characters.";
@@ -245,31 +245,15 @@ const OwnerOnboarding = () => {
         `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_API_KEY}`
       );
       if (response.data.status === "OK") {
-        return response.data.results[0].formatted_address;
+        return response.data.results[0];
       }
-      return "";
+      return null;
     } catch {
-      return "";
+      return null;
     }
   };
 
-  const getCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setError("Geolocation is not supported by this browser.");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const address = await reverseGeocode(
-          position.coords.latitude,
-          position.coords.longitude
-        );
-        if (address) setLocation(address);
-        else setError("Could not resolve your address.");
-      },
-      () => setError("Unable to get your location.")
-    );
-  };
+
 
   const prefillFromRestaurant = (data) => {
     if (!data) return;
@@ -281,8 +265,34 @@ const OwnerOnboarding = () => {
     setBusinessRegistrationNumber(data.businessRegistrationNumber || "");
     setTaxId(data.taxId || "");
     setServiceType(data.serviceType || "");
-    setOpeningHours(data.openingHours || "");
+    const timeMatch = (data.openingHours || "").match(/(.*?)\s*([0-9]{2}:[0-9]{2})\s*-\s*([0-9]{2}:[0-9]{2})/);
+    if (timeMatch) {
+      const parsedDaysStr = timeMatch[1].trim() || "Mon-Sun";
+      if (parsedDaysStr === "Mon-Sun" || parsedDaysStr === "Everyday") {
+         setSelectedDays(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+      } else {
+         const extracted = parsedDaysStr.split(",").map(s => s.trim()).filter(Boolean);
+         if (extracted.length > 0) {
+             setSelectedDays(extracted);
+         } else {
+             setSelectedDays(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+         }
+      }
+      setOpenTime(timeMatch[2]);
+      setCloseTime(timeMatch[3]);
+    } else {
+      const parts = (data.openingHours || "").split(" - ");
+      if (parts.length === 2) {
+        setOpenTime(parts[0].trim());
+        setCloseTime(parts[1].trim());
+      } else {
+        setSelectedDays(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+      }
+    }
     setLocation(data.location || "");
+    setCity(data.city || "");
+    setLatitude(data.latitude || null);
+    setLongitude(data.longitude || null);
     setLandmark(data.landmark || "");
     setDescription(data.description || "");
     setImage(data.imageUrl || null);
@@ -330,8 +340,11 @@ const OwnerOnboarding = () => {
         businessRegistrationNumber: businessRegistrationNumber.trim(),
         taxId: taxId.trim() || null,
         serviceType: serviceType.trim(),
-        openingHours: openingHours.trim(),
+        openingHours: `${selectedDays.length === 7 ? "Mon-Sun" : selectedDays.join(", ")} ${openTime} - ${closeTime}`,
         location: location.trim(),
+        city: city.trim(),
+        latitude,
+        longitude,
         landmark: landmark.trim() || null,
         description: description.trim(),
         imageUrl: image,
@@ -531,21 +544,15 @@ const OwnerOnboarding = () => {
                 />
               </Field>
               <Field label="Phone number" htmlFor="restaurant-phone">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-ink-muted shrink-0">
-                    +66
-                  </span>
-                  <input
-                    id="restaurant-phone"
-                    className="modern-input"
-                    value={phoneNumber}
-                    onChange={(e) =>
-                      setPhoneNumber(formatPhoneNumber(e.target.value))
-                    }
-                    placeholder="XXX XXX XXXX"
-                    type="tel"
-                  />
-                </div>
+                <PhoneInput
+                  id="restaurant-phone"
+                  defaultCountry="TH"
+                  className="modern-input"
+                  limitMaxLength={true}
+                  value={phoneNumber}
+                  onChange={setPhoneNumber}
+                  placeholder="XXX XXX XXXX"
+                />
               </Field>
               <Field label="Business email" htmlFor="restaurant-email">
                 <input
@@ -640,18 +647,36 @@ const OwnerOnboarding = () => {
                 </div>
               </div>
               <Field
-                label="Opening hours"
+                label="Opening schedule"
                 htmlFor="hours"
-                hint='e.g. "Mon–Sun 10:00–22:00" or "Daily 11am–9pm"'
               >
-                <input
-                  id="hours"
-                  className="modern-input"
-                  value={openingHours}
-                  onChange={(e) => setOpeningHours(e.target.value)}
-                  placeholder="Mon–Sun 10:00 – 22:00"
-                  maxLength={120}
-                />
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDays((prev) =>
+                            prev.includes(d) ? prev.filter((day) => day !== d) : [...prev, d]
+                          );
+                        }}
+                        className={`rounded-full px-3 py-1.5 text-sm font-semibold border transition-all duration-fast ${
+                          selectedDays.includes(d)
+                            ? "bg-brand-500 text-white border-brand-500 shadow-sm"
+                            : "bg-white text-ink-muted border-neutral-200 hover:border-brand-300 hover:text-brand-700"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input type="time" className="modern-input flex-1" value={openTime} onChange={(e) => setOpenTime(e.target.value)} />
+                    <span className="text-ink-muted text-sm font-medium">to</span>
+                    <input type="time" className="modern-input flex-1" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} />
+                  </div>
+                </div>
               </Field>
             </div>
           )}
@@ -665,29 +690,31 @@ const OwnerOnboarding = () => {
                   Where should customers and riders find you?
                 </p>
               </div>
-              <Field label="Address" htmlFor="location">
-                <div className="flex items-start gap-2 min-w-0">
-                  <div className="flex-1 min-w-0">
-                    <AddressAutocomplete
-                      onSelect={(place) => {
-                        if (place?.formatted_address) {
-                          setLocation(place.formatted_address);
-                        }
-                      }}
-                      location={location}
-                      setLocation={setLocation}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={getCurrentLocation}
-                    className="btn-primary shrink-0"
-                    title="Use current location"
-                  >
-                    <MdLocationOn size={20} />
-                  </button>
-                </div>
-              </Field>
+              <MapLocationPicker
+                location={location}
+                setLocation={setLocation}
+                latitude={latitude}
+                longitude={longitude}
+                onPlaceSelect={(place) => {
+                  if (place?.geometry?.location) {
+                    setLatitude(place.geometry.location.lat());
+                    setLongitude(place.geometry.location.lng());
+                  }
+                  if (place?.formatted_address) {
+                    setLocation(place.formatted_address);
+                    setCity(extractCityFromPlace(place));
+                  }
+                }}
+                onMapClick={async (lat, lng) => {
+                  setLatitude(lat);
+                  setLongitude(lng);
+                  const place = await reverseGeocode(lat, lng);
+                  if (place?.formatted_address) {
+                    setLocation(place.formatted_address);
+                    setCity(extractCityFromPlace(place));
+                  }
+                }}
+              />
               <Field
                 label="Landmark (optional)"
                 htmlFor="landmark"
@@ -892,11 +919,11 @@ const OwnerOnboarding = () => {
                 <div className="space-y-3 text-sm min-w-0">
                   <Row label="Restaurant" value={restaurantName} />
                   <Row label="Owner" value={ownerName} />
-                  <Row label="Phone" value={`+66 ${phoneNumber}`} />
+                  <Row label="Phone" value={phoneNumber} />
                   <Row label="Email" value={emailId} />
                   <Row label="Cuisine" value={foodType} />
                   <Row label="Service" value={serviceType} />
-                  <Row label="Hours" value={openingHours} />
+                  <Row label="Hours" value={`${selectedDays.length === 7 ? "Mon-Sun" : selectedDays.join(", ")} ${openTime} - ${closeTime}`} />
                   <Row
                     label="Registration #"
                     value={businessRegistrationNumber}

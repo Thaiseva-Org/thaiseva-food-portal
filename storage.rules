@@ -109,10 +109,11 @@ service firebase.storage {
         (isAuthenticated() && request.auth.uid == restaurantId && underMaxSize(15 * 1024 * 1024));
     }
 
-    // Food public apply uploads use Admin signed URLs. Clients cannot write this path.
+    // Allow unauthenticated public uploads for restaurant applications
     match /applications/{applicationId}/{allPaths=**} {
       allow read: if isAdmin() || isFoodAdmin();
-      allow write: if false;
+      allow write: if request.resource.size < 15 * 1024 * 1024 &&
+                   (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
     }
 
     // Chat media — scoped under sender uid to prevent cross-user overwrite

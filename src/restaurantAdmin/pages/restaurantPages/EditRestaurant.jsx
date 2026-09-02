@@ -11,6 +11,8 @@ import AddressAutocomplete from "../../../components/AddressAutoComplete";
 import { updateRestaurantProfile } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { partnerPath } from "../../../utils/partnerRoutes";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 
 const EditRestaurant = () => {
   const [restaurantName, setRestaurantName] = useState("");
@@ -76,30 +78,7 @@ const EditRestaurant = () => {
   //   return formatted;
   // };
 
-  const formatPhoneNumber = (value) => {
-    // Remove all non-numeric characters
-    let cleaned = value.replace(/\D/g, "");
 
-    // Limit to 10 digits
-    cleaned = cleaned.slice(0, 10);
-
-    // Apply spacing format: XXX XXX XXXX
-    let formatted = cleaned;
-    if (cleaned.length > 3)
-      formatted = `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
-    if (cleaned.length > 6)
-      formatted = `${cleaned.slice(0, 3)} ${cleaned.slice(
-        3,
-        6
-      )} ${cleaned.slice(6)}`;
-
-    return formatted;
-  };
-
-  const handleChange = (e) => {
-    const inputValue = e.target.value;
-    setPhoneNumber(formatPhoneNumber(inputValue));
-  };
 
   const handleImageUpload = async (file) => {
     if (file) {
@@ -150,8 +129,8 @@ const EditRestaurant = () => {
       return;
     }
 
-    if (phoneNumber.trim() === "") {
-      alert("Please enter the phone number.");
+    if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
+      alert("Please enter a valid phone number.");
       return;
     }
 
@@ -376,18 +355,15 @@ const EditRestaurant = () => {
                     >
                       Phone Number
                     </label>
-                    <div className="flex items-center gap-2">
-                      <span className="px-1 text-gray-700">+66</span>
-                      <input
-                        className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                        autoComplete="off"
-                        id="phone-number"
-                        type="tel"
-                        placeholder="XXX XXX XXXX"
-                        value={phoneNumber}
-                        onChange={handleChange}
-                      />
-                    </div>
+                    <PhoneInput
+                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                      id="phone-number"
+                      defaultCountry="TH"
+                      limitMaxLength={true}
+                      placeholder="XXX XXX XXXX"
+                      value={phoneNumber}
+                      onChange={setPhoneNumber}
+                    />
                   </div>
 
                   <div className="mb-4">

@@ -6,7 +6,8 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { MdLocationOn } from "react-icons/md";
 import axios from "axios";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
-
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 const AddRestaInfo = () => {
   const [restaurantName, setRestaurantName] = useState("");
   const [restaurantId, setRestaurantId] = useState("");
@@ -37,6 +38,10 @@ const AddRestaInfo = () => {
   };
 
   const handleSubmit = async () => {
+    if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
+      alert("Please enter a valid phone number.");
+      return;
+    }
     try {
       await addDoc(collection(db, "restaurants"), {
         name: restaurantName,
@@ -193,13 +198,14 @@ const AddRestaInfo = () => {
                     >
                       Phone Number
                     </label>
-                    <input
+                    <PhoneInput
                       className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                       id="phone-number"
-                      type="tel"
+                      defaultCountry="TH"
+                      limitMaxLength={true}
                       placeholder="Phone Number"
                       value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      onChange={setPhoneNumber}
                     />
                   </div>
 

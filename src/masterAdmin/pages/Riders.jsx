@@ -12,6 +12,8 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 import {
   createFoodRider,
   setFoodRiderActive,
@@ -54,14 +56,7 @@ function defaultRange() {
   return { start: toInput(start), end: toInput(end) };
 }
 
-const formatPhone = (value) => {
-  const digits = String(value || "").replace(/\D/g, "").slice(0, 15);
-  if (digits.length > 6) {
-    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
-  }
-  if (digits.length > 3) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
-  return digits;
-};
+
 
 const matchesJobSearch = (job, query) => {
   if (!query) return true;
@@ -253,7 +248,7 @@ const Riders = () => {
     setEditingId(rider.id);
     setForm({
       name: rider.name || "",
-      phone: formatPhone(rider.phone || ""),
+      phone: rider.phone || "",
       vehicleType: rider.vehicleType || "Motorcycle",
       vehicleNumber: rider.vehicleNumber || "",
     });
@@ -265,6 +260,11 @@ const Riders = () => {
     if (saving) return;
     setSaving(true);
     setFeedback(null);
+    if (!form.phone || !isValidPhoneNumber(form.phone)) {
+      setFeedback({ type: "error", message: "Please enter a valid phone number." });
+      setSaving(false);
+      return;
+    }
     try {
       const payload = {
         name: form.name,
@@ -454,14 +454,15 @@ const Riders = () => {
                 <span className="mb-1.5 block text-sm font-semibold text-ink">
                   Phone
                 </span>
-                <input
+                <PhoneInput
                   className="modern-input"
+                  defaultCountry="TH"
+                  limitMaxLength={true}
                   value={form.phone}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, phone: formatPhone(e.target.value) }))
+                  onChange={(val) =>
+                    setForm((p) => ({ ...p, phone: val }))
                   }
-                  placeholder="08x xxx xxxx"
-                  inputMode="tel"
+                  placeholder="Phone number"
                   required
                   disabled={saving}
                 />

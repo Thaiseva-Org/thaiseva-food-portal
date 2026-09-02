@@ -34,6 +34,9 @@ const appCheckReady =
   appCheckSiteKey && typeof window !== "undefined"
     ? new Promise((resolve) => {
         const initialize = () => {
+          if (import.meta.env.DEV) {
+            self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN || true;
+          }
           import("firebase/app-check")
             .then(({ initializeAppCheck, ReCaptchaEnterpriseProvider }) =>
               resolve(
