@@ -131,7 +131,7 @@ const FoodItem = () => {
     } finally {
       setLoading(false);
     }
-  }, [menuRoot]);
+  }, [menuRoot, isMasterAdmin]);
 
   useEffect(() => {
     if (canManageMenu && menuRoot) {
