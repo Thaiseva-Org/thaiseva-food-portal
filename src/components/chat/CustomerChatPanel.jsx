@@ -128,50 +128,22 @@ const CustomerChatPanel = () => {
     try {
       setSending(true);
       setError("");
-      await Promise.all([
-        setDoc(
-          doc(db, "foodCustomerChats", customerId),
-          {
-            customerId,
-            userId: customerId,
-            participants: [currentUser.uid, customerId].filter(Boolean),
-            messages: arrayUnion(message),
-            lastMessage: { text: body },
-            isReadByAdmin: true,
-            updatedAt: Timestamp.now(),
-            sourceChatId: legacyChatId,
-          },
-          { merge: true }
-        ),
-        setDoc(
-          doc(db, "chats", legacyChatId),
-          {
-            userId: customerId,
-            participants: [currentUser.uid, customerId].filter(Boolean),
-            messages: arrayUnion(message),
-            updatedAt: Timestamp.now(),
-          },
-          { merge: true }
-        ),
-      ]);
-
+      
       await setDoc(
-        doc(db, "chatRooms", "CustomerSupport"),
+        doc(db, "foodCustomerChats", customerId),
         {
-          [selectedRoom.roomKey || customerId]: {
-            chatId: legacyChatId,
-            userId: customerId,
-            userInfo: selectedRoom.userInfo || {
-              uid: customerId,
-              displayName: displayName(selectedRoom),
-            },
-            lastMessage: { text: body },
-            isRead: true,
-            date: Timestamp.now(),
-          },
+          customerId,
+          userId: customerId,
+          participants: [currentUser.uid, customerId].filter(Boolean),
+          messages: arrayUnion(message),
+          lastMessage: { text: body },
+          isReadByAdmin: true,
+          updatedAt: Timestamp.now(),
+          sourceChatId: legacyChatId,
         },
         { merge: true }
       );
+
       setText("");
     } catch (sendError) {
       console.error(sendError);
