@@ -608,3 +608,7 @@ firebase deploy --only functions:food-portal
 Source: `functions/src/lib/bookings.js` (wired in `functions/src/index.js`).
 
 Admin panel wrappers (reference only): `src/api/index.js`.
+
+
+---
+*Documentation created by Omnifex Agency*
