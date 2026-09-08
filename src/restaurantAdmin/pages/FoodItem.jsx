@@ -104,17 +104,30 @@ const FoodItem = () => {
       const [itemsSnap, catSnap, restSnap] = await Promise.all(promises);
 
       const fetchedItems = itemsSnap.docs
-        .map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }))
+        .map((d) => {
+          const data = d.data();
+          const sanitizeStr = (val) => (val && typeof val === "object" && val.text) ? String(val.text) : val;
+          return {
+            id: d.id,
+            ...data,
+            itemName: sanitizeStr(data.itemName),
+            category: sanitizeStr(data.category),
+            cuisine: sanitizeStr(data.cuisine),
+            itemType: sanitizeStr(data.itemType),
+            description: sanitizeStr(data.description),
+          };
+        })
         .filter((item) => item.deleted !== true);
 
       setItems(fetchedItems);
 
       if (catSnap?.exists?.()) {
-        const data = catSnap.data()?.data;
-        setSettingsCategories(Array.isArray(data) ? data : []);
+        const rawData = catSnap.data()?.data;
+        let data = [];
+        if (Array.isArray(rawData)) {
+          data = rawData.map(c => (c && typeof c === 'object' && c.text) ? String(c.text) : c);
+        }
+        setSettingsCategories(data);
       }
 
       if (isMasterAdmin && restSnap) {

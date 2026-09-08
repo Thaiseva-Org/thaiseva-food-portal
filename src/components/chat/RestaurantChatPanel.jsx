@@ -205,9 +205,9 @@ const RestaurantChatPanel = ({ admin = false }) => {
                         : "text-blue-400/80"
                     }`}
                   >
-                    {room.lastMessage?.text ||
-                      room.lastMessage ||
-                      "Open conversation"}
+                    {typeof room.lastMessage === "string"
+                      ? room.lastMessage
+                      : room.lastMessage?.text || room.lastMessage?.message || "Open conversation"}
                   </span>
                 </button>
               ))
@@ -290,7 +290,7 @@ const RestaurantChatPanel = ({ admin = false }) => {
                         }`}
                       >
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                          {message.text || message.message}
+                          {typeof message.text === "string" ? message.text : typeof message.message === "string" ? message.message : "Message"}
                         </p>
                         {sentAt && (
                           <p
