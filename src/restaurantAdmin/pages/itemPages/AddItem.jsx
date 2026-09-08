@@ -29,7 +29,6 @@ const AddItem = () => {
   const [formError, setFormError] = useState(null);
   const [formSuccess, setFormSuccess] = useState(null);
   const [cuisine, setCuisine] = useState("");
-  const [assignedRestaurants, setAssignedRestaurants] = useState([]);
   const ownerUid =
     isMasterAdmin ? PLATFORM_OWNER_ID :
     kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
@@ -158,11 +157,6 @@ const AddItem = () => {
         itemType,
         description: String(description).trim(),
         imageUrl,
-        assignedRestaurants,
-        restaurantStatus: assignedRestaurants.reduce((acc, uid) => {
-          acc[uid] = { active: true };
-          return acc;
-        }, {}),
       });
 
       setFormSuccess(
@@ -222,8 +216,6 @@ const AddItem = () => {
       mode="add"
       cuisine={cuisine}
       setCuisine={setCuisine}
-      assignedRestaurants={assignedRestaurants}
-      setAssignedRestaurants={setAssignedRestaurants}
     />
   );
 };

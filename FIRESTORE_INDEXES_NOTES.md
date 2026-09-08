@@ -40,6 +40,7 @@ These match the shared project console list. Do not remove entries when adding f
 
 | Collection | Fields (order) |
 |------------|----------------|
+| `dineInBookings` | `ownerId`, `bookingTimestamp` |
 | `car_bookings` | `driverId`, `bookingStatus` |
 | `car_bookings` | `vehicleId`, `bookingStatus` |
 | `car_bookings` | `status`, `timestamp` |
@@ -68,6 +69,7 @@ Food portal recent-order and all-time counts use:
 - `orders`: `Restaurant.ownerId` + `timestamp` (desc)
 - `orders`: `Restaurant.ownerId` + `currentStatus`
 - `orders`: `Restaurant.ownerId` + `currentStatus` + `timestamp` (desc)
+- `dineInBookings`: `ownerId` + `bookingTimestamp` (desc) for restaurant reservation listeners and history
 
 
 ---
@@ -92,3 +94,6 @@ Console often hides ASC/DESC. If deploy creates duplicates or queries still ask 
 3. Update this file to match production **exactly**, then deploy again.
 
 Guard test: `tests/firestoreIndexesIsolation.test.cjs` (via `npm test`) fails if a required production index signature is removed.
+
+---
+*Created and Maintained by Omnifex.*

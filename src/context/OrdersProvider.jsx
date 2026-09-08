@@ -1,3 +1,5 @@
+import { mapOrderDoc } from "../services/GetOrders";
+import { mergeOrderDocs, orderTime } from "../utils/orderData";
 import {
   collection,
   limit,
@@ -6,7 +8,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { db } from "../../firebaseConfig";
 import { useAuth } from "../AuthContext";
 
@@ -40,67 +42,56 @@ export const OrdersProvider = ({ children }) => {
       return undefined;
     }
 
+    setOrders([]);
     setOrdersLoading(true);
     setOrdersError(null);
 
     const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const ordersRef = collection(db, "orders");
-    const ordersQuery = isRestaurantAdmin
+    const makeQuery = (dateField) => isRestaurantAdmin
       ? query(
           ordersRef,
           where("Restaurant.ownerId", "==", currentUser.uid),
-          orderBy("timestamp", "desc"),
+          orderBy(dateField, "desc"),
           limit(200)
         )
       : query(
           ordersRef,
-          where("timestamp", ">=", last24Hours),
-          orderBy("timestamp", "desc"),
+          where(dateField, ">=", last24Hours),
+          orderBy(dateField, "desc"),
           limit(200)
         );
 
-    return onSnapshot(
-      ordersQuery,
+    const groups = [[], []];
+    const ready = new Set();
+    const unsubscribers = ["timestamp", "createdAt"].map((field, index) => onSnapshot(
+      makeQuery(field),
       (snapshot) => {
-        try {
-          setOrders(
-            snapshot.docs.map((orderDoc) => {
-              const data = orderDoc.data();
-              return {
-                OrderID: orderDoc.id || "N/A",
-                Date: data.timestamp
-                  ? data.timestamp.toDate().toLocaleString()
-                  : "Unknown",
-                CustomerName: data.Receiver?.name || "N/A",
-                CustomerId: data.Receiver?.id || "N/A",
-                Location: data.Location || "N/A",
-                Amount: data.Amount || "0.00",
-                Status: data.currentStatus || "N/A",
-                restaurantName: data.Restaurant?.name || "N/A",
-                ownerId: data.Restaurant?.ownerId || "",
-                DeliveryPartner: data.DeliveryPartner || null,
-                assignedRiderId:
-                  data.assignedRiderId || data.DeliveryPartner?.id || "",
-              };
-            })
-          );
-          setOrdersLoading(false);
-        } catch (error) {
-          console.error("Error processing orders:", error);
-          setOrdersError("Recent orders could not be displayed.");
-          setOrdersLoading(false);
-        }
+        groups[index] = snapshot.docs;
+        ready.add(index);
+        const docs = mergeOrderDocs(groups).filter((snap) =>
+          isRestaurantAdmin || orderTime(snap.data()) >= last24Hours.getTime()
+        );
+        setOrders(docs.slice(0, 200).map(mapOrderDoc));
+        setOrdersLoading(ready.size < 2);
       },
       (error) => {
+        ready.add(index);
         console.error("Error with order listener:", error?.code, error);
         setOrdersError(snapshotErrorMessage(error));
         setOrdersLoading(false);
       }
-    );
+    ));
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [currentUser, isRestaurantAdmin, isMasterAdmin]);
 
+  const value = useMemo(
+    () => ({ orders, ordersLoading, ordersError }),
+    [orders, ordersLoading, ordersError]
+  );
+
   return (
-    <OrdersContext.Provider value={{ orders, ordersLoading, ordersError }}>
+    <OrdersContext.Provider value={value}>
       {children}
     </OrdersContext.Provider>
   );

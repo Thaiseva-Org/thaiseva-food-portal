@@ -20,6 +20,7 @@ import {
   KpiStatCard,
 } from "../../components/dashboard";
 import { useNotifications } from "../../context/NotificationsProvider";
+import { useOrders } from "../../context/OrdersProvider";
 import {
   fetchOrdersDoughnutData,
   fetchRestroRequests,
@@ -27,7 +28,6 @@ import {
 import MasterChartPage from "./ChartPage";
 import MasterApexChart from "./ChartTwo";
 import NetworkMonitorSection from "../pages/restaurantStats/components/NetworkMonitorSection";
-import { useOrders } from "../../context/OrdersProvider";
 
 
 const MasterDashboard = ({ toggle, show }) => {

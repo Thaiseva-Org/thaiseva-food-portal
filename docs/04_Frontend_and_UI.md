@@ -14,11 +14,14 @@ The frontend is a **React 19** Single Page Application bundled with **Vite**. It
 - A global `AuthContext` listens to `onAuthStateChanged` and decodes the JWT custom claims to determine the user's role.
 
 ### B. Master Admin Dashboard (`/foodAdmin`)
+- **Support chat:** `/foodAdmin/restaurantChat` and `/foodAdmin/customerChat` are separate Master Admin panels. Restaurant Admin can access only its own Restaurant Chat; Customer Chat is not exposed under `/partner`.
+- **Table reservations:** `/foodAdmin/tableReservation` monitors bookings across the network; each restaurant workspace also includes a Reservations tab.
 - **Network Partners (`/foodAdmin/restaurants`)**: Displays a searchable list of all active/inactive restaurants. Shows GMV and order stats.
 - **Riders (`/foodAdmin/riders`)**: Full CRUD interface for managing delivery personnel.
 - **Live Orders (`/foodAdmin/ourOrders`)**: Global overview of every active order in the system across all restaurants.
 
 ### C. Restaurant Admin Dashboard (`/restaurantAdmin`)
+- **Table reservations:** `/partner/tableReservation` shows live and historical bookings with pending counts and accept/reject actions.
 - **Earnings & Payouts**: Real-time charts utilizing `Chart.js` / `ApexCharts` to display gross sales vs. net payouts (subtracting commission).
 - **Kitchen Flow**: A dedicated UI designed for kitchen staff to accept incoming orders and mark them as ready for pickup.
 
@@ -31,3 +34,10 @@ The frontend is a **React 19** Single Page Application bundled with **Vite**. It
 ## 5. Map & Geolocation Features
 - Uses `@react-google-maps/api` for mapping.
 - **`MapLocationPicker.jsx`**: Allows new restaurants to drop a pin to accurately set their geographical coordinates during onboarding.
+
+---
+*Created and Maintained by Omnifex.*
+
+
+---
+*Documentation created by Omnifex Agency*

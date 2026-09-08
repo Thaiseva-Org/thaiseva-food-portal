@@ -1,3 +1,4 @@
+const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { writeAuditLogTx } = require("./audit");
@@ -19,7 +20,7 @@ const ORDER_FLOW = [
 ];
 
 const CANCELLED = "Cancelled";
-const ASSIGN_RIDER_STATUSES = new Set(["Ready for pickup", "Out for Delivery"]);
+const ASSIGN_RIDER_STATUSES = new Set(["Order Confirm", "Preparing", "Ready for pickup"]);
 
 function assignedRiderIdFromOrder(order) {
   const raw = order?.assignedRiderId || order?.DeliveryPartner?.id;
@@ -52,9 +53,11 @@ function deliveryRiderFields(rider) {
 }
 
 function resolveCommissionPct(orderData, restaurantData) {
-  const stamped = Number(orderData?.comission);
-  if (Number.isFinite(stamped) && stamped >= 0 && stamped <= 100) {
-    return stamped;
+  if (orderData?.comission != null && orderData.comission !== "") {
+    const stamped = Number(orderData.comission);
+    if (Number.isFinite(stamped) && stamped >= 0 && stamped <= 100) {
+      return stamped;
+    }
   }
   const live = Number(restaurantData?.comission || 0);
   if (!Number.isFinite(live) || live < 0 || live > 100) {
@@ -180,7 +183,7 @@ function writeEarnings(tx, db, targetId, orderAmount, now) {
   );
 }
 
-async function prepareVerifiedAccounting(tx, db, orderData) {
+async function prepareVerifiedAccounting(tx, db, orderData, checkout = false) {
   const ownerId = orderData.Restaurant?.ownerId;
   const resPublicId = orderData.Restaurant?.id;
   const items = Array.isArray(orderData.Items) ? orderData.Items : [];
@@ -194,14 +197,18 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
     throw new HttpsError("failed-precondition", "Restaurant no longer exists.");
   }
 
-  const itemRoots = [...new Set([ownerId, resPublicId, "thaiseva-platform"].filter(Boolean))];
+  const itemRoots = checkout || orderData.schemaVersion === 2 ? [ownerId] : [...new Set([ownerId, resPublicId, "thaiseva-platform"].filter(Boolean))];
   const verifiedItems = [];
   for (const item of items) {
     const itemId = item.ItemId || item.itemId;
     if (!itemId) {
       throw new HttpsError("failed-precondition", "Order contains an item without an ID.");
     }
-    const cleanId = String(itemId).replace("#", "");
+    const cleanId = String(itemId).replace(/^#/, "");
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(cleanId)) throw new HttpsError("invalid-argument", "Invalid menu item identifier.");
+    if (checkout && ((item.ownerUid && item.ownerUid !== ownerId) || (item.menuPath && item.menuPath !== `food_items/${ownerId}/items/${cleanId}`))) {
+      throw new HttpsError("invalid-argument", "All items must belong to the selected restaurant.");
+    }
     let selected = null;
     for (const root of itemRoots) {
       const ref = db.collection("food_items").doc(root).collection("items").doc(cleanId);
@@ -210,13 +217,20 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
         selected = { ref, data: snap.data() || {} };
       }
     }
+    if (!selected && !checkout && orderData.schemaVersion === 2) {
+      selected = { ref: null, data: {} };
+    }
     if (!selected) {
       throw new HttpsError("failed-precondition", `Menu item ${cleanId} no longer exists.`);
     }
     const quantity = normalizeQuantity(item);
-    const unitPrice = Number(selected.data.price);
-    const discount = Number(selected.data.discount || 0);
-    if (!Number.isFinite(unitPrice) || unitPrice < 0 || discount < 0 || discount > 100) {
+    if (checkout && (selected.data.active !== true || selected.data.deleted === true)) {
+      throw new HttpsError("failed-precondition", `Menu item ${cleanId} is unavailable. Refresh your cart.`);
+    }
+    const frozen = !checkout && orderData.schemaVersion === 2;
+    const unitPrice = Number(frozen ? item.price : selected.data.price);
+    const discount = Number((frozen ? item.discount : selected.data.discount) || 0);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(discount) || discount < 0 || discount > 100) {
       throw new HttpsError("failed-precondition", `Menu item ${cleanId} has invalid pricing.`);
     }
     const lineAmount = Math.round(unitPrice * (1 - discount / 100) * quantity * 100) / 100;
@@ -255,7 +269,7 @@ async function prepareVerifiedAccounting(tx, db, orderData) {
   };
 }
 
-async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey }) {
+async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey, reason }) {
   if (!orderId || !toStatus) {
     throw new HttpsError("invalid-argument", "orderId and toStatus are required.");
   }
@@ -266,6 +280,10 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
     );
   }
 
+  if (toStatus === "Order Confirm") return masterConfirmOrder(caller, { orderId, idempotencyKey });
+  if (toStatus === CANCELLED && (!String(reason || "").trim() || String(reason).length > 500)) {
+    throw new HttpsError("invalid-argument", "A cancellation reason of at most 500 characters is required.");
+  }
   const safeKey = validateIdempotencyKey(idempotencyKey);
   const db = getFirestore();
   const orderRef = db.collection("orders").doc(orderId);
@@ -278,6 +296,13 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
     const order = snap.data();
     const ownerId = order.Restaurant?.ownerId;
     assertTenantAccess(caller, ownerId);
+    const restaurantSteps = ["Preparing", "Ready for pickup"];
+    if (caller.role === ROLES.MASTER && ownerId !== "thaiseva-platform" && restaurantSteps.includes(toStatus)) {
+      throw new HttpsError("permission-denied", "Preparation is managed by the restaurant.");
+    }
+    if (caller.role !== ROLES.MASTER && !restaurantSteps.includes(toStatus)) {
+      throw new HttpsError("permission-denied", "Only admin can confirm, cancel or dispatch orders.");
+    }
 
     const current = normalizeStoredStatus(order.currentStatus || "New Order");
 
@@ -308,6 +333,7 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
       );
     }
 
+    if (toStatus === "Out for Delivery") await loadActiveRiderSnapshot(tx, db, assignedRiderIdFromOrder(order));
     const statusEntry = {
       status: toStatus,
       timestamp: new Date(),
@@ -316,6 +342,7 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
 
     const updates = {
       currentStatus: toStatus,
+      ...(toStatus === CANCELLED ? { cancellationReason: String(reason).trim() } : {}),
       Status: FieldValue.arrayUnion(statusEntry),
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: caller.uid,
@@ -348,7 +375,7 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
       targetId: orderId,
       tenantId: order.Restaurant?.ownerId,
       before: { currentStatus: current },
-      after: { currentStatus: toStatus },
+      after: { currentStatus: toStatus, ...(toStatus === CANCELLED ? { reason: String(reason).trim() } : {}) },
       requestId: safeKey,
     });
     return { alreadyApplied: false, order, current, toStatus };
@@ -394,6 +421,9 @@ async function markOrderDelivered(caller, { orderId, riderId, idempotencyKey }) 
     const stored = storedRiderSnapshot(orderData);
     const assignedId = assignedRiderIdFromOrder(orderData);
     let rider;
+    if (riderId && assignedId && normalizeRiderId(riderId) !== assignedId) {
+      throw new HttpsError("failed-precondition", "Delivery must use the assigned rider.");
+    }
     if (riderId) {
       const requested = normalizeRiderId(riderId);
       rider =
@@ -447,6 +477,7 @@ async function markOrderDelivered(caller, { orderId, riderId, idempotencyKey }) 
 
     const itemTotals = new Map();
     for (const item of prepared.verifiedItems) {
+      if (!item.ref) continue;
       const current = itemTotals.get(item.ref.path) || {
         ref: item.ref,
         quantity: 0,
@@ -544,7 +575,7 @@ async function assignOrderRider(caller, { orderId, riderId, idempotencyKey }) {
     if (!ASSIGN_RIDER_STATUSES.has(current)) {
       throw new HttpsError(
         "failed-precondition",
-        `Assign a rider when the order is ready for pickup (current: ${current}).`
+        `Assign a rider after confirmation and before dispatch (current: ${current}).`
       );
     }
 
@@ -569,7 +600,7 @@ async function assignOrderRider(caller, { orderId, riderId, idempotencyKey }) {
     const ownerId = order.Restaurant?.ownerId;
     const riderNote = {
       title: "Rider assigned",
-      desc: `${rider.name || "A rider"} is assigned to #${orderId}. You can mark it out for delivery.`,
+      desc: `${rider.name || "A rider"} is assigned to #${orderId}. Admin will confirm dispatch after pickup.`,
       type: "rider",
       image: "",
       timestamp: FieldValue.serverTimestamp(),
@@ -653,214 +684,39 @@ async function clearOrderPayment(caller, { orderId, idempotencyKey }) {
   return { orderId, isPaymentClear: true, alreadyApplied: false };
 }
 
-async function assignOrderRestaurant(caller, { orderId, restaurantUid, idempotencyKey }) {
-  if (!orderId) {
-    throw new HttpsError("invalid-argument", "orderId is required.");
-  }
-  if (!restaurantUid) {
-    throw new HttpsError("invalid-argument", "restaurantUid is required.");
-  }
-  if (caller.role !== ROLES.MASTER) {
-    throw new HttpsError(
-      "permission-denied",
-      "Only master admin can reassign orders to restaurants."
-    );
-  }
-
+async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, deliveryCharge, idempotencyKey }) {
+  if (caller.role !== ROLES.MASTER) throw new HttpsError("permission-denied", "Only admin can confirm orders.");
+  if (!orderId) throw new HttpsError("invalid-argument", "orderId is required.");
   const safeKey = validateIdempotencyKey(idempotencyKey);
   const db = getFirestore();
-  const orderRef = db.collection("orders").doc(orderId);
-  const restaurantRef = db.collection("restaurants").doc(restaurantUid);
-
-  const result = await db.runTransaction(async (tx) => {
-    const [orderSnap, restSnap] = await Promise.all([
-      tx.get(orderRef),
-      tx.get(restaurantRef)
-    ]);
-
-    if (!orderSnap.exists) throw new HttpsError("not-found", "Order not found.");
-    if (!restSnap.exists) throw new HttpsError("not-found", "Target restaurant not found.");
-
-    const orderData = orderSnap.data() || {};
-    const current = normalizeStoredStatus(orderData.currentStatus || "New Order");
-    const previousOwnerId = orderData.Restaurant?.ownerId;
-
-    if (safeKey && orderData.idempotencyKeys?.[safeKey]) {
-      return { alreadyApplied: true, current, newRestaurant: orderData.Restaurant };
-    }
-
-    if (current === "Delivered" || current === CANCELLED) {
-      throw new HttpsError("failed-precondition", "Terminal order cannot change.");
-    }
-    if (previousOwnerId === restaurantUid) {
-      if (safeKey) {
-        tx.update(orderRef, { [`idempotencyKeys.${safeKey}`]: true });
-      }
-      return { alreadyApplied: true, current, newRestaurant: orderData.Restaurant };
-    }
-
-    const restData = restSnap.data();
-    const newRestaurantObj = {
-      ownerId: restaurantUid,
-      name: restData.name || "Unknown Restaurant",
-      id: restData.publicId || restData.id || restaurantUid
-    };
-
-    tx.update(orderRef, {
-      Restaurant: newRestaurantObj,
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: caller.uid,
+  const ref = db.collection("orders").doc(orderId);
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Order not found.");
+    const order = snap.data();
+    if (restaurantUid && restaurantUid !== order.Restaurant?.ownerId) throw new HttpsError("failed-precondition", "The restaurant is fixed at checkout.");
+    if (order.currentStatus === "Order Confirm") return { orderId, currentStatus: order.currentStatus, alreadyApplied: true };
+    if (order.currentStatus !== "New Order") throw new HttpsError("failed-precondition", "Only new orders can be confirmed.");
+    const fee = Number(deliveryCharge ?? order.deliveryCharge ?? 0);
+    if (!Number.isFinite(fee) || fee < 0 || fee > 1000000) throw new HttpsError("invalid-argument", "Invalid delivery charge.");
+    const rider = riderId ? await loadActiveRiderSnapshot(tx, db, riderId) : null;
+    const subtotal = Number(order.foodSubtotal ?? (Number(order.Amount) - Number(order.deliveryCharge || 0)));
+    if (!Number.isFinite(subtotal) || subtotal < 0) throw new HttpsError("failed-precondition", "Invalid order total.");
+    tx.update(ref, {
+      currentStatus: "Order Confirm", foodSubtotal: subtotal, deliveryCharge: fee,
+      Amount: Math.round((subtotal + fee) * 100) / 100,
+      Status: FieldValue.arrayUnion({ status: "Order Confirm", timestamp: new Date(), by: caller.uid }),
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: caller.uid,
+      ...(rider ? { DeliveryPartner: rider, assignedRiderId: rider.id, assignedAt: FieldValue.serverTimestamp(), assignedBy: caller.uid } : {}),
       ...(safeKey ? { [`idempotencyKeys.${safeKey}`]: true } : {}),
     });
-
-    const restNote = {
-      title: "New Order Assigned!",
-      desc: `#${orderId} has been assigned to your restaurant. Please confirm and start preparing.`,
-      type: "order",
-      image: "",
-      timestamp: FieldValue.serverTimestamp(),
-    };
-
-    tx.set(
-      db.collection("notifications").doc("restaurants").collection(restaurantUid).doc(),
-      restNote
-    );
-
-    writeAuditLogTx(tx, db, {
-      actorUid: caller.uid,
-      actorRole: caller.role,
-      action: "order.assign_restaurant",
-      targetType: "order",
-      targetId: orderId,
-      tenantId: restaurantUid,
-      before: { Restaurant: orderData.Restaurant },
-      after: { Restaurant: newRestaurantObj },
-      requestId: safeKey,
-    });
-    return { alreadyApplied: false, current, newRestaurant: newRestaurantObj };
+    const note = { title: "Order confirmed", desc: `#${orderId} is confirmed. The restaurant can start preparing.`, type: "confirmed", timestamp: FieldValue.serverTimestamp() };
+    tx.set(db.collection("notifications").doc("restaurants").collection(order.Restaurant.ownerId).doc(), note);
+    if (order.Receiver?.id) tx.set(db.collection("notifications").doc("users").collection(order.Receiver.id).doc(), note);
+    if (rider) tx.set(db.collection("notifications").doc("foodRiders").collection(rider.id).doc(), note);
+    writeAuditLogTx(tx, db, { actorUid: caller.uid, actorRole: caller.role, action: "order.master_confirm", targetType: "order", targetId: orderId, tenantId: order.Restaurant.ownerId, after: { currentStatus: "Order Confirm", deliveryCharge: fee }, requestId: safeKey });
+    return { orderId, currentStatus: "Order Confirm", alreadyApplied: false };
   });
-
-  return {
-    orderId,
-    currentStatus: result.current,
-    alreadyApplied: result.alreadyApplied,
-    restaurant: result.newRestaurant,
-  };
-}
-
-async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, deliveryCharge = 0, idempotencyKey }) {
-  if (caller.role !== ROLES.MASTER) {
-    throw new HttpsError("permission-denied", "Only master admin can perform unified confirmation.");
-  }
-  if (!orderId || !restaurantUid || !riderId) {
-    throw new HttpsError("invalid-argument", "orderId, restaurantUid, and riderId are required.");
-  }
-  
-  const safeKey = validateIdempotencyKey(idempotencyKey);
-  const db = getFirestore();
-  const orderRef = db.collection("orders").doc(orderId);
-  const restaurantRef = db.collection("restaurants").doc(restaurantUid);
-  
-  const result = await db.runTransaction(async (tx) => {
-    const [orderSnap, restSnap] = await Promise.all([
-      tx.get(orderRef),
-      tx.get(restaurantRef)
-    ]);
-    
-    if (!orderSnap.exists) throw new HttpsError("not-found", "Order not found.");
-    if (!restSnap.exists) throw new HttpsError("not-found", "Target restaurant not found.");
-    
-    const orderData = orderSnap.data() || {};
-    const current = normalizeStoredStatus(orderData.currentStatus || "New Order");
-    
-    if (safeKey && orderData.idempotencyKeys?.[safeKey]) {
-      return { alreadyApplied: true, current, newRestaurant: orderData.Restaurant };
-    }
-    
-    if (current === "Delivered" || current === CANCELLED) {
-      throw new HttpsError("failed-precondition", "Terminal order cannot change.");
-    }
-    if (current !== "New Order" && current !== "Order Confirm") {
-      throw new HttpsError("failed-precondition", "Order has already progressed beyond confirmation.");
-    }
-    
-    const rider = await loadActiveRiderSnapshot(tx, db, riderId);
-    
-    const restData = restSnap.data();
-    const newRestaurantObj = {
-      ownerId: restaurantUid,
-      name: restData.name || "Unknown Restaurant",
-      id: restData.publicId || restData.id || restaurantUid
-    };
-
-    const finalDeliveryCharge = Number(deliveryCharge) || 0;
-    const currentAmount = Number(orderData.Amount) || 0;
-    
-    const statusEntry = {
-      status: "Order Confirm",
-      timestamp: new Date(),
-      by: caller.uid,
-    };
-    
-    tx.update(orderRef, {
-      currentStatus: "Order Confirm",
-      Status: FieldValue.arrayUnion(statusEntry),
-      Restaurant: newRestaurantObj,
-      DeliveryPartner: rider,
-      assignedRiderId: rider.id,
-      assignedAt: FieldValue.serverTimestamp(),
-      assignedBy: caller.uid,
-      deliveryCharge: finalDeliveryCharge,
-      Amount: Math.round((currentAmount + finalDeliveryCharge) * 100) / 100,
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: caller.uid,
-      ...(safeKey ? { [`idempotencyKeys.${safeKey}`]: true } : {}),
-    });
-    
-    const restNote = {
-      title: "New Order Assigned!",
-      desc: `#${orderId} has been assigned to your restaurant. A rider is already assigned. Please confirm and start preparing.`,
-      type: "order",
-      image: "",
-      timestamp: FieldValue.serverTimestamp(),
-    };
-    tx.set(
-      db.collection("notifications").doc("restaurants").collection(restaurantUid).doc(),
-      restNote
-    );
-    
-    const riderNote = {
-      title: "New Delivery Assigned!",
-      desc: `You have been assigned to order #${orderId} for pickup at ${restData.name}.`,
-      type: "order",
-      image: "",
-      timestamp: FieldValue.serverTimestamp(),
-    };
-    tx.set(
-      db.collection("notifications").doc("foodRiders").collection(rider.id).doc(),
-      riderNote
-    );
-    
-    writeAuditLogTx(tx, db, {
-      actorUid: caller.uid,
-      actorRole: caller.role,
-      action: "order.master_confirm",
-      targetType: "order",
-      targetId: orderId,
-      tenantId: restaurantUid,
-      after: { Restaurant: newRestaurantObj, rider, deliveryCharge: finalDeliveryCharge },
-      requestId: safeKey,
-    });
-    
-    return { alreadyApplied: false, current, newRestaurant: newRestaurantObj };
-  });
-  
-  return {
-    orderId,
-    currentStatus: "Order Confirm",
-    alreadyApplied: result.alreadyApplied,
-    restaurant: result.newRestaurant,
-  };
 }
 
 async function createFoodOrder(caller, payload) {
@@ -868,8 +724,6 @@ async function createFoodOrder(caller, payload) {
     throw new HttpsError("unauthenticated", "User must be logged in to create an order.");
   }
   const safeKey = validateIdempotencyKey(payload?.idempotencyKey);
-  const db = getFirestore();
-  
   if (!payload?.Restaurant?.ownerId) {
     throw new HttpsError("invalid-argument", "Restaurant information is missing.");
   }
@@ -877,26 +731,30 @@ async function createFoodOrder(caller, payload) {
     throw new HttpsError("invalid-argument", "Complete Receiver information is required.");
   }
 
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(payload.Restaurant.ownerId)) throw new HttpsError("invalid-argument", "Invalid restaurant identifier.");
+  const db = getFirestore();
+  const requestHash = createHash("sha256").update(JSON.stringify({ restaurant: payload.Restaurant.ownerId, items: payload.Items, receiver: payload.Receiver, paymentMethod: payload.paymentMethod || "Cash on Delivery" })).digest("hex");
+  const orderRef = safeKey
+    ? db.collection("orders").doc(`ORD-${createHash("sha256").update(`${caller.uid}:${safeKey}`).digest("hex")}`)
+    : db.collection("orders").doc();
   const result = await db.runTransaction(async (tx) => {
-    if (safeKey) {
-      const existingQuery = await tx.get(
-        db.collection("orders").where(`idempotencyKeys.${safeKey}`, "==", true).limit(1)
-      );
-      if (!existingQuery.empty) {
-        return { 
-          alreadyApplied: true, 
-          orderId: existingQuery.docs[0].id,
-          amount: existingQuery.docs[0].data().Amount || 0
-        };
-      }
+    const existing = await tx.get(orderRef);
+    if (existing.exists) {
+      if (existing.data().requestHash !== requestHash) throw new HttpsError("already-exists", "Use a new idempotency key for a changed cart.");
+      const prior = existing.data() || {};
+      return {
+        alreadyApplied: true,
+        orderId: orderRef.id,
+        amount: Number(prior.foodSubtotal ?? prior.Amount) || 0,
+        restaurant: prior.Restaurant || null,
+      };
     }
-    
-    // Verify pricing securely via the master catalog
-    const dummyOrder = { ...payload, comission: null };
-    const prepared = await prepareVerifiedAccounting(tx, db, dummyOrder);
-    
+    // Delivery fee is set by admin confirmation; customer amounts are never trusted.
+    const dummyOrder = { ...payload, schemaVersion: 2, comission: null, deliveryCharge: 0 };
+    const prepared = await prepareVerifiedAccounting(tx, db, dummyOrder, true);
+
     const restSnap = await tx.get(prepared.restaurantRef);
-    if (restSnap.data()?.active !== true) {
+    if (restSnap.data()?.active !== true || restSnap.data()?.status !== "Verified") {
       throw new HttpsError("failed-precondition", "Restaurant is currently closed.");
     }
     
@@ -907,29 +765,33 @@ async function createFoodOrder(caller, payload) {
       Quantity: item.quantity,
       price: item.unitPrice,
       discount: item.discount,
+      lineAmount: item.lineAmount,
+      menuPath: item.ref.path,
     }));
     
     const date = new Date();
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    const orderId = `ORD-${yyyy}-${mm}${dd}-${rand}`;
-    const orderRef = db.collection("orders").doc(orderId);
-    
+    const orderId = orderRef.id;
+
     const statusEntry = {
       status: "New Order",
       timestamp: date,
       by: caller.uid,
     };
     
+    const restaurantSnapshot = {
+      ownerId: prepared.ownerId,
+      id: restSnap.data()?.id || restSnap.data()?.publicId || prepared.ownerId,
+      name: restSnap.data()?.name || "Unknown Restaurant",
+      imageUrl: restSnap.data()?.imageUrl || restSnap.data()?.photo || "",
+      location: restSnap.data()?.location || restSnap.data()?.address || "",
+    };
+
     const orderDoc = {
       orderId,
-      Restaurant: {
-        ownerId: prepared.ownerId,
-        id: restSnap.data()?.id || prepared.ownerId,
-        name: restSnap.data()?.name || payload.Restaurant.name || "Unknown Restaurant"
-      },
+      schemaVersion: 2,
+      requestHash,
+      foodSubtotal: prepared.amount,
+      Restaurant: restaurantSnapshot,
       Receiver: {
         id: caller.uid,
         name: String(payload.Receiver.name).slice(0, 120),
@@ -939,7 +801,7 @@ async function createFoodOrder(caller, payload) {
         landmark: payload.Receiver.landmark || ""
       },
       Items: finalItems,
-      deliveryCharge: Number(payload.deliveryCharge) || 0,
+      deliveryCharge: 0,
       paymentMethod: payload.paymentMethod || "Cash on Delivery",
       Amount: prepared.amount,
       comission: prepared.commissionPct,
@@ -948,6 +810,7 @@ async function createFoodOrder(caller, payload) {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
       isPaymentDone: false,
+      verified: false,
       isPaymentClear: false,
       ...(safeKey ? { idempotencyKeys: { [safeKey]: true } } : {}),
     };
@@ -958,14 +821,22 @@ async function createFoodOrder(caller, payload) {
       db.collection("notifications").doc("restaurants").collection(prepared.ownerId).doc(),
       {
         title: "New Order Received!",
-        desc: `You have received a new order #${orderId}.`,
+        desc: `New order #${orderId}. Awaiting admin confirmation.`,
         type: "order",
         image: "",
         timestamp: FieldValue.serverTimestamp(),
       }
     );
     
-    return { alreadyApplied: false, orderId, amount: prepared.amount };
+    tx.set(db.collection("notifications").doc("restaurants").collection("RestAdmin").doc(), {
+      title: "Order awaiting confirmation", desc: `Confirm order #${orderId}.`, type: "order", timestamp: FieldValue.serverTimestamp(),
+    });
+    return {
+      alreadyApplied: false,
+      orderId,
+      amount: prepared.amount,
+      restaurant: restaurantSnapshot,
+    };
   });
   
   return result;
@@ -975,7 +846,6 @@ module.exports = {
   transitionOrderStatus,
   markOrderDelivered,
   assignOrderRider,
-  assignOrderRestaurant,
   masterConfirmOrder,
   clearOrderPayment,
   createFoodOrder,

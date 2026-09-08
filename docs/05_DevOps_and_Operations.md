@@ -39,3 +39,10 @@ Firebase configuration acts as our infrastructure definition.
 ## 5. Known Limitations & Future Improvements
 - **Firestore Scalability:** Currently, the Master Admin network monitor pulls the entire `/restaurants` list. In the future, this should implement a paginated cursor or sync to BigQuery to prevent massive read costs as the network grows to 1,000+ restaurants.
 - **Real-time Subscriptions:** Listening to `/orders` for the whole network is fine for MVP, but should be partitioned by geographical zone in V2 to optimize websocket traffic.
+
+---
+*Created and Maintained by Omnifex.*
+
+
+---
+*Documentation created by Omnifex Agency*

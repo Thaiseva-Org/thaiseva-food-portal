@@ -1,5 +1,9 @@
 # Part 3: Backend and APIs
 
+## Customer chat bridge
+
+`mirrorFoodCustomerChat` listens to the existing `chats/{customerUid}_CustomerSupport` contract and mirrors non-restaurant threads into `foodCustomerChats/{customerUid}`. This keeps the current customer app compatible while giving the food Master Admin a separate, master-only customer inbox. Master Admin replies are written to both records by the frontend.
+
 ## 1. Backend Architecture
 The backend is entirely serverless, running on **Firebase Cloud Functions** (Node.js runtime). 
 Instead of traditional REST APIs (like `GET /api/riders`), this project uses **Firebase Callable Functions (`onCall`)**. 
@@ -74,7 +78,27 @@ Defined in: `functions/src/lib/riders.js`
 ### C. Order Management APIs
 Defined in: `functions/src/lib/orders.js`
 
-#### 1. `setGlobalCommissionRate`
+#### 1. `createFoodOrder`
+- Verifies items from one restaurant-owned menu and creates an order permanently routed to that restaurant.
+
+### Dine-in reservation callables
+
+- `createDineInBooking`, `listMyDineInBookings`, and `getDineInBooking` serve the customer booking flow.
+- `updateDineInBooking` and `cancelDineInBooking` allow the customer to change an eligible booking.
+- `setDineInBookingStatus` lets the owning restaurant or Master Admin accept or cancel a reservation.
+- The full customer-app contract is documented in `APP_BOOKING_API.md`.
+- Ignores client pricing and delivery fees, stores checkout snapshots, and scopes idempotency to the customer.
+
+#### 2. `masterConfirmOrder`
+- Lets Master Admin confirm the restaurant already stored at checkout and optionally assign a rider. It cannot reassign the restaurant.
+
+#### 3. `transitionOrderStatus`
+- Enforces role-specific transitions. Restaurants control Preparing and Ready for pickup; Master Admin controls cancellation and dispatch.
+
+#### 4. `assignOrderRider` / `markOrderDelivered`
+- Master Admin assigns an active rider before dispatch and confirms delivery. Delivery and accounting are atomic and idempotent.
+
+#### 5. `setGlobalCommissionRate`
 - **Purpose:** Sets the network-wide default commission rate.
 - **Business Logic:** Affects all future payouts for restaurants that do not have a custom commission override.
 
@@ -99,3 +123,10 @@ if (context.auth.token.isMasterAdmin !== true) {
   throw new HttpsError("permission-denied", "Requires Master Admin privileges.");
 }
 ```
+
+---
+*Created and Maintained by Omnifex.*
+
+
+---
+*Documentation created by Omnifex Agency*

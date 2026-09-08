@@ -14,6 +14,7 @@ import {
   RestaDetailsView,
   RestaurantReqDet,
   RestaurantStatsFinance,
+  RestaurantStatsReservations,
   RestaurantStatsManage,
   RestaurantStatsOrders,
   RestaurantStatsShell,
@@ -23,6 +24,8 @@ import {
   RiderOverview,
   RestaurantChat as MasterRestaurantChat,
   TodayOrders,
+  TableBookings,
+  CustomerChat,
 } from "./masterAdmin/pages";
 import {
   AuthPage,
@@ -48,6 +51,7 @@ import {
   Restaurant,
   ResturantAdminHome,
   RestaurantChat,
+  TableBooking,
 } from "./restaurantAdmin/pages";
 import { PARTNER_BASE } from "./utils/partnerRoutes";
 
@@ -150,6 +154,7 @@ const App = () => {
                       }
                     />
                     <Route path="restaurantChat" element={<RestaurantChat />} />
+                    <Route path="tableReservation" element={<TableBooking />} />
                     <Route path="foodItem" element={<FoodItem />} />
                     <Route path="foodItem/addItem" element={<AddItem />} />
                     <Route
@@ -240,9 +245,14 @@ const App = () => {
                         path="finance"
                         element={<RestaurantStatsFinance />}
                       />
+                      <Route
+                        path="reservations"
+                        element={<RestaurantStatsReservations />}
+                      />
                     </Route>
                     <Route path="records" element={<TodayOrders />} />
                     <Route path="ordersDetails" element={<OrdersDetails />} />
+                    <Route path="tableReservation" element={<TableBookings />} />
                     <Route path="ourKitchen" element={<OurKitchenLayout />}>
                       <Route index element={<FoodItem />} />
                       <Route path="addItem" element={<AddItem />} />
@@ -286,6 +296,7 @@ const App = () => {
                       path="restaurantChat"
                       element={<MasterRestaurantChat />}
                     />
+                    <Route path="customerChat" element={<CustomerChat />} />
                     <Route
                       path="ordersDetails/ordersDetView/:orderId"
                       element={<OrdersDetView />}

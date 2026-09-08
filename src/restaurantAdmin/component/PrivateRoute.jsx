@@ -54,7 +54,8 @@ const PrivateRoute = ({ allowedRoles = [] }) => {
   if (needsRestaurant) {
     const isOpsRoute =
       path.includes("/manageOrder") ||
-      path.includes("/foodItem");
+      path.includes("/foodItem") ||
+      path.includes("/tableReservation");
 
     const isDashboardHome = isPartnerDashboardPath(path);
 

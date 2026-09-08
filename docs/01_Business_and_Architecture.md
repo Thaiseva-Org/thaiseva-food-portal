@@ -67,3 +67,10 @@ User Request
 - **Authentication:** Firebase Auth (Email/Password)
 - **CI/CD:** ESLint, Node Native Test Runner, Firebase CLI
 - **Why this stack?** Serverless Firebase provides instant real-time websocket connections to React via `onSnapshot`, which is critical for live order tracking without managing WebSocket servers or scaling infrastructure.
+
+---
+*Created and Maintained by Omnifex.*
+
+
+---
+*Documentation created by Omnifex Agency*

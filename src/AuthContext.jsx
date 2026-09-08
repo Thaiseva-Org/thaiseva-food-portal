@@ -220,7 +220,7 @@ export const AuthProvider = ({ children }) => {
       touchSessionActivity();
     };
 
-    const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
+    const events = ["click", "keydown", "scroll", "touchstart"];
     // Throttle activity writes
     let lastTouch = 0;
     const throttled = () => {

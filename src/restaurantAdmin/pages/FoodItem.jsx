@@ -1,5 +1,5 @@
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext.jsx";
@@ -58,33 +58,11 @@ const FoodItem = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [allRestaurants, setAllRestaurants] = useState([]);
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
     viewMode: loadViewMode(),
   }));
   const [displayCount, setDisplayCount] = useState(24);
-
-  useEffect(() => {
-    if (!isMasterAdmin) return;
-    const fetchRestaurants = async () => {
-      try {
-        const q = query(
-          collection(db, "restaurants"),
-          where("status", "==", "Verified")
-        );
-        const snap = await getDocs(q);
-        const list = snap.docs.map((d) => ({
-          uid: d.id,
-          name: d.data().name || d.id,
-        }));
-        setAllRestaurants(list);
-      } catch (e) {
-        console.error("Error fetching restaurants:", e);
-      }
-    };
-    fetchRestaurants();
-  }, [isMasterAdmin]);
 
   useEffect(() => {
     document.title = "Thaiseva | Menu";
@@ -110,37 +88,19 @@ const FoodItem = () => {
     setLoading(true);
     setError(null);
     try {
-      // Always fetch from platform master menu
-      const foodItemsRef = collection(db, `food_items/${PLATFORM_OWNER_ID}/items`);
+      // Each restaurant owns its menu.
+      const foodItemsRef = collection(db, `food_items/${menuRoot}/items`);
       const [itemsSnap, catSnap] = await Promise.all([
         getDocs(foodItemsRef),
         getDoc(doc(db, "settings", "categories")).catch(() => null),
       ]);
 
-      let fetchedItems = itemsSnap.docs
+      const fetchedItems = itemsSnap.docs
         .map((d) => ({
           id: d.id,
           ...d.data(),
         }))
         .filter((item) => item.deleted !== true);
-
-      // For Restaurant Admins, only show items assigned to their restaurant
-      if (!isMasterAdmin && menuRoot) {
-        fetchedItems = fetchedItems.filter(
-          (item) =>
-            Array.isArray(item.assignedRestaurants) &&
-            item.assignedRestaurants.includes(menuRoot)
-        );
-        // Override active status with restaurant-specific status
-        fetchedItems = fetchedItems.map((item) => {
-          const restStatus = item.restaurantStatus?.[menuRoot];
-          return {
-            ...item,
-            _globalActive: item.active,
-            active: restStatus?.active ?? item.active,
-          };
-        });
-      }
 
       setItems(fetchedItems);
 
@@ -155,7 +115,7 @@ const FoodItem = () => {
     } finally {
       setLoading(false);
     }
-  }, [menuRoot, isMasterAdmin]);
+  }, [menuRoot]);
 
   useEffect(() => {
     if (canManageMenu && menuRoot) {
@@ -177,22 +137,24 @@ const FoodItem = () => {
     [items]
   );
 
+  const deferredFilters = useDeferredValue(filters);
+
   const filteredItems = useMemo(() => {
-    const filtered = filterMenuItems(items, filters);
-    return sortMenuItems(filtered, filters.sortBy);
-  }, [items, filters]);
+    const filtered = filterMenuItems(items, deferredFilters);
+    return sortMenuItems(filtered, deferredFilters.sortBy);
+  }, [items, deferredFilters]);
 
   const paginatedItems = useMemo(() => {
     return filteredItems.slice(0, displayCount);
   }, [filteredItems, displayCount]);
 
   const grouped = useMemo(() => {
-    if (!filters.groupByCategory || filters.viewMode !== "grid") return null;
+    if (!deferredFilters.groupByCategory || deferredFilters.viewMode !== "grid") return null;
     return groupItemsByCategory(filteredItems, settingsCategories);
   }, [
     filteredItems,
-    filters.groupByCategory,
-    filters.viewMode,
+    deferredFilters.groupByCategory,
+    deferredFilters.viewMode,
     settingsCategories,
   ]);
 
@@ -222,22 +184,10 @@ const FoodItem = () => {
       { label: "cuisine", key: "cuisine" },
       { label: "description", key: "description" },
     ];
-    const restHeaders = allRestaurants.map((r) => ({
-      label: `Assign: ${r.name}`,
-      key: `assign_${r.uid}`,
-    }));
-    return [...baseHeaders, ...restHeaders];
-  }, [allRestaurants]);
+    return baseHeaders;
+  }, []);
 
-  const csvData = useMemo(() => {
-    return items.map((item) => {
-      const row = { ...item };
-      allRestaurants.forEach((r) => {
-        row[`assign_${r.uid}`] = (item.assignedRestaurants || []).includes(r.uid) ? "yes" : "no";
-      });
-      return row;
-    });
-  }, [items, allRestaurants]);
+  const csvData = items;
 
   const handleEdit = (item) => {
     const id = getItemKey(item);
@@ -252,7 +202,7 @@ const FoodItem = () => {
     setFeedback(null);
     try {
       await setFoodItemActive({
-        ownerUid: isMasterAdmin ? PLATFORM_OWNER_ID : menuRoot,
+        ownerUid: menuRoot,
         itemId,
         active: nextActive,
       });
@@ -287,13 +237,13 @@ const FoodItem = () => {
     if (!item || !menuRoot) return;
     const itemId = getItemKey(item);
     const ok = window.confirm(
-      `Delete "${item.itemName}" permanently? This cannot be undone.`
+      `Archive "${item.itemName}" from your menu?`
     );
     if (!ok) return;
     setBusyId(itemId);
     setFeedback(null);
     try {
-      await deleteFoodItem({ ownerUid: PLATFORM_OWNER_ID, itemId });
+      await deleteFoodItem({ ownerUid: menuRoot, itemId });
       setItems((prev) => prev.filter((row) => getItemKey(row) !== itemId));
       setSelectedItem(null);
       setFeedback({
@@ -347,7 +297,7 @@ const FoodItem = () => {
               : `Manage dishes customers see · ${stats.active} active · ${stats.inactive} inactive`}
           </p>
         </div>
-        {isMasterAdmin && (
+        {canManageMenu && (
           <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
             <CSVLink
               data={csvData}
@@ -420,7 +370,7 @@ const FoodItem = () => {
             selected={filters.status === "inactive"}
           />
         </button>
-        {isMasterAdmin && (
+        {canManageMenu && (
           <button
             type="button"
             className="text-left rounded-2xl focus-ring h-full"
@@ -532,7 +482,7 @@ const FoodItem = () => {
             onEdit={handleEdit}
             onToggleActive={handleToggleActive}
             busyId={busyId}
-            isMasterAdmin={isMasterAdmin}
+            canManageMenu={canManageMenu}
           />
         ) : grouped ? (
           <div className="space-y-8">
@@ -560,7 +510,7 @@ const FoodItem = () => {
                         onEdit={handleEdit}
                         onToggleActive={handleToggleActive}
                         busyId={busyId}
-                        isMasterAdmin={isMasterAdmin}
+                        canManageMenu={canManageMenu}
                       />
                     ))}
                   </div>
@@ -578,7 +528,7 @@ const FoodItem = () => {
                 onEdit={handleEdit}
                 onToggleActive={handleToggleActive}
                 busyId={busyId}
-                isMasterAdmin={isMasterAdmin}
+                canManageMenu={canManageMenu}
               />
             ))}
           </div>
@@ -604,14 +554,14 @@ const FoodItem = () => {
         onToggleActive={handleToggleActive}
         onDelete={handleDelete}
         busyId={busyId}
-        isMasterAdmin={isMasterAdmin}
+        canManageMenu={canManageMenu}
       />
 
       <CsvImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImportComplete={fetchData}
-        allRestaurants={allRestaurants}
+        ownerUid={menuRoot}
       />
     </div>
   );

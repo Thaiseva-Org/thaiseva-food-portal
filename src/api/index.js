@@ -28,10 +28,12 @@ export const ensurePlatformRestaurant = (data) =>
   callApi("ensurePlatformRestaurant", data);
 
 // Orders / money
-export const transitionOrderStatus = ({ orderId, toStatus }) =>
+export const verifyOrderPayment = (data) => callApi("verifyOrderPayment", data);
+export const transitionOrderStatus = ({ orderId, toStatus, reason }) =>
   callApi("transitionOrderStatus", {
     orderId,
     toStatus,
+    ...(reason ? { reason } : {}),
     idempotencyKey: newIdempotencyKey("order"),
   });
 export const markOrderDelivered = ({ orderId, riderId }) =>
@@ -46,17 +48,11 @@ export const assignOrderRider = ({ orderId, riderId }) =>
     riderId,
     idempotencyKey: newIdempotencyKey("assign"),
   });
-export const assignOrderRestaurant = ({ orderId, restaurantUid }) =>
-  callApi("assignOrderRestaurant", {
-    orderId,
-    restaurantUid,
-    idempotencyKey: newIdempotencyKey("route"),
-  });
 export const masterConfirmOrder = ({ orderId, restaurantUid, riderId, deliveryCharge }) =>
   callApi("masterConfirmOrder", {
     orderId,
     restaurantUid,
-    riderId,
+    ...(riderId ? { riderId } : {}),
     deliveryCharge,
     idempotencyKey: newIdempotencyKey("confirm"),
   });
@@ -73,6 +69,24 @@ export const clearOrderPayment = ({ orderId }) =>
     orderId,
     idempotencyKey: newIdempotencyKey("pay"),
   });
+
+// Dine-in table reservations
+export const createDineInBooking = (data) =>
+  callApi("createDineInBooking", {
+    ...data,
+    idempotencyKey:
+      data?.idempotencyKey || newIdempotencyKey("reservation"),
+  });
+export const listMyDineInBookings = (data) =>
+  callApi("listMyDineInBookings", data);
+export const getDineInBooking = (data) => callApi("getDineInBooking", data);
+export const updateDineInBooking = (data) =>
+  callApi("updateDineInBooking", data);
+export const cancelDineInBooking = (data) =>
+  callApi("cancelDineInBooking", data);
+export const setDineInBookingStatus = (data) =>
+  callApi("setDineInBookingStatus", data);
+
 // Menu
 export const createFoodItem = (data) => callApi("createFoodItem", data);
 export const updateFoodItem = (data) => callApi("updateFoodItem", data);

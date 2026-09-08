@@ -11,6 +11,12 @@ const COPY = {
     message:
       "Every order for this restaurant. Assign a rider when it is ready for pickup. Confirm delivered stays on the main Orders page.",
   },
+  reservations: {
+    icon: "bi-calendar2-check",
+    title: "Table reservations",
+    message:
+      "Review this restaurant's dine-in reservation history and current booking status.",
+  },
   finance: {
     icon: "bi-wallet2",
     title: "Payout, custom invoices, and period offers",

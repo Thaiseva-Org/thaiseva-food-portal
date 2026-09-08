@@ -1,5 +1,5 @@
 import { Pagination } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
 import DataBoxes from "../../components/DataBoxes";
@@ -105,7 +105,8 @@ const OrdersDetails = () => {
       ),
     [isRealTime, orders, orderDetailsRecord]
   );
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
 
   const stats = useMemo(
     () => countOrdersByStatus(sourceRows || []),
@@ -334,6 +335,7 @@ const OrdersDetails = () => {
                 <th scope="col" className="px-4 py-3.5">
                   Status
                 </th>
+                <th scope="col" className="px-4 py-3.5">Payment</th>
                 <th scope="col" className="px-4 py-3.5 text-center">
                   Action
                 </th>
@@ -376,6 +378,12 @@ const OrdersDetails = () => {
                   </td>
                   <td className="px-4 py-4">
                     <StatusBadge status={item.Status} />
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="text-xs text-ink-muted">{item.paymentMethod || "Not provided"}</p>
+                    <span className={item.isPaymentDone ? "text-emerald-700 font-medium" : "text-amber-700 font-medium"}>
+                      {item.isPaymentDone ? "Received" : "Awaiting payment"}
+                    </span>
                   </td>
                   <td className="px-4 py-4 text-center">
                     <Link

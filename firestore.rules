@@ -7,8 +7,9 @@ rules_version = '2';
 //
 // Food portal changes ONLY:
 //   - helpers under "FOOD PORTAL HELPERS ONLY"
-//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders,
-//     restaurants, restaurantApplications, foodRiders, food_items items, food notifications, Earnings, auditLogs,
+//   - food paths listed in FIRESTORE_RULES_NOTES.md (orders, dineInBookings,
+//     restaurants, restaurantApplications, foodRiders, foodRestaurantChats,
+//     foodCustomerChats, food_items items, food notifications, Earnings, auditLogs,
 //     users food signup, settings/categories)
 //
 // Policy + checklist: FIRESTORE_RULES_NOTES.md
@@ -257,42 +258,6 @@ service cloud.firestore {
         ]);
     }
 
-    function isFoodCancelStatus(value) {
-      return value in ['Cancelled', 'Canceled', 'CANCELED'];
-    }
-
-    function isFoodOrderPreOutStatus(value) {
-      return value in [
-        'New Order', 'Order Confirm', 'Preparing', 'Ready for pickup'
-      ];
-    }
-
-    // Customer cancel only, and only before Out for Delivery.
-    // Kitchen status, rider, and money stay Cloud Functions (Admin SDK).
-    function isFoodOrderCustomerCancel() {
-      return (isOwner('uid') || isOwner('userId') ||
-          isFoodOrderReceiver() || isFoodOrderSender()) &&
-        paymentFieldsUnchanged() &&
-        isFoodOrderPreOutStatus(
-          resource.data.get('currentStatus', resource.data.get('status', 'New Order'))
-        ) &&
-        (
-          !resource.data.keys().hasAny(['currentStatus']) ||
-          isFoodCancelStatus(request.resource.data.get('currentStatus', ''))
-        ) &&
-        (
-          isFoodCancelStatus(request.resource.data.get('currentStatus', '')) ||
-          isFoodCancelStatus(request.resource.data.get('status', '')) ||
-          isFoodCancelStatus(request.resource.data.get('orderStatus', ''))
-        ) &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly([
-            'currentStatus', 'Status', 'status', 'orderStatus',
-            'updatedAt', 'canceledAt', 'cancelledAt',
-            'cancellationReason', 'cancelReason', 'canceledBy', 'cancelledBy'
-          ]);
-    }
-
     // ============================================================
     // PUBLIC CATALOG (read-only for clients)
     // ============================================================
@@ -458,9 +423,42 @@ service cloud.firestore {
         || isFoodOrderRestaurantOwner()
         || isFoodOrderReceiver()
         || isFoodOrderSender();
-      allow update: if isFoodOrderCustomerCancel();
+      allow update: if false; // Order cancellation is an admin callable action.
       // Money / delivery / earnings / kitchen status: Cloud Functions (Admin SDK) only
       allow delete: if isAdmin() || isFoodAdmin();
+    }
+
+    // Dine-in reservations are created and updated only by validated callables.
+    match /dineInBookings/{bookingId} {
+      allow create, update: if false;
+      allow read: if isAdmin() || isFoodAdmin()
+        || isOwner('userId')
+        || isOwner('uid')
+        || isOwner('ownerId');
+      allow delete: if isAdmin() || isFoodAdmin();
+    }
+
+    // Restaurant-to-Master support threads. Customer support remains in the
+    // existing CustomerSupport namespace and is never exposed to restaurants.
+    match /foodRestaurantChats/{ownerId} {
+      allow read: if isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == ownerId);
+      allow create: if isFoodAdmin() ||
+        (isAuthenticated()
+          && request.auth.uid == ownerId
+          && request.resource.data.ownerId == request.auth.uid);
+      allow update: if isFoodAdmin() ||
+        (isAuthenticated()
+          && request.auth.uid == ownerId
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == resource.data.ownerId);
+      allow delete: if isFoodAdmin();
+    }
+
+    // The customer app continues using its existing support contract. A
+    // backend bridge copies those threads here for the food Master Admin.
+    match /foodCustomerChats/{customerId} {
+      allow read, create, update, delete: if isFoodAdmin();
     }
 
     match /cart/{cartId} {
@@ -476,7 +474,8 @@ service cloud.firestore {
 
     // Food portal menu mutations go through Cloud Functions (Admin SDK)
     match /food_items/{restaurantId}/items/{itemId} {
-      allow read: if true;
+      allow read: if isFoodAdmin() || (isAuthenticated() && request.auth.uid == restaurantId)
+        || (resource.data.active == true && resource.data.get('deleted', false) == false);
       allow write: if false;
     }
 

@@ -134,3 +134,6 @@ may set `ENFORCE_APP_CHECK=false`.
 `firebase deploy --only hosting` runs `npm run production:check` automatically
 and refuses to deploy when required Firebase/App Check configuration, tests,
 build, or either production dependency audit fails.
+
+---
+*Created and Maintained by Omnifex.*

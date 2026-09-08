@@ -63,7 +63,10 @@ If you need a rules change, it should land in one of these **food-related** plac
 | Area | What is allowed | Why |
 |------|-----------------|-----|
 | **Helpers (food section)** | `isFoodAdmin()`, order owner/receiver helpers, `isSafeFoodPortalUserCreate()`, `restaurantLockedFieldsUnchanged()`, `isFoodOrderCustomerCancel()` | Food identity without changing `isAdmin()` |
-| **`orders`** | `isFoodAdmin` read; client update is cancel-only before Out; kitchen / rider / money writes Admin SDK | Rider gate + earnings stay on Functions |
+| **`orders`** | Tenant/admin reads; create and update false | Order routing, status, rider, and money stay in Functions |
+| **`foodRestaurantChats`** | Master Admin reads all; restaurant owner reads/writes only its own document | Keeps restaurant support separate from customer support |
+| **`foodCustomerChats`** | Master Admin only | Dedicated customer-support inbox; restaurant owners have no access |
+| **`dineInBookings`** | Tenant/admin reads; create and update false | Reservation mutations use validated callable functions |
 | **`users`** | Food signup OR; lock `isMasterAdmin` / `isRestaurantAdmin` on self-update; optional `isFoodAdmin` read | Onboarding |
 | **`restaurants`** | Owner create; update with locked money/verify fields | Commission integrity |
 | **`restaurantApplications`** | Master/food-admin read; **write false** | Public apply via Functions; user created on accept |
@@ -116,3 +119,6 @@ Index deploy is a full sync and can **delete** hotel/car/van indexes if they are
 | This document | Human policy + allowed patch table |
 
 `npm test` / `npm run production:check` already run the isolation test.
+
+---
+*Created and Maintained by Omnifex.*

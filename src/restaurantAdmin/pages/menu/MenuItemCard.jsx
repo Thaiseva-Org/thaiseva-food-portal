@@ -1,3 +1,4 @@
+import { memo } from "react";
 import StatusBadge from "../../../components/StatusBadge";
 import {
   formatPrice,
@@ -6,7 +7,7 @@ import {
   getSalePrice,
 } from "./menuUtils";
 
-const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, isMasterAdmin }) => {
+const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, canManageMenu }) => {
   const key = getItemKey(item);
   const isBusy = busyId === key;
   const discount = getDiscountPct(item);
@@ -48,7 +49,7 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, isMasterAd
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
           <div className="absolute left-2 top-2 flex max-w-[70%] flex-wrap gap-1.5">
             <StatusBadge status={item.active ? "Active" : "Inactive"} />
-            {isMasterAdmin && discount > 0 && (
+            {canManageMenu && discount > 0 && (
               <span className="badge-warning">{discount}% off</span>
             )}
           </div>
@@ -72,7 +73,7 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, isMasterAd
           )}
         </div>
 
-        {isMasterAdmin && (
+        {canManageMenu && (
           <div className="flex items-end justify-between gap-2">
             <div className="min-w-0">
               {discount > 0 ? (
@@ -111,7 +112,7 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, isMasterAd
             <i className="bi bi-eye" aria-hidden="true" />
             View
           </button>
-          {isMasterAdmin && (
+          {canManageMenu && (
             <button
               type="button"
               className="btn-outline !min-h-9 !px-2.5 !py-1.5 text-xs"
@@ -156,4 +157,4 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, isMasterAd
   );
 };
 
-export default MenuItemCard;
+export default memo(MenuItemCard);

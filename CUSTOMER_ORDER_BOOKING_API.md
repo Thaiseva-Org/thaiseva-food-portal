@@ -1,263 +1,180 @@
-# ThaiSeva Food Portal — Customer Order Booking API Specification
+# ThaiSeva customer order API
 
-This document provides the authoritative technical contract for Customer Applications (Mobile App / Web App) integrating with the **ThaiSeva Food Portal** to place food orders ("take booking"), verify prices, compute delivery charges, and listen to real-time status transitions.
+The customer app must use the callable `createFoodOrder`. Direct client creation or mutation of `orders` is denied by Firestore rules.
 
----
+## Restaurant-first ordering
 
-## 📋 Table of Contents
+Show the customer a restaurant list before showing food. The Firestore document ID is the canonical restaurant owner ID used by the menu and checkout APIs; the short `id` field is display-only.
 
-1. [Overview & Security Architecture](#1-overview--security-architecture)
-2. [Order Creation Payload Schema](#2-order-creation-payload-schema)
-3. [Server-Side Financial Accounting Verification](#3-server-side-financial-accounting-verification)
-4. [Idempotency & Retry Rules](#4-idempotency--retry-rules)
-5. [Real-time Order Status & Tracking](#5-real-time-order-status--tracking)
-6. [Error Code Reference](#6-error-code-reference)
+```javascript
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 
----
+export async function listOrderableRestaurants(db) {
+  const snapshot = await getDocs(query(
+    collection(db, "restaurants"),
+    where("status", "==", "Verified"),
+    where("active", "==", true)
+  ));
 
-## 1. Overview & Security Architecture
-
-When a customer places a food order ("booking"), the Customer App writes an order document to Cloud Firestore under the `orders` collection or calls the order placement Cloud Function. 
-
-```
-+-------------------------------------------------------------------------+
-|                          CUSTOMER USER APP                              |
-| 1. Query food_items catalog                                             |
-| 2. Customer selects store + dishes + quantities                         |
-| 3. Submits Order with unique Idempotency Key                           |
-+-------------------------------------------------------------------------+
-                                   |
-                                   v
-+-------------------------------------------------------------------------+
-|                         CLOUD FIRESTORE ORDERS                          |
-|                       collection("orders").doc()                        |
-+-------------------------------------------------------------------------+
-                                   |
-                                   v
-+-------------------------------------------------------------------------+
-|                        FIREBASE CLOUD FUNCTIONS                         |
-|        Server Transaction (prepareVerifiedAccounting)                   |
-|  - Re-reads unit prices & discounts from food_items                     |
-|  - Re-calculates Admin Share, Partner Share & Total                     |
-|  - Rejects order if prices or items are invalid                        |
-+-------------------------------------------------------------------------+
+  return snapshot.docs.map((entry) => ({
+    ownerId: entry.id,
+    ...entry.data(),
+  }));
+}
 ```
 
-> [!IMPORTANT]
-> **Zero Client Trust for Pricing**: The Customer App sends unit prices for display convenience, but the backend Cloud Functions (`prepareVerifiedAccounting` in `functions/src/lib/orders.js`) re-fetches every dish from the canonical master menu collection (`food_items/thaiseva-platform/items/{itemId}`) inside a Firestore transaction. Any client-side price tampering will be overridden or rejected.
+Render one card for each returned restaurant. When the customer opens a card, load only that restaurant's available menu:
 
----
+```javascript
+export async function loadRestaurantMenu(db, ownerId) {
+  const snapshot = await getDocs(query(
+    collection(db, `food_items/${ownerId}/items`),
+    where("active", "==", true),
+    where("deleted", "==", false)
+  ));
 
-## 1. Create a New Order (Booking API)
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+}
+```
 
-**Action:** Call the `createFoodOrder` HTTPS Callable Cloud Function.
-**Permissions:** The user must be authenticated.
-**Rule Enforcement:** The client does NOT write to Firestore directly. The Cloud Function verifies the active status of the restaurant, computes the exact `Amount` based on the trusted master catalog, and creates the document.
+Keep `selectedRestaurant.ownerId` with the cart. A cart can contain food from only one owner ID. If the customer changes restaurants, ask them to clear the cart or keep browsing the current restaurant; never silently combine menus.
 
-### How to call via Firebase Client SDK
+## Request
+
+The caller must be authenticated. A cart may contain items from exactly one restaurant-owned menu.
 
 ```javascript
 import { getFunctions, httpsCallable } from "firebase/functions";
 
-const functions = getFunctions();
-const createFoodOrder = httpsCallable(functions, 'createFoodOrder');
+const createFoodOrder = httpsCallable(
+  getFunctions(undefined, "asia-southeast1"),
+  "createFoodOrder"
+);
 
-createFoodOrder({
-  Restaurant: {
-    ownerId: "owner_uid_here",
-    name: "Thai Restaurant"
-  },
+const result = await createFoodOrder({
+  Restaurant: { ownerId: "restaurant_owner_uid" },
   Receiver: {
     name: "John Doe",
-    phoneNumber: "1234567890",
-    address": "123 Main St",
-    location: { lat: 13.75, lng: 100.50 }
+    phoneNumber: "+66812345678",
+    address: "123 Main Street",
+    location: { latitude: 13.75, longitude: 100.5 },
+    landmark: "Near the station"
   },
   Items: [
-    {
-      itemId: "item_1",
-      quantity: 2
-    }
+    { ItemId: "pad-thai-01", Quantity: 2 },
+    { ItemId: "thai-tea", Quantity: 1 }
   ],
-  deliveryCharge: 20,
   paymentMethod: "Cash on Delivery",
-  idempotencyKey: "unique_uuid_for_retry"
-})
-.then((result) => {
-  console.log(result.data.orderId);
+  idempotencyKey: crypto.randomUUID().replaceAll("-", "_")
 });
 ```
 
-### Response
+Do not send a trusted price, total, restaurant name, commission, or delivery fee. The server ignores customer totals and reads every dish only from `food_items/{Restaurant.ownerId}/items/{ItemId}`.
+
+The restaurant must exist at `restaurants/{ownerUid}`, have `status == "Verified"`, and have `active == true`. Every item must be active and not archived. Quantity must be an integer from 1 through 100; an order may contain at most 100 lines.
+
+## Response
+
+Callable responses use the repository wrapper:
 
 ```json
 {
+  "ok": true,
   "data": {
     "alreadyApplied": false,
-    "orderId": "ORD-2026-0901-4581",
-    "amount": 250
+    "orderId": "generated_order_document_id",
+    "amount": 250,
+    "restaurant": {
+      "ownerId": "restaurant_owner_uid",
+      "id": "public_restaurant_id",
+      "name": "Restaurant name",
+      "imageUrl": "https://example.com/restaurant.jpg",
+      "location": "Sukhumvit"
+    }
   }
 }
 ```
 
----
+`amount` is always the verified food subtotal at checkout, including on an idempotent retry after the order has progressed. `restaurant` confirms exactly where the server routed the order. Master Admin may set the delivery charge while confirming, after which `orders/{orderId}.Amount` is the subtotal plus delivery charge.
 
-## 2. Reading Orders (Customer View)
+## Payment verification fields
 
-**Action:** Read from the `orders` collection.
-**Permissions:** Customers can only read orders where `Receiver.id` matches their `auth.uid`.
+- `paymentMethod: "Cash on Delivery"`: Master Admin gets a **Verify cash received** button. Successful verification sets `isPaymentDone: true`.
+- `paymentMethod: "Thai QR"` (including PromptPay/legacy ThaiSeva aliases): Master Admin gets a **Verify Thai QR payment** button and may enter the transfer reference. Successful verification sets `isPaymentDone: true`.
+- `paymentMethod: "Stripe"`: there is no manual verification button. The trusted Stripe payment process must set the order field `verified: true`; the portal displays that field as **Stripe verified**. A customer-supplied `verified` value is not trusted by `createFoodOrder`, which initializes it to `false`.
 
-### Listen to Order Updates
-Clients can attach a listener to their order document to track real-time status changes:
+## Idempotency
 
-```javascript
-db.collection("orders").doc(orderId).onSnapshot((doc) => {
-  const currentStatus = doc.data().currentStatus;
-  // Updates UI (e.g., "Preparing" -> "Ready for pickup")
-});
-```
+Create one unique key for each checkout attempt and retain it for network retries. The same user, key, and payload return the original order. Reusing the key with a changed restaurant, cart, receiver, or payment method returns `already-exists`. Keys are scoped by authenticated customer.
 
-### Request Document Schema (`orders/{orderId}`)
+## Stored order schema
+
+New orders include:
 
 ```json
 {
-  "orderId": "ORD-2026-0901-8842",
-  "idempotencyKeys": {
-    "req_9a8b7c6d5e4f": true
-  },
+  "schemaVersion": 2,
+  "orderId": "document_id",
   "Restaurant": {
-    "ownerId": "rest_owner_uid_123",
-    "name": "Bangkok Street Food",
-    "id": "A1B2"
+    "ownerId": "restaurant_owner_uid",
+    "id": "public_restaurant_id",
+    "name": "Restaurant name",
+    "imageUrl": "https://example.com/restaurant.jpg",
+    "location": "Sukhumvit"
   },
-  "Receiver": {
-    "id": "customer_user_uid_456",
-    "name": "Somchai Jaidee",
-    "phoneNumber": "+66812345678",
-    "address": "123 Sukhumvit Road, Khlong Toei, Bangkok 10110",
-    "landmark": "Near BTS Asok Station",
-    "location": {
-      "latitude": 13.736717,
-      "longitude": 100.560407
-    }
-  },
-  "Items": [
-    {
-      "ItemId": "#pad-thai-01",
-      "ItemName": "Pad Thai Goong",
-      "Quantity": 2,
-      "price": 120.00,
-      "discount": 10.00,
-      "imageUrl": "https://storage.googleapis.com/.../padthai.jpg"
-    },
-    {
-      "ItemId": "#tom-yum-02",
-      "ItemName": "Tom Yum Goong",
-      "Quantity": 1,
-      "price": 180.00,
-      "discount": 0.00,
-      "imageUrl": "https://storage.googleapis.com/.../tomyum.jpg"
-    }
-  ],
-  "deliveryCharge": 35.00,
-  "paymentMethod": "PromptPay",
-  "currentStatus": "New Order",
-  "Status": [
-    {
-      "status": "New Order",
-      "timestamp": "2026-09-01T18:00:00.000Z",
-      "by": "customer_user_uid_456"
-    }
-  ],
-  "createdAt": "SERVER_TIMESTAMP"
+  "Items": [{
+    "ItemId": "pad-thai-01",
+    "ItemName": "Pad Thai",
+    "Quantity": 2,
+    "price": 120,
+    "discount": 10,
+    "lineAmount": 216,
+    "menuPath": "food_items/restaurant_owner_uid/items/pad-thai-01"
+  }],
+  "foodSubtotal": 216,
+  "deliveryCharge": 0,
+  "Amount": 216,
+  "currentStatus": "New Order"
 }
 ```
 
-### Field Definitions & Requirements
+The stored restaurant is final. Item and restaurant snapshots remain authoritative for the order even if menu data changes later.
 
-| Field Path | Type | Required | Description & Validation Rules |
-| :--- | :--- | :--- | :--- |
-| `orderId` | `String` | Yes | Unique string identifier. Standard format `ORD-YYYY-MMDD-XXXX`. |
-| `Restaurant.ownerId` | `String` | Yes | Target restaurant owner's Firebase Auth UID. |
-| `Restaurant.name` | `String` | Yes | Display name of the restaurant. |
-| `Receiver.id` | `String` | Yes | Customer Auth UID. |
-| `Receiver.name` | `String` | Yes | Customer full name (max 120 chars). |
-| `Receiver.phoneNumber` | `String` | Yes | Contact phone number for rider delivery coordination. |
-| `Receiver.address` | `String` | Yes | Full physical delivery address (max 500 chars). |
-| `Receiver.location` | `Object` | Optional | GeoPoint `{ latitude, longitude }` for map navigation. |
-| `Items` | `Array<Object>` | Yes | Array of 1 to 100 ordered food items. |
-| `Items[].ItemId` | `String` | Yes | Dish ID matching master catalog `#itemId`. |
-| `Items[].Quantity` | `Number` | Yes | Integer between `1` and `100`. |
-| `deliveryCharge` | `Number` | Yes | Delivery fee in THB (non-negative number). |
-| `currentStatus` | `String` | Yes | Must be initialized to `"New Order"`. |
+## End-to-end customer flow
 
----
-
-## 3. Server-Side Financial Accounting Verification
-
-When the Master Admin or Kitchen processes order steps and confirms delivery, Cloud Functions executes `prepareVerifiedAccounting`:
-
-### Pricing & Commission Formula
-
-1. **Line Item Discounted Price**:
-   $$\text{LineAmount} = \text{Math.round}\left(\text{UnitPrice} \times \left(1 - \frac{\text{Discount}}{100}\right) \times \text{Quantity} \times 100\right) / 100$$
-
-2. **Subtotal Food Amount**:
-   $$\text{FoodSubtotal} = \sum \text{LineAmount}$$
-
-3. **Commission Splits (Food Admin Share vs Partner Share)**:
-   $$\text{FoodAdminShare} = \text{Math.round}\left(\text{FoodSubtotal} \times \frac{\text{Commission \%}}{100} \times 100\right) / 100$$
-   $$\text{PartnerShare} = \text{Math.round}\left((\text{FoodSubtotal} - \text{FoodAdminShare}) \times 100\right) / 100$$
-   $$\text{TotalAdminShare} = \text{Math.round}\left((\text{FoodAdminShare} + \text{deliveryCharge}) \times 100\right) / 100$$
-   $$\text{TotalOrderAmount} = \text{Math.round}\left((\text{FoodSubtotal} + \text{deliveryCharge}) \times 100\right) / 100$$
-
----
-
-## 4. Idempotency & Retry Rules
-
-To prevent duplicate order charges or duplicate status transitions on spotty mobile network connections:
-
-1. **Idempotency Key Header / Payload Field**: Include `idempotencyKey: "req_<unique_string>"` in requests.
-2. **Idempotency Map**: The server records `idempotencyKeys.${key} = true` on the order document inside transactions.
-3. **Replay Response**: If a request with an existing idempotency key is retried, the function returns `{ alreadyApplied: true }` without re-executing accounting or notification side effects.
-
----
-
-## 5. Real-time Order Status & Tracking
-
-Customer applications should listen to real-time updates on `orders/{orderId}` using Firestore snapshots (`onSnapshot`).
-
-### Status State Machine Transitions
-
-```
-[ New Order ] ───> [ Order Confirm ] ───> [ Preparing ] ───> [ Ready for pickup ] ───> [ Out for Delivery ] ───> [ Delivered ]
-      │                   │                     │                     │
-      └───────────────────┴─────────────────────┴─────────────────────┴───> [ Cancelled ]
+```text
+List verified open restaurants
+  -> customer selects one restaurant ownerId
+  -> load food_items/{ownerId}/items
+  -> keep a single-restaurant cart
+  -> createFoodOrder with Restaurant.ownerId
+  -> show the returned restaurant and orderId
+  -> listen to orders/{orderId}
 ```
 
-### Customer Notification Payload
+## Status tracking
 
-When status changes, a notification doc is automatically pushed to `notifications/users/{customerUid}/{notifId}`:
+Customers may read an order where `Receiver.id` equals their authenticated UID and listen to its document in real time.
 
-```json
-{
-  "title": "Your order is on the way!",
-  "desc": "Hey Somchai! your order is on the way and will be with you shortly.",
-  "type": "out",
-  "timestamp": "SERVER_TIMESTAMP"
-}
+```text
+New Order -> Order Confirm -> Preparing -> Ready for pickup
+          -> Out for Delivery -> Delivered
 ```
 
----
+`Cancelled` is terminal. Only Master Admin confirms/cancels an order, assigns the rider, dispatches, and confirms delivery. Restaurant admins control `Preparing` and `Ready for pickup` for their own orders.
 
-## 6. Error Code Reference
+## Common errors
 
-| Error Code | HTTP Status | Trigger Condition | Solution for Customer App |
-| :--- | :--- | :--- | :--- |
-| `invalid-argument` | 400 | Missing `orderId`, invalid quantity ($<1$ or $>100$), or malformed email/phone. | Validate form inputs prior to submission. |
-| `failed-precondition` | 400 | Dish no longer exists in catalog, or store is closed (`active === false`). | Refresh menu items and notify customer store is unavailable. |
-| `permission-denied` | 403 | Attempting to access/modify another customer's order. | Ensure Firebase Auth token is attached and matches `Receiver.id`. |
-| `already-exists` | 409 | Duplicate order submission with same order ID. | Handle idempotency gracefully. |
+| Code | Meaning |
+| --- | --- |
+| `unauthenticated` | Customer session is missing |
+| `invalid-argument` | Restaurant, receiver, item ID, quantity, or idempotency key is invalid |
+| `failed-precondition` | Restaurant is closed/unverified or an item is missing/inactive/archived |
+| `already-exists` | Idempotency key was reused for a changed checkout |
 
----
-*Customer Order Booking API Specification — ThaiSeva Engineering Team.*
+On an item availability error, refresh the selected restaurant's menu and ask the customer to review the cart. Never substitute an item or route the order to another restaurant.

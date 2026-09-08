@@ -125,21 +125,50 @@ test("food order read allows restaurant owner schema without second loose orders
   );
 });
 
-test("food order client update is cancel-only before Out for Delivery", () => {
-  assert.match(rules, /function isFoodOrderCustomerCancel\(\)/);
-  assert.match(rules, /function isFoodOrderPreOutStatus\(/);
+test("food order writes require backend authorization", () => {
   const ordersBlock = rules.split("match /orders/{orderId}")[1] || "";
   const updateLine = ordersBlock.split("allow delete")[0];
-  assert.match(updateLine, /allow update: if isFoodOrderCustomerCancel\(\);/);
+  assert.match(updateLine, /allow update: if false;/);
   assert.doesNotMatch(
     updateLine,
     /allow update: if isAdmin\(\) \|\| isFoodAdmin\(\)/,
   );
-  assert.match(rules, /isFoodOrderPreOutStatus/);
+  assert.doesNotMatch(rules, /function isFoodOrderCustomerCancel\(\)/);
+});
+
+test("dine-in bookings are tenant-readable and callable-write only", () => {
+  const bookingBlock = rules.split("match /dineInBookings/{bookingId}")[1] || "";
+  const scoped = bookingBlock.split("match /")[0];
+  assert.match(scoped, /allow create, update: if false;/);
+  assert.match(scoped, /isOwner\('userId'\)/);
+  assert.match(scoped, /isOwner\('ownerId'\)/);
+  assert.match(scoped, /allow delete: if isAdmin\(\) \|\| isFoodAdmin\(\);/);
+});
+
+test("restaurant chat database is owner scoped and customer chat stays separate", () => {
+  const chatBlock = rules.split("match /foodRestaurantChats/{ownerId}")[1] || "";
+  const scoped = chatBlock.split("match /")[0];
+  assert.match(scoped, /request\.auth\.uid == ownerId/);
+  assert.match(scoped, /request\.resource\.data\.ownerId == request\.auth\.uid/);
+  assert.match(scoped, /allow delete: if isFoodAdmin\(\);/);
+  assert.doesNotMatch(scoped, /CustomerSupport/);
+
+  const customerBlock = rules.split("match /foodCustomerChats/{customerId}")[1] || "";
+  const customerScoped = customerBlock.split("match /")[0];
   assert.match(
-    rules,
-    /'New Order', 'Order Confirm', 'Preparing', 'Ready for pickup'/,
+    customerScoped,
+    /allow read, create, update, delete: if isFoodAdmin\(\);/
   );
+  assert.doesNotMatch(customerScoped, /request\.auth\.uid == customerId/);
+});
+
+test("restaurant menu drafts stay private and all menu writes use callables", () => {
+  const menuBlock = rules.split("match /food_items/{restaurantId}/items/{itemId}")[1] || "";
+  const scoped = menuBlock.split("match /")[0];
+  assert.match(scoped, /request\.auth\.uid == restaurantId/);
+  assert.match(scoped, /resource\.data\.active == true/);
+  assert.match(scoped, /resource\.data\.get\('deleted', false\) == false/);
+  assert.match(scoped, /allow write: if false/);
 });
 
 test("food-only paths exist; earnings writes stay server-side", () => {

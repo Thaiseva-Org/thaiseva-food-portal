@@ -15,10 +15,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import { createFoodItem, updateFoodItem } from "../../../api";
 import { useAuth } from "../../../AuthContext";
 import InfoMessage from "../../../components/InfoMessage";
-import { PLATFORM_OWNER_ID } from "../../../utils/platformRestaurant";
 
-const CsvImportModal = ({ open, onClose, onImportComplete, allRestaurants = [] }) => {
-  const { isMasterAdmin } = useAuth();
+const CsvImportModal = ({ open, onClose, onImportComplete, ownerUid }) => {
+  const { isMasterAdmin, isRestaurantAdmin } = useAuth();
   const fileInputRef = useRef(null);
   const [file, setFile] = useState(null);
   const [parsing, setParsing] = useState(false);
@@ -38,7 +37,6 @@ const CsvImportModal = ({ open, onClose, onImportComplete, allRestaurants = [] }
     "itemType",
     "cuisine",
     "description",
-    ...allRestaurants.map(r => `Assign: ${r.name}`)
   ];
 
   const handleDownloadTemplate = () => {
@@ -83,8 +81,8 @@ const CsvImportModal = ({ open, onClose, onImportComplete, allRestaurants = [] }
       setFeedback({ type: "error", message: "Please select a CSV file first." });
       return;
     }
-    if (!isMasterAdmin) {
-      setFeedback({ type: "error", message: "Only Master Admins can bulk import." });
+    if (!ownerUid || (!isMasterAdmin && !isRestaurantAdmin)) {
+      setFeedback({ type: "error", message: "A restaurant menu administrator is required." });
       return;
     }
 
@@ -119,23 +117,8 @@ const CsvImportModal = ({ open, onClose, onImportComplete, allRestaurants = [] }
             continue;
           }
 
-          // Parse assignments
-          const assigned = [];
-          Object.keys(row).forEach((key) => {
-            if (key.startsWith("Assign: ")) {
-              const rName = key.replace("Assign: ", "").trim();
-              const val = String(row[key] || "").toLowerCase().trim();
-              if (val === "yes" || val === "true" || val === "1") {
-                const found = allRestaurants.find((r) => r.name === rName);
-                if (found) {
-                  assigned.push(found.uid);
-                }
-              }
-            }
-          });
-
           const payload = {
-            ownerUid: PLATFORM_OWNER_ID,
+            ownerUid,
             itemName: itemName,
             price: Number(row.price) || 0,
             discount: Number(row.discount) || 0,
@@ -144,13 +127,7 @@ const CsvImportModal = ({ open, onClose, onImportComplete, allRestaurants = [] }
             cuisine: String(row.cuisine || "").trim(),
             description: String(row.description || "").trim(),
             // Ensure items are imported as inactive as per requirements
-            globalActive: false,
             active: false, 
-            assignedRestaurants: assigned,
-            restaurantStatus: assigned.reduce((acc, uid) => {
-              acc[uid] = { active: false };
-              return acc;
-            }, {}),
           };
 
           const itemId = String(row.itemId || "").trim().replace("#", "");
@@ -160,7 +137,12 @@ const CsvImportModal = ({ open, onClose, onImportComplete, allRestaurants = [] }
 
           try {
             if (itemId) {
-              await updateFoodItem(payload);
+              try {
+                await updateFoodItem(payload);
+              } catch (error) {
+                if (error.code !== "functions/not-found") throw error;
+                await createFoodItem(payload);
+              }
             } else {
               await createFoodItem(payload);
             }

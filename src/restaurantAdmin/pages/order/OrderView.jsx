@@ -1,3 +1,5 @@
+import OrderPayment from "../../../components/OrderPayment";
+import { normalizeOrder } from "../../../utils/orderData";
 import {
   collection,
   doc,
@@ -5,7 +7,6 @@ import {
   onSnapshot,
   orderBy,
   query,
-  where,
   Timestamp,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
@@ -18,7 +19,6 @@ import {
   assignOrderRider,
   markOrderDelivered,
   transitionOrderStatus,
-  assignOrderRestaurant,
   masterConfirmOrder,
 } from "../../../api";
 import { useAuth } from "../../../AuthContext";
@@ -42,10 +42,10 @@ const FLOW_STEPS = [
 ];
 
 const nextStatusFor = (status, { canDeliver = false, hasRider = false } = {}) => {
-  if (status === ORDER_STATUS.NEW) return ORDER_STATUS.CONFIRM;
+  if (status === ORDER_STATUS.NEW && canDeliver) return ORDER_STATUS.CONFIRM;
   if (status === ORDER_STATUS.CONFIRM) return ORDER_STATUS.PREPARING;
   if (status === ORDER_STATUS.PREPARING) return ORDER_STATUS.READY;
-  if (status === ORDER_STATUS.READY && hasRider) return ORDER_STATUS.OUT;
+  if (status === ORDER_STATUS.READY && hasRider && canDeliver) return ORDER_STATUS.OUT;
   if (canDeliver && status === ORDER_STATUS.OUT) return ORDER_STATUS.DELIVERED;
   return null;
 };
@@ -63,7 +63,7 @@ const nextActionLabel = (status, opts) => {
 
 const nextActionHint = (status, { canDeliver = false, hasRider = false } = {}) => {
   if (status === ORDER_STATUS.NEW)
-    return "Accept this order so the kitchen can start.";
+    return canDeliver ? "Confirm this order so the kitchen can start." : "Awaiting admin confirmation.";
   if (status === ORDER_STATUS.CONFIRM)
     return "Move the order into preparation.";
   if (status === ORDER_STATUS.PREPARING)
@@ -134,11 +134,6 @@ const OrderActions = ({
   showAssignForm = false,
   assignedRiderLabel = "",
   onAssign,
-  showAssignRestaurantForm = false,
-  restaurants = [],
-  selectedRestaurantId = "",
-  setSelectedRestaurantId,
-  onAssignRestaurant,
   showUnifiedMasterConfirm = false,
   deliveryCharge = "",
   setDeliveryCharge,
@@ -166,7 +161,7 @@ const OrderActions = ({
           </p>
           <p className="text-xs text-warning-800 mt-0.5 leading-relaxed">
             Master Admin will assign a rider now that this order is ready for
-            pickup. You can mark it out for delivery after that.
+            pickup. Admin will confirm dispatch after rider pickup.
           </p>
         </div>
       </div>
@@ -303,96 +298,17 @@ const OrderActions = ({
         </div>
       )}
 
-      {showAssignRestaurantForm && (
-        <div className={compact ? "space-y-2" : "space-y-2"}>
-          {!compact && (
-            <p className="text-xs text-ink-muted leading-relaxed px-0.5">
-              Assign this order to a restaurant so they can start preparing it.
-            </p>
-          )}
-          <div>
-            <label
-              htmlFor="kitchen-assign-restaurant"
-              className="block text-sm font-semibold text-ink"
-            >
-              Assign to restaurant
-            </label>
-            <select
-              id="kitchen-assign-restaurant"
-              className="modern-select mt-1.5"
-              value={selectedRestaurantId}
-              onChange={(e) => setSelectedRestaurantId?.(e.target.value)}
-              disabled={actionLoading || restaurants.length === 0}
-            >
-              <option value="">
-                {restaurants.length ? "Select a restaurant" : "No verified restaurants"}
-              </option>
-              {restaurants.map((rest) => (
-                <option key={rest.uid} value={rest.uid}>
-                  {rest.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            type="button"
-            className="btn-primary w-full py-3 text-base shadow-md"
-            disabled={actionLoading || !selectedRestaurantId}
-            onClick={onAssignRestaurant}
-          >
-            {actionLoading ? (
-              <>
-                <span
-                  className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-                  aria-hidden="true"
-                />
-                Routing…
-              </>
-            ) : (
-              <>
-                <i className="bi bi-shop text-lg" aria-hidden="true" />
-                Assign restaurant
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
       {showUnifiedMasterConfirm && (
         <div className={compact ? "space-y-3" : "space-y-4"}>
           {!compact && (
             <p className="text-xs text-ink-muted leading-relaxed px-0.5">
-              Review and assign this new order to a restaurant and rider.
+              Confirm this order and optionally assign a rider.
             </p>
           )}
 
           <div>
-            <label
-              htmlFor="unified-assign-restaurant"
-              className="block text-sm font-semibold text-ink"
-            >
-              Assign to restaurant
-            </label>
-            <select
-              id="unified-assign-restaurant"
-              className="modern-select mt-1.5"
-              value={selectedRestaurantId}
-              onChange={(e) => setSelectedRestaurantId?.(e.target.value)}
-              disabled={actionLoading || restaurants.length === 0}
-            >
-              <option value="">
-                {restaurants.length ? "Select a restaurant" : "No verified restaurants"}
-              </option>
-              {restaurants.map((rest) => (
-                <option key={rest.uid} value={rest.uid}>
-                  {rest.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label
+            <p className="text-sm">The restaurant selected at checkout will fulfill this order.</p>
+          <label
               htmlFor="unified-assign-rider"
               className="block text-sm font-semibold text-ink"
             >
@@ -445,7 +361,7 @@ const OrderActions = ({
           <button
             type="button"
             className="btn-primary w-full py-3 text-base shadow-md"
-            disabled={actionLoading || !selectedRestaurantId || !selectedRiderId}
+            disabled={actionLoading}
             onClick={onUnifiedConfirm}
           >
             {actionLoading ? (
@@ -459,14 +375,15 @@ const OrderActions = ({
             ) : (
               <>
                 <i className="bi bi-check-all text-lg" aria-hidden="true" />
-                Confirm & Assign
+                Confirm order
               </>
             )}
           </button>
         </div>
       )}
 
-      {nextLabel && nextStatus && !showAssignRestaurantForm && !showUnifiedMasterConfirm && (
+      {!nextStatus && nextHint && <p className="text-sm text-ink-muted">{nextHint}</p>}
+      {nextLabel && nextStatus && !showUnifiedMasterConfirm && (
         <div className={compact ? "space-y-2" : "space-y-2"}>
           {!compact && nextHint && (
             <p className="text-xs text-ink-muted leading-relaxed px-0.5">
@@ -567,8 +484,6 @@ const OrderView = () => {
   const [riders, setRiders] = useState([]);
   const [ridersError, setRidersError] = useState(null);
   const [selectedRiderId, setSelectedRiderId] = useState("");
-  const [restaurants, setRestaurants] = useState([]);
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState("");
   const [deliveryCharge, setDeliveryCharge] = useState("");
 
   useEffect(() => {
@@ -596,7 +511,7 @@ const OrderView = () => {
           setLoading(false);
           return;
         }
-        const orderData = snap.data() || {};
+        const orderData = normalizeOrder(snap.data());
         const ownerId = orderData?.Restaurant?.ownerId;
         if (kitchen.isPlatformKitchen) {
           if (ownerId && !isPlatformOwnerId(ownerId)) {
@@ -628,7 +543,11 @@ const OrderView = () => {
           DeliveryPartner: orderData.DeliveryPartner || null,
           assignedRiderId: assignedId,
           Location: orderData.Location || "",
-          Amount: orderData.Amount || "0.00",
+          paymentMethod: orderData.paymentMethod || "",
+          Amount: orderData.Amount ?? 0,
+          isPaymentDone: orderData.isPaymentDone === true,
+          verified: orderData.verified === true,
+          paymentVerification: orderData.paymentVerification || null,
           CurrentStatus: status || "N/A",
           Status: statusArray,
           RestaurantName: orderData?.Restaurant || null,
@@ -655,9 +574,7 @@ const OrderView = () => {
   const hasRider = hasAssignedRider(completeOrderDetails);
   const canAssignRider =
     kitchen.isMasterAdmin &&
-    (currentStatus === ORDER_STATUS.READY ||
-      currentStatus === ORDER_STATUS.OUT);
-  const canAssignRestaurant = false;
+    [ORDER_STATUS.CONFIRM, ORDER_STATUS.PREPARING, ORDER_STATUS.READY].includes(currentStatus);
   const isPlatformOwner = isPlatformOwnerId(completeOrderDetails?.Restaurant?.ownerId);
   const showUnifiedMasterConfirm =
     kitchen.isMasterAdmin &&
@@ -669,7 +586,7 @@ const OrderView = () => {
   const nextStatus = nextStatusFor(currentStatus, actionOpts);
   const nextLabel = nextActionLabel(currentStatus, actionOpts);
   const nextHint = nextActionHint(currentStatus, actionOpts);
-  const canCancel = currentStatus === ORDER_STATUS.NEW;
+  const canCancel = kitchen.isMasterAdmin && [ORDER_STATUS.NEW, ORDER_STATUS.CONFIRM, ORDER_STATUS.PREPARING, ORDER_STATUS.READY].includes(currentStatus);
   const isTerminal =
     currentStatus === ORDER_STATUS.DELIVERED ||
     currentStatus === ORDER_STATUS.CANCELLED;
@@ -717,35 +634,6 @@ const OrderView = () => {
     };
   }, [canAssignRider, canDeliver, showUnifiedMasterConfirm]);
 
-  useEffect(() => {
-    if (!showUnifiedMasterConfirm) return undefined;
-    let cancelled = false;
-    const loadRestaurants = async () => {
-      try {
-        const snap = await getDocs(
-          query(
-            collection(db, "restaurants"),
-            where("isVerified", "==", true),
-            orderBy("name", "asc")
-          )
-        );
-        if (cancelled) return;
-        setRestaurants(
-          snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
-        );
-      } catch (err) {
-        if (!cancelled) {
-          console.error("Error loading restaurants:", err);
-          setRestaurants([]);
-        }
-      }
-    };
-    loadRestaurants();
-    return () => {
-      cancelled = true;
-    };
-  }, [showUnifiedMasterConfirm]);
-
   const handleAssignRider = async () => {
     if (!orderId || actionLoading || !selectedRiderId) {
       if (!selectedRiderId) setActionError("Choose a rider to pick up this order.");
@@ -782,7 +670,11 @@ const OrderView = () => {
       if (value === ORDER_STATUS.DELIVERED) {
         await markOrderDelivered({ orderId });
       } else {
-        await transitionOrderStatus({ orderId, toStatus: value });
+        const reason = value === ORDER_STATUS.CANCELLED
+          ? window.prompt("Reason for cancelling this order:")
+          : undefined;
+        if (value === ORDER_STATUS.CANCELLED && !reason?.trim()) return;
+        await transitionOrderStatus({ orderId, toStatus: value, reason });
       }
       navigate(ordersListPath);
     } catch (err) {
@@ -797,36 +689,9 @@ const OrderView = () => {
     }
   };
 
-  const handleAssignRestaurant = async () => {
-    if (!orderId || actionLoading || !selectedRestaurantId) {
-      if (!selectedRestaurantId) setActionError("Choose a restaurant to assign this order to.");
-      return;
-    }
-    setActionError(null);
-    try {
-      setActionLoading(true);
-      const result = await assignOrderRestaurant({
-        orderId,
-        restaurantUid: selectedRestaurantId,
-      });
-      setCompleteOrderDetails((prev) => ({
-        ...prev,
-        Restaurant: result?.restaurant || prev.Restaurant,
-      }));
-    } catch (err) {
-      console.error("Error assigning restaurant:", err);
-      setActionError(
-        err.message ||
-          "Failed to assign restaurant. Ensure Cloud Functions are deployed."
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const handleUnifiedConfirm = async () => {
-    if (!orderId || actionLoading || !selectedRestaurantId || !selectedRiderId) {
-      setActionError("Please select both a restaurant and a rider.");
+    if (!orderId || actionLoading) {
+      setActionError("Order is not available.");
       return;
     }
     setActionError(null);
@@ -839,8 +704,8 @@ const OrderView = () => {
 
       await masterConfirmOrder({
         orderId,
-        restaurantUid: selectedRestaurantId,
-        riderId: selectedRiderId,
+        restaurantUid: completeOrderDetails.Restaurant.ownerId,
+        riderId: selectedRiderId || undefined,
         deliveryCharge: chargeAmount,
       });
 
@@ -937,11 +802,6 @@ const OrderView = () => {
     showAssignForm: canAssignRider,
     assignedRiderLabel: assignedRiderName,
     onAssign: handleAssignRider,
-    showAssignRestaurantForm: canAssignRestaurant,
-    restaurants,
-    selectedRestaurantId,
-    setSelectedRestaurantId,
-    onAssignRestaurant: handleAssignRestaurant,
     showUnifiedMasterConfirm,
     deliveryCharge,
     setDeliveryCharge,
@@ -1071,6 +931,9 @@ const OrderView = () => {
           )}
         </div>
       </header>
+      <div className="mt-6">
+      <OrderPayment key={`${orderId}-${completeOrderDetails.Amount}-${completeOrderDetails.paymentMethod}`} order={completeOrderDetails} />
+      </div>
 
       {actionError && (
         <div className="mt-4">
@@ -1496,7 +1359,8 @@ const OrderView = () => {
                     Updates to Delivered after successful delivery.
                   </p>
                 ) : null}
-                {nextLabel && nextStatus && (
+                {!nextStatus && nextHint && <p className="text-sm text-ink-muted">{nextHint}</p>}
+      {nextLabel && nextStatus && (
                   <button
                     type="button"
                     className="btn-success flex-1 py-3 text-base shadow-md"

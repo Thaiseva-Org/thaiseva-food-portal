@@ -38,7 +38,6 @@ const EditItem = () => {
   const [formError, setFormError] = useState(null);
   const [formSuccess, setFormSuccess] = useState(null);
   const [cuisine, setCuisine] = useState("");
-  const [assignedRestaurants, setAssignedRestaurants] = useState([]);
 
   useEffect(() => {
     document.title = "Thaiseva | Edit menu item";
@@ -59,7 +58,6 @@ const EditItem = () => {
           setActive(Boolean(data.active));
           setImage(data.imageUrl || null);
           setCuisine(data.cuisine || "");
-          setAssignedRestaurants(Array.isArray(data.assignedRestaurants) ? data.assignedRestaurants : []);
         } else {
           setFormError("No such item exists.");
         }
@@ -187,11 +185,6 @@ const EditItem = () => {
         description: String(description).trim(),
         imageUrl,
         active,
-        assignedRestaurants,
-        restaurantStatus: assignedRestaurants.reduce((acc, uid) => {
-          acc[uid] = { active: true };
-          return acc;
-        }, {}),
       });
 
       setFormSuccess("Item updated successfully.");
@@ -239,8 +232,6 @@ const EditItem = () => {
       setActive={setActive}
       cuisine={cuisine}
       setCuisine={setCuisine}
-      assignedRestaurants={assignedRestaurants}
-      setAssignedRestaurants={setAssignedRestaurants}
     />
   );
 };

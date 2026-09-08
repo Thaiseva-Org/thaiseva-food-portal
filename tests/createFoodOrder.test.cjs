@@ -1,7 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { createFoodOrder } = require("../functions/src/lib/orders");
-const { HttpsError } = require("firebase-functions/v2/https");
+const fs = require("node:fs");
+const path = require("node:path");
 
 test("createFoodOrder throws unauthenticated if no caller uid", async () => {
   try {
@@ -19,4 +20,16 @@ test("createFoodOrder throws if missing restaurant ownerId", async () => {
   } catch (err) {
     assert.strictEqual(err.code, "invalid-argument");
   }
+});
+
+test("restaurant-specific checkout snapshots and returns the selected restaurant", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../functions/src/lib/orders.js"),
+    "utf8"
+  );
+
+  assert.match(source, /food_items.*doc\(root\).*collection\("items"\)/s);
+  assert.match(source, /Restaurant: restaurantSnapshot/);
+  assert.match(source, /restaurant: restaurantSnapshot/);
+  assert.match(source, /amount: Number\(prior\.foodSubtotal \?\? prior\.Amount\)/);
 });

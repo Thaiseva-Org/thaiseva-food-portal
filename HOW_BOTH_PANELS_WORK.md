@@ -10,7 +10,7 @@ Master Admin runs the food platform across all restaurants.
 - Restaurant Requests: review applications and set commission.
 - Restaurant Monitor: inspect one restaurant's profile, orders, and finance.
 - Our Kitchen / Our Orders: operate Thaiseva's in-house kitchen.
-- Orders: manage partner-shop orders and assign riders.
+- Orders: confirm or cancel routed partner orders, assign riders, dispatch, and confirm delivery.
 - Riders: manage couriers and inspect completed or active work.
 - Records: invoices, payouts, and payment clearing.
 - Restaurant Chat: talk directly with restaurant partners.
@@ -22,7 +22,7 @@ Restaurant Partner runs one verified shop.
 - Dashboard: order totals, customers, charts, and notifications.
 - My Restaurant: public profile, operating hours, and open/closed state.
 - Menu: add, edit, hide, and remove dishes.
-- Orders: confirm and prepare kitchen tickets.
+- Orders: receive routed orders, wait for Master Admin confirmation, then manage preparation and pickup readiness.
 - Restaurant Chat: talk with Thaiseva support.
 
 Unverified partners can view their application state but cannot use operational pages.
@@ -47,7 +47,7 @@ New Order
   -> Delivered
 ```
 
-The restaurant moves kitchen steps. Master Admin assigns a rider when an order is ready and confirms delivery. Commission and payout accounting use the rate stamped on the delivered order.
+The customer selects a restaurant menu, so the order is routed to that restaurant immediately and cannot be reassigned. Master Admin confirms the order. The restaurant moves it through Preparing and Ready for pickup. Master Admin assigns the rider, confirms dispatch, and confirms delivery. Commission and payout accounting use the rate stamped on the order.
 
 ## Restaurant chat
 
@@ -85,3 +85,6 @@ Messages live in `chats/{uid}_CustomerSupport`. Master Admin sees only restauran
 | `/partner/restaurantChat` | Restaurant Chat |
 | `/onboarding` | Authenticated partner application |
 | `/apply` | Public partner application |
+
+---
+*Created and Maintained by Omnifex.*

@@ -1,3 +1,4 @@
+import { memo, useEffect, useState } from "react";
 import { SORT_OPTIONS } from "./menuUtils";
 
 const chipBase =
@@ -15,8 +16,23 @@ const MenuToolbar = ({
   hasActiveFilters,
   onClear,
 }) => {
+  const [localSearch, setLocalSearch] = useState(filters.searchQuery || "");
+
+  useEffect(() => {
+    setLocalSearch(filters.searchQuery || "");
+  }, [filters.searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== (filters.searchQuery || "")) {
+        onChange({ ...filters, searchQuery: localSearch });
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [localSearch, filters, onChange]);
+
   const set = (patch) => onChange({ ...filters, ...patch });
-  const hasSearch = Boolean((filters.searchQuery || "").trim());
+  const hasSearch = Boolean(localSearch.trim());
 
   return (
     <div className="panel space-y-4">
@@ -28,8 +44,8 @@ const MenuToolbar = ({
           />
           <input
             type="search"
-            value={filters.searchQuery}
-            onChange={(e) => set({ searchQuery: e.target.value })}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             placeholder="Search name, ID, category, cuisine, description…"
             className={`modern-input !pl-10 ${hasSearch ? "!pr-10" : ""}`}
             aria-label="Search menu items"
@@ -38,7 +54,10 @@ const MenuToolbar = ({
             <button
               type="button"
               className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-ink-muted hover:bg-neutral-100 hover:text-ink focus-ring"
-              onClick={() => set({ searchQuery: "" })}
+              onClick={() => {
+                setLocalSearch("");
+                set({ searchQuery: "" });
+              }}
               aria-label="Clear search"
             >
               <i className="bi bi-x-lg text-sm" aria-hidden="true" />
@@ -222,4 +241,4 @@ const MenuToolbar = ({
   );
 };
 
-export default MenuToolbar;
+export default memo(MenuToolbar);

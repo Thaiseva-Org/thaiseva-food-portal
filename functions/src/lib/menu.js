@@ -7,9 +7,17 @@ const {
   PLATFORM_OWNER_ID,
 } = require("./restaurants");
 
-function tenantRoot(caller, ownerUid) {
+async function tenantRoot(caller, ownerUid) {
   const target = ownerUid || caller.uid;
   assertTenantAccess(caller, target);
+  if (caller.role === "masterAdmin" && target !== PLATFORM_OWNER_ID) {
+    throw new HttpsError("permission-denied", "Partner menus are managed by their restaurant admin.");
+  }
+  if (target === PLATFORM_OWNER_ID && caller.role === "masterAdmin") await ensurePlatformRestaurant(caller, {});
+  const snap = await getFirestore().collection("restaurants").doc(target).get();
+  if (!snap.exists || snap.data().status !== "Verified") {
+    throw new HttpsError("failed-precondition", "A verified restaurant is required.");
+  }
   return target;
 }
 
@@ -45,11 +53,7 @@ function cleanOptionalImageUrl(value) {
 }
 
 async function createFoodItem(caller, payload) {
-  // Only Master Admins can create global dishes
-  if (caller.role !== "masterAdmin") {
-    throw new HttpsError("permission-denied", "Only Master Admins can create dishes.");
-  }
-  const ownerUid = PLATFORM_OWNER_ID; // Always store at platform root
+  const ownerUid = await tenantRoot(caller, payload?.ownerUid);
   const {
     itemName,
     price,
@@ -60,9 +64,7 @@ async function createFoodItem(caller, payload) {
     description,
     imageUrl = "",
     itemId: clientItemId,
-    assignedRestaurants = [],
-    restaurantStatus = {},
-    globalActive = true,
+    active = true,
   } = payload || {};
 
   if (!itemName || price == null || !category || !itemType || !description) {
@@ -81,7 +83,7 @@ async function createFoodItem(caller, payload) {
   }
 
   const itemId = normalizeItemId(clientItemId || generateItemId());
-  await ensurePlatformRestaurant(caller, {});
+
   
   const db = getFirestore();
   const ref = db
@@ -89,10 +91,6 @@ async function createFoodItem(caller, payload) {
     .doc(ownerUid)
     .collection("items")
     .doc(itemId);
-
-  const cleanAssigned = Array.isArray(assignedRestaurants) 
-    ? assignedRestaurants.map(id => String(id).trim()).filter(Boolean) 
-    : [];
 
   const doc = {
     itemName: cleanItemText(itemName, "itemName", 120),
@@ -104,14 +102,13 @@ async function createFoodItem(caller, payload) {
     itemType: cleanItemText(itemType, "itemType", 50),
     description: cleanItemText(description, "description", 2000),
     imageUrl: cleanOptionalImageUrl(imageUrl),
-    active: Boolean(globalActive),
-    assignedRestaurants: cleanAssigned,
-    restaurantStatus: restaurantStatus || {},
+    active: Boolean(active),
+    deleted: false,
     count: 0,
     earning: 0,
     ownerUid,
-    isPlatformOwned: true,
-    restaurantId: "THAISEVA",
+    isPlatformOwned: ownerUid === PLATFORM_OWNER_ID,
+    schemaVersion: 2,
     createdAt: FieldValue.serverTimestamp(),
     createdBy: caller.uid,
   };
@@ -139,11 +136,7 @@ async function createFoodItem(caller, payload) {
 }
 
 async function updateFoodItem(caller, payload) {
-  // Only Master Admins can update global dishes
-  if (caller.role !== "masterAdmin") {
-    throw new HttpsError("permission-denied", "Only Master Admins can edit global dishes.");
-  }
-  const ownerUid = PLATFORM_OWNER_ID;
+  const ownerUid = await tenantRoot(caller, payload?.ownerUid);
   const { itemId } = payload || {};
   if (!itemId) throw new HttpsError("invalid-argument", "itemId is required.");
 
@@ -160,7 +153,7 @@ async function updateFoodItem(caller, payload) {
   const updates = {};
   if (payload.itemName != null) updates.itemName = cleanItemText(payload.itemName, "itemName", 120);
   if (payload.category != null) updates.category = cleanItemText(payload.category, "category", 100);
-  if (payload.cuisine != null) updates.cuisine = cleanItemText(payload.cuisine, "cuisine", 100);
+  if (payload.cuisine != null) updates.cuisine = payload.cuisine ? cleanItemText(payload.cuisine, "cuisine", 100) : "";
   if (payload.itemType != null) updates.itemType = cleanItemText(payload.itemType, "itemType", 50);
   if (payload.description != null)
     updates.description = cleanItemText(payload.description, "description", 2000);
@@ -183,13 +176,6 @@ async function updateFoodItem(caller, payload) {
     updates.active = payload.active;
     if (payload.active === true) updates.deleted = false;
   }
-  if (payload.assignedRestaurants != null && Array.isArray(payload.assignedRestaurants)) {
-    updates.assignedRestaurants = payload.assignedRestaurants.map(id => String(id).trim()).filter(Boolean);
-  }
-  if (payload.restaurantStatus != null && typeof payload.restaurantStatus === "object") {
-    updates.restaurantStatus = payload.restaurantStatus;
-  }
-
   if (!Object.keys(updates).length) {
     throw new HttpsError("invalid-argument", "No fields to update.");
   }
@@ -211,48 +197,12 @@ async function updateFoodItem(caller, payload) {
 }
 
 async function setFoodItemActive(caller, { ownerUid, itemId, active }) {
-  if (caller.role === "masterAdmin" && ownerUid === PLATFORM_OWNER_ID) {
-    // Master Admin toggles the global item status
-    return updateFoodItem(caller, { ownerUid, itemId, active });
-  } else if (caller.role === "restaurantOwner" && caller.uid === ownerUid) {
-    // Restaurant Admin toggles their own nested availability for the global dish
-    if (!itemId) throw new HttpsError("invalid-argument", "itemId is required.");
-    const cleanId = normalizeItemId(itemId);
-    const db = getFirestore();
-    const ref = db
-      .collection("food_items")
-      .doc(PLATFORM_OWNER_ID)
-      .collection("items")
-      .doc(cleanId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new HttpsError("not-found", "Item not found.");
-    
-    const updates = {
-      [`restaurantStatus.${caller.uid}.active`]: Boolean(active),
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: caller.uid,
-    };
-
-    await ref.update(updates);
-    
-    await writeAuditLog({
-      actorUid: caller.uid,
-      actorRole: caller.role,
-      action: "menu.restaurant_status_update",
-      targetType: "food_item",
-      targetId: cleanId,
-      tenantId: PLATFORM_OWNER_ID,
-      after: { active },
-    });
-    
-    return { ownerUid: PLATFORM_OWNER_ID, itemId: cleanId, updated: ["restaurantStatus"] };
-  } else {
-    throw new HttpsError("permission-denied", "Tenant access denied.");
-  }
+  if (typeof active !== "boolean") throw new HttpsError("invalid-argument", "active must be boolean.");
+  return updateFoodItem(caller, { ownerUid, itemId, active });
 }
 
 async function deleteFoodItem(caller, { ownerUid, itemId }) {
-  const target = tenantRoot(caller, ownerUid);
+  const target = await tenantRoot(caller, ownerUid);
   if (!itemId) throw new HttpsError("invalid-argument", "itemId is required.");
   const cleanId = normalizeItemId(itemId);
   const db = getFirestore();

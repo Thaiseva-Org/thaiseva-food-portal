@@ -1,5 +1,5 @@
 import { Pagination } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
 import DataBoxes from "../../components/DataBoxes";
@@ -101,7 +101,8 @@ const ManageOrder = () => {
   };
 
   const sourceRows = isRealTime ? orders : orderDetailsRecord;
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
 
   const stats = useMemo(
     () => countOrdersByStatus(sourceRows || []),

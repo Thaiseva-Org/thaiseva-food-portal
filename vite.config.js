@@ -15,5 +15,17 @@ export default defineConfig({
     commonjsOptions: {
       include: [/react-apexcharts/, /apexcharts/, /node_modules/],
     },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('firebase')) return 'vendor_firebase';
+            if (id.includes('@mui') || id.includes('@emotion')) return 'vendor_mui';
+            if (id.includes('apexcharts')) return 'vendor_charts';
+            if (id.includes('react')) return 'vendor_react';
+          }
+        },
+      },
+    },
   },
 })

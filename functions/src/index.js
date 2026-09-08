@@ -1,5 +1,7 @@
+const { verifyOrderPayment } = require("./lib/orderPayments");
 const { initializeApp } = require("firebase-admin/app");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
 const {
@@ -29,7 +31,6 @@ const {
   transitionOrderStatus,
   markOrderDelivered,
   assignOrderRider,
-  assignOrderRestaurant,
   masterConfirmOrder,
   clearOrderPayment,
   createFoodOrder,
@@ -41,13 +42,27 @@ const {
   deleteFoodItem,
 } = require("./lib/menu");
 const {
+  createDineInBooking,
+  listMyDineInBookings,
+  getDineInBooking,
+  updateDineInBooking,
+  cancelDineInBooking,
+  setDineInBookingStatus,
+} = require("./lib/bookings");
+const {
   createFoodRider,
   updateFoodRider,
   setFoodRiderActive,
 } = require("./lib/riders");
+const { mirrorLegacyCustomerChat } = require("./lib/customerChats");
 
 initializeApp();
 setGlobalOptions({ region: "asia-southeast1", maxInstances: 20 });
+
+exports.mirrorFoodCustomerChat = onDocumentWritten(
+  "chats/{chatId}",
+  mirrorLegacyCustomerChat
+);
 
 function wrap(handler, { roles } = {}) {
   const enforceAppCheck =
@@ -181,19 +196,47 @@ exports.assignOrderRider = wrap(async (caller, data) => {
   return assignOrderRider(caller, data);
 });
 
-exports.assignOrderRestaurant = wrap(async (caller, data) => {
-  requireMaster(caller);
-  return assignOrderRestaurant(caller, data);
-});
-
 exports.masterConfirmOrder = wrap(async (caller, data) => {
   requireMaster(caller);
   return masterConfirmOrder(caller, data);
 });
 
+exports.verifyOrderPayment = wrap(async (caller, data) => {
+  requireMaster(caller);
+  return verifyOrderPayment(caller, data);
+});
+
 exports.clearOrderPayment = wrap(async (caller, data) => {
   requireMaster(caller);
   return clearOrderPayment(caller, data);
+});
+
+// Customer / app dine-in bookings
+exports.createDineInBooking = wrap(async (caller, data) => {
+  await enforceRateLimit(caller, "createDineInBooking", 10);
+  return createDineInBooking(caller, data);
+});
+
+exports.listMyDineInBookings = wrap(async (caller, data) => {
+  return listMyDineInBookings(caller, data);
+});
+
+exports.getDineInBooking = wrap(async (caller, data) => {
+  return getDineInBooking(caller, data);
+});
+
+exports.updateDineInBooking = wrap(async (caller, data) => {
+  await enforceRateLimit(caller, "updateDineInBooking", 20);
+  return updateDineInBooking(caller, data);
+});
+
+exports.cancelDineInBooking = wrap(async (caller, data) => {
+  return cancelDineInBooking(caller, data);
+});
+
+exports.setDineInBookingStatus = wrap(async (caller, data) => {
+  requireOwnerOrMaster(caller);
+  return setDineInBookingStatus(caller, data);
 });
 
 // ─── Menu ─────────────────────────────────────────────────

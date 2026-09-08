@@ -14,7 +14,7 @@ const MenuItemDetail = ({
   onToggleActive,
   onDelete,
   busyId,
-  isMasterAdmin,
+  canManageMenu,
 }) => {
   const closeRef = useRef(null);
   const isBusy = busyId === getItemKey(item);
@@ -102,13 +102,13 @@ const MenuItemDetail = ({
                 {item.itemType}
               </span>
             )}
-            {isMasterAdmin && discount > 0 && (
+            {canManageMenu && discount > 0 && (
               <span className="badge-warning">{discount}% discount</span>
             )}
           </div>
 
           <div>
-            {isMasterAdmin && (
+            {canManageMenu && (
               <>
                 {discount > 0 ? (
                   <div className="flex flex-wrap items-baseline gap-2">
@@ -148,7 +148,7 @@ const MenuItemDetail = ({
           )}
 
           <div className="flex flex-col gap-2 border-t border-neutral-100 pt-4 sm:flex-row sm:flex-wrap">
-            {isMasterAdmin && (
+            {canManageMenu && (
               <button
                 type="button"
                 className="btn-primary flex-1 !min-h-11"
@@ -170,7 +170,7 @@ const MenuItemDetail = ({
                   ? "Deactivate"
                   : "Activate"}
             </button>
-            {isMasterAdmin && (
+            {canManageMenu && (
               <button
                 type="button"
                 disabled={isBusy}

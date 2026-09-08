@@ -1,163 +1,97 @@
-# ThaiSeva Food Portal — Menu System Architecture & User App Technical Guide
+# ThaiSeva restaurant menu contract
 
-## Overview
-This document provides the canonical technical reference for how **Menu Data** is stored, managed, assigned, and accessed by the **User App (Customer App)** in the ThaiSeva Food Portal platform.
+This is the customer-app contract for menu schema version 2.
 
----
+## Ownership
 
-## 1. Single Centralized Menu Catalog Architecture
+Every restaurant owns an independent menu at:
 
-The platform operates on a **Single Centralized Master Catalog** model. All dishes across all restaurants are maintained in a single master collection in Cloud Firestore:
-
-```
-food_items / thaiseva-platform / items / {itemId}
+```text
+food_items/{restaurantOwnerUid}/items/{itemId}
 ```
 
-```
-+-----------------------------------------------------------------------+
-|                 Cloud Firestore Master Collection                      |
-|               food_items/thaiseva-platform/items/{itemId}             |
-+-----------------------------------------------------------------------+
-                                   |
-         +-------------------------+-------------------------+
-         |                                                   |
-         v                                                   v
-+-----------------------------------+               +-----------------------------------+
-|  Assigned to Restaurant A         |               |  Assigned to Restaurant B         |
-|  assignedRestaurants: ["rest_A"]  |               |  assignedRestaurants: ["rest_B"]  |
-|  restaurantStatus.rest_A: active  |               |  restaurantStatus.rest_B: hidden  |
-+-----------------------------------+               +-----------------------------------+
-```
+The restaurant owner UID is the document ID in `restaurants/{restaurantOwnerUid}` and the value stored in `orders/{orderId}.Restaurant.ownerId`. Public restaurant IDs are display values and must not be used as menu roots.
 
-### Key Architectural Rules
-1. **No Duplicate Catalog Collections**: Dishes are stored once under `food_items/thaiseva-platform/items`. Partner restaurants do not create separate catalog databases.
-2. **Platform Master Ownership**: Master Admins manage base dishes, global active flags (`active`), and restaurant assignments (`assignedRestaurants`).
-3. **Store-Level Availability**: Partner restaurants toggle local availability using `restaurantStatus[restaurantUid].active`.
+Restaurant admins create, edit, activate, deactivate, import, and archive only their own items. Master Admin does not assign shared dishes to partner restaurants. New items do not contain `assignedRestaurants` or `restaurantStatus`.
 
----
+## Menu item schema
 
-## 2. Complete Firestore Data Schema
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `itemId` | string | Display ID with `#` prefix; Firestore document ID omits it |
+| `ownerUid` | string | Canonical restaurant owner UID |
+| `schemaVersion` | number | `2` for independently owned items |
+| `itemName` | string | Customer-facing name |
+| `price` | number | Base THB price |
+| `discount` | number | Percentage from 0 through 100 |
+| `category`, `itemType`, `description` | string | Required menu metadata |
+| `cuisine`, `imageUrl` | string | Optional metadata |
+| `active` | boolean | Whether customers may order the item |
+| `deleted` | boolean | Soft-delete marker |
+| `count`, `earning` | number | Server-maintained delivered sales totals |
 
-| Field Name | Type | Required | Description & Constraints |
-| :--- | :--- | :--- | :--- |
-| `itemId` | `String` | Yes | Unique ID string prefixed with `#` (e.g., `"#pad-thai-01"` or `"#1"`). |
-| `itemName` | `String` | Yes | Title of the dish shown to customers. |
-| `price` | `Number` | Yes | Base price in Thai Baht (THB ฿). |
-| `discount` | `Number` | No | Percentage discount applied (`0`–`100`). |
-| `category` | `String` | Yes | UI section category (e.g. `"Appetizers"`, `"Main Course"`, `"Dessert"`). |
-| `itemType` | `String` | Yes | Dietary classification (`"Veg"`, `"Non-Veg"`, `"Vegan"`, `"Beverage"`). |
-| `cuisine` | `String` | No | Regional culinary tag (e.g. `"Thai"`, `"Asian"`). |
-| `description` | `String` | Yes | Dish details and ingredients. Max 2000 chars. |
-| `imageUrl` | `String` | No | HTTPS link to dish photo. |
-| `active` | `Boolean` | Yes | Master Admin global live/hidden toggle. |
-| `assignedRestaurants` | `Array<String>` | Yes | Array of restaurant UIDs (`ownerUid`) authorized to sell item. |
-| `restaurantStatus` | `Map<String, Object>` | No | Store overrides: `{ [restaurantUid]: { active: boolean } }`. |
-| `count` | `Number` | System | Lifetime units sold (auto-incremented on order delivery). |
-| `earning` | `Number` | System | Lifetime revenue generated (auto-incremented on order delivery). |
-
----
-
-## 3. How the User App Accesses & Renders the Menu
-
-### 3.1 Fetching & Filtering Logic
-To display the menu for a restaurant (or global kitchen) in the User App:
-1. Query `food_items/thaiseva-platform/items`.
-2. Filter for items where `assignedRestaurants` includes the target restaurant's `ownerUid`.
-3. Filter out deleted (`deleted === true`) or inactive items:
-   $$\text{EffectiveActive} = \text{restaurantStatus}[\text{restaurantUid}]?.\text{active} \mathbin{??} \text{item}.\text{active}$$
-
-### 3.2 JavaScript / React Service Implementation (`menuService.js`)
+Customer apps read a selected restaurant's `items` subcollection and show only documents where `active == true` and `deleted == false`. Firestore rules also hide draft and archived item documents from customers. A restaurant admin can read all documents in its own menu.
 
 ```javascript
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../firebaseConfig";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
-export const PLATFORM_OWNER_ID = "thaiseva-platform";
-
-/**
- * Fetches the single menu catalog for the User App.
- * @param {string} restaurantUid - Target restaurant UID
- * @returns {Promise<Array>} List of active menu items
- */
-export async function fetchUserAppMenu(restaurantUid) {
-  const foodItemsRef = collection(db, `food_items/${PLATFORM_OWNER_ID}/items`);
-  const snapshot = await getDocs(foodItemsRef);
-
+export async function fetchRestaurantMenu(db, restaurantOwnerUid) {
+  const snapshot = await getDocs(query(
+    collection(db, `food_items/${restaurantOwnerUid}/items`),
+    where("active", "==", true),
+    where("deleted", "==", false)
+  ));
   return snapshot.docs
-    .map((docSnap) => {
-      const data = docSnap.data();
-      const id = docSnap.id;
-
-      // Check store-specific active override
-      const storeStatus = data.restaurantStatus?.[restaurantUid];
-      const isLocallyActive = storeStatus?.active ?? data.active;
-
-      // Calculate sale price after discount
-      const basePrice = Number(data.price) || 0;
-      const discountPct = Number(data.discount) || 0;
-      const salePrice = discountPct > 0 
-        ? Math.round(basePrice * (1 - discountPct / 100) * 100) / 100 
-        : basePrice;
-
-      return {
-        id,
-        displayId: data.itemId || `#${id}`,
-        itemName: data.itemName || "Untitled Item",
-        price: basePrice,
-        discount: discountPct,
-        salePrice,
-        category: (data.category || "Uncategorized").trim(),
-        itemType: data.itemType || "Veg",
-        cuisine: data.cuisine || "",
-        description: data.description || "",
-        imageUrl: data.imageUrl || "",
-        active: Boolean(isLocallyActive),
-        assignedRestaurants: Array.isArray(data.assignedRestaurants) ? data.assignedRestaurants : [],
-        deleted: Boolean(data.deleted),
-      };
-    })
-    .filter((item) => {
-      if (item.deleted || !item.active) return false;
-      if (restaurantUid && restaurantUid !== PLATFORM_OWNER_ID) {
-        return item.assignedRestaurants.includes(restaurantUid);
-      }
-      return true;
-    });
+    .map((entry) => ({ id: entry.id, ...entry.data() }))
+    .filter((item) => item.active === true && item.deleted !== true);
 }
 ```
 
----
+## Cart and checkout
 
-## 4. Price & Discount Formulas
-
-$$\text{Sale Price} = \text{Math.round}\left(\text{Base Price} \times \left(1 - \frac{\text{Discount \%}}{100}\right) \times 100\right) / 100$$
-
-* **Base Price**: ฿ 200.00
-* **Discount**: 15% OFF
-* **Customer Sale Price**: ฿ 170.00
-
----
-
-## 5. Server-Side Security & Order Verification
-
-When a customer places an order, the User App sends item IDs and quantities to Cloud Functions:
+A cart belongs to one `restaurantOwnerUid`. Clear or split the cart when the customer changes restaurants. Send only item IDs and quantities for that restaurant; client prices and delivery fees are ignored.
 
 ```json
 {
-  "Items": [
-    { "ItemId": "#pad-thai-01", "Quantity": 2 }
-  ],
-  "Restaurant": { "ownerId": "target_restaurant_uid" }
+  "Restaurant": { "ownerId": "restaurant_owner_uid" },
+  "Items": [{ "ItemId": "pad-thai-01", "Quantity": 2 }],
+  "Receiver": {
+    "name": "Customer",
+    "phoneNumber": "+66812345678",
+    "address": "Delivery address"
+  },
+  "paymentMethod": "Cash on Delivery",
+  "idempotencyKey": "one-random-key-per-checkout"
 }
 ```
 
-* **Server Validation**: `prepareVerifiedAccounting` in `functions/src/lib/orders.js` reads `#pad-thai-01` from `food_items/thaiseva-platform/items/#pad-thai-01` to re-verify prices inside a Firestore transaction. Client-submitted prices are never blindly trusted.
-* **Stats Auto-Increment**: Upon order delivery (`markOrderDelivered`), item `count` (quantity sold) and `earning` (revenue) are incremented automatically.
+`createFoodOrder` verifies the restaurant is verified, active, and accepting orders. It reads each item only from that restaurant's menu, validates availability, recalculates the subtotal, fixes the restaurant on the order, and creates it as `New Order`. It stores immutable item prices, discounts, line totals, and menu paths. Later menu edits do not reprice the order.
 
----
+The same authenticated customer may safely retry the identical request with the same idempotency key. A changed cart needs a new key. Keys are scoped by customer, so two customers cannot collide.
 
-## 6. Bulk CSV Import / Export Specification
+## Workflow ownership
 
-Master Admins manage high-volume dishes using CSV bulk tools (`src/restaurantAdmin/pages/menu/CsvImportModal.jsx`):
-* **Template Headers**: `itemId,itemName,price,discount,category,itemType,cuisine,description,Assign: Restaurant A,Assign: Restaurant B`
-* **Import Rules**: New items are imported as `active: false` so admins can upload photos before making dishes public.
+```text
+New Order                 Master Admin confirms or cancels
+Order Confirm             Restaurant starts preparing
+Preparing                 Restaurant marks ready
+Ready for pickup          Master Admin assigns rider and confirms dispatch
+Out for Delivery          Master Admin confirms delivery
+Delivered / Cancelled     Terminal
+```
+
+The restaurant is never changed after checkout. Master Admin may assign a rider during confirmation or any time before dispatch. Dispatch requires an active assigned rider. Only Master Admin confirms delivery; delivery accounting is idempotent.
+
+## CSV
+
+Restaurant menu CSV headers are:
+
+```text
+itemId,itemName,price,discount,category,itemType,cuisine,description
+```
+
+Imports run in the current restaurant's scope. New imported items are inactive drafts.
+
+## Legacy data
+
+The old `food_items/thaiseva-platform/items` assignment model remains readable only for completing historical orders and migration. New checkouts never fall back to it. Use `npm run migrate:restaurant-menus` for a dry-run migration report and add `-- --apply` only after reviewing that report.

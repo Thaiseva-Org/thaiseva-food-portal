@@ -28,6 +28,7 @@ function fieldSignature(index) {
 // Production console inventory (field paths). Keep all of these forever unless
 // multi-app owners explicitly retire an index.
 const REQUIRED_FIELD_SIGNATURES = [
+  "dineInBookings::ownerId|bookingTimestamp",
   "car_bookings::driverId|bookingStatus",
   "car_bookings::vehicleId|bookingStatus",
   "car_bookings::status|timestamp",
@@ -69,6 +70,7 @@ test("all production multi-app indexes remain (do not delete on deploy)", () => 
 test("food portal indexes are present", () => {
   const present = new Set(indexesDoc.indexes.map(fieldSignature));
   assert.ok(present.has("orders::Restaurant.ownerId|timestamp"));
+  assert.ok(present.has("dineInBookings::ownerId|bookingTimestamp"));
 });
 
 test("no duplicate field signatures", () => {

@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { resolveOrderAccounting } from "../utils/commission";
-import { mapOrderDoc } from "./GetOrders";
+import { mapOrderDoc, mapReservationDoc } from "./GetOrders";
 
 const PAGE_SIZE = 10;
 const AGGREGATE_PAGE_SIZE = 10;
@@ -105,6 +105,19 @@ export async function fetchMenuCounts(ownerId) {
     available,
     unavailable: Math.max(0, total - available),
   };
+}
+
+export async function fetchReservationCount(ownerId, startDate, endDate) {
+  const { start, end } = toDayBounds(startDate, endDate);
+  const reservationQuery = query(
+    collection(db, "dineInBookings"),
+    where("ownerId", "==", ownerId),
+    where("bookingTimestamp", ">=", start),
+    where("bookingTimestamp", "<=", end),
+    orderBy("bookingTimestamp", "desc")
+  );
+  const snapshot = await getCountFromServer(reservationQuery);
+  return snapshot.data().count;
 }
 
 export async function aggregateDeliveredAccounting({
@@ -232,6 +245,21 @@ export function subscribeRestaurantOrders(ownerId, onChange, onError) {
   return onSnapshot(
     q,
     (snapshot) => onChange(snapshot.docs.map(mapOrderDoc)),
+    (error) => onError?.(error)
+  );
+}
+
+export function subscribeRestaurantReservations(ownerId, onChange, onError) {
+  const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const reservationQuery = query(
+    collection(db, "dineInBookings"),
+    where("ownerId", "==", ownerId),
+    where("bookingTimestamp", ">=", last24Hours),
+    orderBy("bookingTimestamp", "desc")
+  );
+  return onSnapshot(
+    reservationQuery,
+    (snapshot) => onChange(snapshot.docs.map(mapReservationDoc)),
     (error) => onError?.(error)
   );
 }

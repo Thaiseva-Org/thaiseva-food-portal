@@ -1,3 +1,4 @@
+import { memo } from "react";
 import StatusBadge from "../../../components/StatusBadge";
 import {
   formatPrice,
@@ -6,18 +7,18 @@ import {
   getSalePrice,
 } from "./menuUtils";
 
-const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin }) => {
+const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, canManageMenu }) => {
   if (!items.length) return null;
 
   return (
     <div className="modern-card overflow-hidden">
-      <div className={`hidden border-b border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted lg:grid ${isMasterAdmin ? "lg:grid-cols-12" : "lg:grid-cols-10"} lg:gap-3`}>
+      <div className={`hidden border-b border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted lg:grid ${canManageMenu ? "lg:grid-cols-12" : "lg:grid-cols-10"} lg:gap-3`}>
         <div className="col-span-4">Dish</div>
         <div className="col-span-2">Category</div>
         <div className="col-span-1">Type</div>
-        {isMasterAdmin && <div className="col-span-1">Price</div>}
+        {canManageMenu && <div className="col-span-1">Price</div>}
         <div className="col-span-1">Status</div>
-        {isMasterAdmin && <div className="col-span-1">Sales</div>}
+        {canManageMenu && <div className="col-span-1">Sales</div>}
         <div className="col-span-2 text-right">Actions</div>
       </div>
 
@@ -33,7 +34,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin
           return (
             <li
               key={key}
-              className={`grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-neutral-50/80 lg:grid ${isMasterAdmin ? "lg:grid-cols-12" : "lg:grid-cols-10"} lg:items-center lg:gap-3 ${
+              className={`grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-neutral-50/80 lg:grid ${canManageMenu ? "lg:grid-cols-12" : "lg:grid-cols-10"} lg:items-center lg:gap-3 ${
                 inactive ? "bg-neutral-50/50 opacity-90" : ""
               }`}
             >
@@ -71,7 +72,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin
                   </button>
                   <p className="truncate text-xs text-ink-muted">
                     {item.itemId || item.id}
-                    {isMasterAdmin && discount > 0 ? ` · ${discount}% off` : ""}
+                    {canManageMenu && discount > 0 ? ` · ${discount}% off` : ""}
                   </p>
                 </div>
               </div>
@@ -94,7 +95,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin
                 </span>
               </div>
 
-              {isMasterAdmin && (
+              {canManageMenu && (
                 <div className="flex items-center justify-between gap-2 text-sm lg:col-span-1 lg:block">
                   <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
                     Price
@@ -123,7 +124,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin
                 <StatusBadge status={item.active ? "Active" : "Inactive"} />
               </div>
 
-              {isMasterAdmin && (
+              {canManageMenu && (
                 <div className="flex items-center justify-between gap-2 text-sm lg:col-span-1 lg:block">
                   <span className="text-xs font-semibold uppercase text-ink-muted lg:hidden">
                     Sales
@@ -142,7 +143,7 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin
                 >
                   View
                 </button>
-                {isMasterAdmin && (
+                {canManageMenu && (
                   <button
                     type="button"
                     className="btn-outline !min-h-9 !px-2.5 !py-1.5 text-xs"
@@ -170,4 +171,4 @@ const MenuList = ({ items, onView, onEdit, onToggleActive, busyId, isMasterAdmin
   );
 };
 
-export default MenuList;
+export default memo(MenuList);

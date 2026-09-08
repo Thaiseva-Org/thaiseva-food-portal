@@ -105,8 +105,8 @@ service firebase.storage {
 
     match /restaurants/{restaurantId}/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin() || isFoodAdmin() || isRestaurantAdmin() ||
-        (isAuthenticated() && request.auth.uid == restaurantId && underMaxSize(15 * 1024 * 1024));
+      allow write: if ((isFoodAdmin() && restaurantId == "thaiseva-platform") ||
+        (isAuthenticated() && request.auth.uid == restaurantId)) && isImage() && underMaxSize(15 * 1024 * 1024);
     }
 
     // Allow unauthenticated public uploads for restaurant applications

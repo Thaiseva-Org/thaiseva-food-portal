@@ -14,12 +14,12 @@ export function getOwnerUid({ currentUser, roleData, resData } = {}) {
 }
 
 /**
- * Menu collection path root. Prefer owner UID; fall back to legacy public restaurantId.
+ * Menu collection path root. Use owner UID only; public restaurant IDs are display-only.
  */
 export function getMenuRootId({ currentUser, roleData, resData } = {}) {
   const ownerUid = getOwnerUid({ currentUser, roleData, resData });
   if (ownerUid) return ownerUid;
-  return roleData?.restaurantId || resData?.id || null;
+  return null;
 }
 
 export function getGoogleMapsApiKey() {

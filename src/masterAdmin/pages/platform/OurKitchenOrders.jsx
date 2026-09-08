@@ -214,12 +214,15 @@ const OurKitchenOrders = () => {
 
   const handleCancel = async (orderId) => {
     if (busyId) return;
+    const reason = window.prompt("Reason for cancellation:");
+    if (!reason?.trim()) return;
     setActionError(null);
     setBusyId(orderId);
     try {
       await transitionOrderStatus({
         orderId,
         toStatus: ORDER_STATUS.CANCELLED,
+        reason,
       });
       if (!isRealTime) setRefetch((p) => !p);
     } catch (err) {

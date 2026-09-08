@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { NavLink } from "react-router";
 import { Logo } from "../../assets";
 import SpaceDashboardRoundedIcon from "@mui/icons-material/SpaceDashboardRounded";
@@ -8,23 +9,42 @@ import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import TwoWheelerRoundedIcon from "@mui/icons-material/TwoWheelerRounded";
 import RestaurantMenuRoundedIcon from "@mui/icons-material/RestaurantMenuRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
+import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
+import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import NavBadge from "../../components/NavBadge";
 import { useOrders } from "../../context/OrdersProvider";
 import { usePendingRequestCount } from "../../hooks/usePendingRequestCount";
 import { ORDER_STATUS } from "../../utils/orderStatus";
 import { hasAssignedRider } from "../../utils/orderRider";
 import { useRestaurantChatCount } from "../../hooks/useRestaurantChatCount";
+import { useBookings } from "../../context/BookingsProvider";
+import { normalizeBookingStatus } from "../../utils/bookingStatus";
+import { useCustomerChatCount } from "../../hooks/useCustomerChatCount";
 
 const MasterSidebar = ({ show, toggle }) => {
   const { orders } = useOrders() || {};
   const pendingRequests = usePendingRequestCount();
   const restaurantChatCount = useRestaurantChatCount();
-  const pendingOrders = (orders || []).filter(
-    (row) =>
-      row.Status === ORDER_STATUS.OUT ||
-      row.Status === ORDER_STATUS.NEW ||
-      (row.Status === ORDER_STATUS.READY && !hasAssignedRider(row))
-  ).length;
+  const customerChatCount = useCustomerChatCount();
+  const { bookings } = useBookings() || {};
+
+  const pendingOrders = useMemo(
+    () =>
+      (orders || []).filter(
+        (row) =>
+          row.Status === ORDER_STATUS.OUT ||
+          row.Status === ORDER_STATUS.NEW ||
+          (row.Status === ORDER_STATUS.READY && !hasAssignedRider(row))
+      ).length,
+    [orders]
+  );
+  const pendingBookings = useMemo(
+    () =>
+      (bookings || []).filter(
+        (row) => normalizeBookingStatus(row.status) === "pending"
+      ).length,
+    [bookings]
+  );
 
   const links = [
     {
@@ -57,6 +77,14 @@ const MasterSidebar = ({ show, toggle }) => {
       badgeTone: "danger",
     },
     {
+      icon: <TableRestaurantRoundedIcon fontSize="small" />,
+      label: "Table Reservations",
+      to: "tableReservation",
+      path: "/foodAdmin/tableReservation",
+      badge: pendingBookings,
+      badgeTone: "warning",
+    },
+    {
       icon: <TwoWheelerRoundedIcon fontSize="small" />,
       label: "Riders",
       to: "riders",
@@ -74,6 +102,14 @@ const MasterSidebar = ({ show, toggle }) => {
       to: "restaurantChat",
       path: "/foodAdmin/restaurantChat",
       badge: restaurantChatCount,
+      badgeTone: "danger",
+    },
+    {
+      icon: <PeopleAltRoundedIcon fontSize="small" />,
+      label: "Customer Chat",
+      to: "customerChat",
+      path: "/foodAdmin/customerChat",
+      badge: customerChatCount,
       badgeTone: "danger",
     },
     {
@@ -145,4 +181,4 @@ const MasterSidebar = ({ show, toggle }) => {
   );
 };
 
-export default MasterSidebar;
+export default memo(MasterSidebar);

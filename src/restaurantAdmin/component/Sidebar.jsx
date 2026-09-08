@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { NavLink } from "react-router";
 import { Logo } from "../../assets";
 import SpaceDashboardRoundedIcon from "@mui/icons-material/SpaceDashboardRounded";
@@ -6,19 +7,32 @@ import FastfoodRoundedIcon from "@mui/icons-material/FastfoodRounded";
 import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
+import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
 import { useAuth } from "../../AuthContext";
 import NavBadge from "../../components/NavBadge";
 import { useOrders } from "../../context/OrdersProvider";
+import { useBookings } from "../../context/BookingsProvider";
+import { normalizeBookingStatus } from "../../utils/bookingStatus";
 import { ORDER_STATUS } from "../../utils/orderStatus";
 import { PARTNER_BASE, partnerPath } from "../../utils/partnerRoutes";
 
 const Sidebar = ({ show, toggle }) => {
   const { isRestaurantAdmin, onboardingPhase } = useAuth();
   const { orders } = useOrders() || {};
+  const { bookings } = useBookings() || {};
   const verified = isRestaurantAdmin || onboardingPhase === "complete";
-  const newOrders = (orders || []).filter(
-    (row) => row.Status === ORDER_STATUS.NEW
-  ).length;
+
+  const newOrders = useMemo(
+    () => (orders || []).filter((row) => row.Status === ORDER_STATUS.NEW).length,
+    [orders]
+  );
+  const pendingBookings = useMemo(
+    () =>
+      (bookings || []).filter(
+        (row) => normalizeBookingStatus(row.status) === "pending"
+      ).length,
+    [bookings]
+  );
 
   const mainLinks = [
     {
@@ -50,6 +64,14 @@ const Sidebar = ({ show, toggle }) => {
   ].filter((item) => !item.requiresVerified || verified);
 
   const bottomLinks = [
+    {
+      icon: <TableRestaurantRoundedIcon fontSize="small" />,
+      label: "Table Reservations",
+      to: partnerPath("tableReservation"),
+      requiresVerified: true,
+      badge: pendingBookings,
+      badgeTone: "warning",
+    },
     {
       icon: <ChatRoundedIcon fontSize="small" />,
       label: "Restaurant Chat",
@@ -143,4 +165,4 @@ const Sidebar = ({ show, toggle }) => {
   );
 };
 
-export default Sidebar;
+export default memo(Sidebar);

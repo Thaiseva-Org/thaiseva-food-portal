@@ -8,6 +8,7 @@ import RestaurantMonitorHeader from "./components/RestaurantMonitorHeader";
 import { RestaurantStatsProvider } from "./components/RestaurantContext";
 
 function bannerTone(pathname) {
+  if (pathname.includes("/reservations")) return "reservations";
   if (pathname.includes("/orders")) return "orders";
   if (pathname.includes("/finance")) return "finance";
   return "manage";
