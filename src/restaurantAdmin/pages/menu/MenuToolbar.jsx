@@ -12,6 +12,7 @@ const MenuToolbar = ({
   onChange,
   categories,
   cuisines,
+  restaurants,
   resultCount,
   hasActiveFilters,
   onClear,
@@ -115,7 +116,27 @@ const MenuToolbar = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 min-w-0">
+      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 min-w-0 ${restaurants?.length > 0 ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}>
+        {restaurants && restaurants.length > 0 && (
+          <label className="block min-w-0">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Restaurant
+            </span>
+            <select
+              className="modern-select"
+              value={filters.restaurantId || "all"}
+              onChange={(e) => set({ restaurantId: e.target.value })}
+            >
+              <option value="all">All restaurants</option>
+              {restaurants.map((r) => (
+                <option key={r.ownerId} value={r.ownerId}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label className="block min-w-0">
           <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Status

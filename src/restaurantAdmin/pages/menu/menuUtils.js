@@ -15,6 +15,7 @@ export const DEFAULT_FILTERS = {
   category: "all",
   itemType: "all",
   cuisine: "all",
+  restaurantId: "all",
   hasDiscount: false,
   hasPhoto: false,
   sortBy: "name",
@@ -102,6 +103,12 @@ export function filterMenuItems(items, filters) {
     }
     if (filters.cuisine !== "all" && item.cuisine !== filters.cuisine) {
       return false;
+    }
+    if (filters.restaurantId !== "all") {
+      const assigned = Array.isArray(item.assignedRestaurants) ? item.assignedRestaurants : [];
+      if (!assigned.includes(filters.restaurantId)) {
+        return false;
+      }
     }
     if (filters.hasDiscount && !(Number(item.discount) > 0)) return false;
     if (filters.hasPhoto && !item.imageUrl) return false;
@@ -218,6 +225,7 @@ export function filtersAreActive(filters) {
     filters.category !== "all" ||
     filters.itemType !== "all" ||
     filters.cuisine !== "all" ||
+    filters.restaurantId !== "all" ||
     filters.hasDiscount ||
     filters.hasPhoto ||
     filters.sortBy !== "name"

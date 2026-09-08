@@ -58,6 +58,7 @@ const FoodItem = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [restaurants, setRestaurants] = useState([]);
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
     viewMode: loadViewMode(),
@@ -90,10 +91,17 @@ const FoodItem = () => {
     try {
       // Each restaurant owns its menu.
       const foodItemsRef = collection(db, `food_items/${menuRoot}/items`);
-      const [itemsSnap, catSnap] = await Promise.all([
+      
+      const promises = [
         getDocs(foodItemsRef),
         getDoc(doc(db, "settings", "categories")).catch(() => null),
-      ]);
+      ];
+
+      if (isMasterAdmin) {
+        promises.push(getDocs(collection(db, "restaurants")).catch(() => null));
+      }
+
+      const [itemsSnap, catSnap, restSnap] = await Promise.all(promises);
 
       const fetchedItems = itemsSnap.docs
         .map((d) => ({
@@ -107,6 +115,14 @@ const FoodItem = () => {
       if (catSnap?.exists?.()) {
         const data = catSnap.data()?.data;
         setSettingsCategories(Array.isArray(data) ? data : []);
+      }
+
+      if (isMasterAdmin && restSnap) {
+        const fetchedRests = restSnap.docs.map((d) => ({
+          ownerId: d.id,
+          name: d.data().name || "Unknown",
+        }));
+        setRestaurants(fetchedRests.sort((a, b) => a.name.localeCompare(b.name)));
       }
     } catch (err) {
       console.error("Error fetching food items:", err);
@@ -403,6 +419,7 @@ const FoodItem = () => {
           onChange={handleFiltersChange}
           categories={categories}
           cuisines={cuisines}
+          restaurants={restaurants}
           resultCount={filteredItems.length}
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
