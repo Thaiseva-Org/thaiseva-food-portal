@@ -118,10 +118,16 @@ const FoodItem = () => {
       }
 
       if (isMasterAdmin && restSnap) {
-        const fetchedRests = restSnap.docs.map((d) => ({
-          ownerId: d.id,
-          name: d.data().name || "Unknown",
-        }));
+        const fetchedRests = restSnap.docs.map((d) => {
+          const rawName = d.data().name;
+          let safeName = "Unknown";
+          if (typeof rawName === "string") safeName = rawName;
+          else if (rawName && typeof rawName === "object" && rawName.text) safeName = String(rawName.text);
+          return {
+            ownerId: d.id,
+            name: safeName,
+          };
+        });
         setRestaurants(fetchedRests.sort((a, b) => a.name.localeCompare(b.name)));
       }
     } catch (err) {
