@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext";
+import { Logo } from "../../assets";
 import { messageTime } from "../../utils/restaurantChat";
 
 const INITIAL_MESSAGE_COUNT = 100;
@@ -35,18 +36,19 @@ const CustomerChatPanel = () => {
   const [messages, setMessages] = useState([]);
   const [visibleCount, setVisibleCount] = useState(INITIAL_MESSAGE_COUNT);
   const [text, setText] = useState("");
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => {
-    document.title = "Thaiseva | Customer Chat";
+    document.title = "Thaiseva | Food Customer Chat";
   }, []);
 
   useEffect(() => {
     if (!currentUser || !isMasterAdmin) return undefined;
     return onSnapshot(
-      collection(db, "foodCustomerChats"),
+      collection(db, "foodCustomerSupportChats"),
       (snapshot) => {
         const customers = snapshot.docs
           .map((item) => ({ id: item.id, ...item.data() }))
@@ -69,7 +71,7 @@ const CustomerChatPanel = () => {
   useEffect(() => {
     if (!selectedId || !isMasterAdmin) return undefined;
     return onSnapshot(
-      doc(db, "foodCustomerChats", selectedId),
+      doc(db, "foodCustomerSupportChats", selectedId),
       (snapshot) => {
         const value = snapshot.data();
         setMessages(Array.isArray(value?.messages) ? value.messages : []);
@@ -92,6 +94,15 @@ const CustomerChatPanel = () => {
     () => rooms.find((room) => room.id === selectedId),
     [rooms, selectedId]
   );
+  const filteredRooms = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return rooms;
+    return rooms.filter((room) =>
+      [displayName(room), room.email, room.customerId]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    );
+  }, [rooms, search]);
   const visibleMessages = useMemo(
     () => messages.slice(-visibleCount),
     [messages, visibleCount]
@@ -101,7 +112,7 @@ const CustomerChatPanel = () => {
     setSelectedId(room.id);
     if (room.isReadByAdmin !== false) return;
     try {
-      await updateDoc(doc(db, "foodCustomerChats", room.id), {
+      await updateDoc(doc(db, "foodCustomerSupportChats", room.id), {
         isReadByAdmin: true,
       });
     } catch {
@@ -119,27 +130,26 @@ const CustomerChatPanel = () => {
       id: `${currentUser.uid}_${Date.now()}`,
       text: body,
       senderId: currentUser.uid,
+      senderType: "admin",
       createdAt: Timestamp.now(),
     };
     const customerId = selectedRoom.customerId || selectedRoom.id;
-    const legacyChatId =
-      selectedRoom.sourceChatId || `${customerId}_CustomerSupport`;
-
     try {
       setSending(true);
       setError("");
       
       await setDoc(
-        doc(db, "foodCustomerChats", customerId),
+        doc(db, "foodCustomerSupportChats", customerId),
         {
           customerId,
           userId: customerId,
+          channel: "food",
+          schemaVersion: 1,
           participants: [currentUser.uid, customerId].filter(Boolean),
           messages: arrayUnion(message),
-          lastMessage: { text: body },
+          lastMessage: { text: body, senderType: "admin" },
           isReadByAdmin: true,
           updatedAt: Timestamp.now(),
-          sourceChatId: legacyChatId,
         },
         { merge: true }
       );
@@ -154,27 +164,42 @@ const CustomerChatPanel = () => {
   };
 
   return (
-    <section className="p-4 md:p-6 h-[calc(100vh-5rem)] min-h-[520px] bg-slate-50/30">
-      <div className="h-full overflow-hidden flex min-w-0 bg-white shadow-xl shadow-indigo-100/40 rounded-2xl border border-slate-200/60">
-        <aside className="w-80 shrink-0 border-r border-violet-800 overflow-y-auto bg-violet-950">
-          <div className="p-5 border-b border-violet-900 bg-violet-950 sticky top-0 z-10">
-            <h1 className="text-xl font-bold tracking-tight text-white">
-              Customer Chat
-            </h1>
-            <p className="text-xs text-violet-300 mt-1 font-medium">
-              Master Admin customer support
-            </p>
+    <section className="h-[calc(100vh-5rem)] min-h-[560px] bg-slate-50/30 p-3 md:p-6">
+      <div className="flex h-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-xl shadow-indigo-100/40">
+        <aside className="w-[18rem] shrink-0 overflow-y-auto border-r border-blue-800 bg-blue-950 sm:w-80">
+          <div className="sticky top-0 z-10 border-b border-blue-900 bg-blue-950/95 p-5 backdrop-blur">
+            <div className="mb-3 flex items-center gap-3">
+              <img
+                src={Logo}
+                alt="Thaiseva"
+                className="h-11 w-11 rounded-xl bg-white object-contain p-1 shadow-lg shadow-blue-950/30"
+              />
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-300">Thaiseva support</p>
+                <h1 className="text-lg font-bold tracking-tight text-white">Customer inbox</h1>
+              </div>
+            </div>
+            <label className="relative block">
+              <i className="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-blue-200" aria-hidden="true" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search food customers"
+                className="w-full rounded-xl border border-white/10 bg-white/10 py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-blue-200/70 focus:border-blue-300 focus:ring-2 focus:ring-blue-300/20"
+                aria-label="Search food customer chats"
+              />
+            </label>
           </div>
-          {rooms.length ? (
-            rooms.map((room) => (
+          {filteredRooms.length ? (
+            filteredRooms.map((room) => (
               <button
                 type="button"
                 key={room.id}
                 onClick={() => selectRoom(room)}
-                className={`w-full p-4 text-left border-b border-violet-900/80 transition-all duration-200 flex flex-col gap-1.5 ${
+                className={`flex w-full flex-col gap-1.5 border-b border-white/10 border-l-4 p-4 text-left transition-all duration-200 ${
                   selectedId === room.id
-                    ? "bg-violet-900 border-l-4 border-l-violet-400"
-                    : "hover:bg-violet-900/50 border-l-4 border-l-transparent"
+                    ? "border-l-blue-400 bg-blue-900"
+                    : "border-l-transparent hover:bg-white/5"
                 }`}
               >
                 <span className="flex items-center justify-between w-full">
@@ -182,7 +207,7 @@ const CustomerChatPanel = () => {
                     className={`font-semibold truncate pr-2 ${
                       selectedId === room.id
                         ? "text-white"
-                        : "text-violet-100"
+                        : "text-blue-100"
                     }`}
                   >
                     {displayName(room)}
@@ -194,8 +219,8 @@ const CustomerChatPanel = () => {
                 <span
                   className={`text-xs truncate w-full ${
                     selectedId === room.id
-                      ? "text-violet-200"
-                      : "text-violet-400/80"
+                        ? "text-blue-200"
+                        : "text-blue-300/70"
                   }`}
                 >
                   {typeof room.lastMessage === "string"
@@ -205,28 +230,28 @@ const CustomerChatPanel = () => {
               </button>
             ))
           ) : (
-            <p className="p-5 text-sm text-violet-300 text-center mt-4">
-              No customer chats yet.
+            <p className="mt-4 p-5 text-center text-sm text-blue-300">
+              {search ? "No matching food customers." : "No food customer chats yet."}
             </p>
           )}
         </aside>
 
         <div className="flex-1 min-w-0 flex flex-col bg-white">
-          <header className="px-6 py-4 border-b border-neutral-100 bg-white/80 backdrop-blur-md sticky top-0 z-10 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-violet-50 flex items-center justify-center shrink-0">
-              <i className="bi bi-person-fill text-violet-600 text-lg" />
+          <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-neutral-100 bg-white/90 px-6 py-4 backdrop-blur-md">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+              <i className="bi bi-person-fill text-lg text-brand-600" />
             </div>
             <div>
               <h1 className="font-bold text-ink-heading tracking-tight">
                 {selectedRoom ? displayName(selectedRoom) : "Select a customer"}
               </h1>
               <p className="text-xs font-medium text-ink-muted">
-                Customer support conversation
+                Dedicated food-order support
               </p>
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50/50 p-6">
             {error && (
               <div className="rounded-xl bg-danger-50 border border-danger-100 p-3 text-sm text-danger-700 shadow-sm">
                 {error}
@@ -234,7 +259,7 @@ const CustomerChatPanel = () => {
             )}
             {!selectedId ? (
               <div className="h-full flex flex-col items-center justify-center text-ink-muted">
-                <i className="bi bi-chat-heart text-4xl mb-3 opacity-50" />
+                <i className="bi bi-chat-heart mb-3 text-4xl text-brand-200" />
                 <p className="font-medium">
                   Choose a customer conversation to start chatting
                 </p>
@@ -257,7 +282,9 @@ const CustomerChatPanel = () => {
                   </div>
                 )}
                 {visibleMessages.map((message, index) => {
-                  const mine = message.senderId === currentUser?.uid;
+                  const mine =
+                    message.senderType === "admin" ||
+                    message.senderId === currentUser?.uid;
                   const sentAt = messageTime(message);
                   return (
                     <div
@@ -267,8 +294,8 @@ const CustomerChatPanel = () => {
                       <div
                         className={`max-w-[75%] rounded-2xl px-5 py-3 shadow-sm ${
                           mine
-                            ? "bg-violet-600 text-white rounded-tr-sm"
-                            : "bg-white border border-neutral-100 text-ink rounded-tl-sm"
+                            ? "rounded-tr-sm bg-brand-500 text-white shadow-brand-500/20"
+                            : "rounded-tl-sm border border-neutral-100 bg-white text-ink shadow-neutral-200/50"
                         }`}
                       >
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
@@ -290,8 +317,10 @@ const CustomerChatPanel = () => {
               </>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-ink-muted">
-                <i className="bi bi-chat-dots-fill text-4xl text-violet-200 mb-3" />
-                <p className="font-medium text-sm">No messages yet.</p>
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-brand-50 text-brand-400">
+                  <i className="bi bi-chat-dots-fill text-3xl" />
+                </div>
+                <p className="text-sm font-medium">No food support messages yet.</p>
               </div>
             )}
             <div ref={endRef} />
@@ -299,19 +328,19 @@ const CustomerChatPanel = () => {
 
           <form
             onSubmit={sendMessage}
-            className="p-4 border-t border-neutral-100 bg-white flex gap-3 items-center"
+            className="flex items-center gap-3 border-t border-neutral-100 bg-white p-4"
           >
             <input
-              className="flex-1 bg-slate-50 border border-neutral-200 text-ink text-sm rounded-full px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500"
+              className="flex-1 rounded-full border border-neutral-200 bg-slate-50 px-5 py-3.5 text-sm text-ink outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder="Write your message..."
+              placeholder="Reply to this food customer..."
               maxLength={4000}
               disabled={!selectedId || sending}
               aria-label="Message"
             />
             <button
-              className="bg-violet-600 text-white rounded-full h-12 w-12 flex items-center justify-center shrink-0 disabled:opacity-50"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-500 text-white shadow-md shadow-brand-500/20 transition hover:bg-brand-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
               disabled={!text.trim() || !selectedId || sending}
               aria-label="Send message"
             >

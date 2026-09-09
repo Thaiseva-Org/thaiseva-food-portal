@@ -1,84 +1,93 @@
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { HttpsError } = require("firebase-functions/v2/https");
+const {
+  getFirestore,
+  FieldValue,
+  Timestamp,
+} = require("firebase-admin/firestore");
+const { ROLES } = require("./auth");
 
-const CUSTOMER_SUFFIX = "_CustomerSupport";
+const FOOD_CUSTOMER_CHAT_COLLECTION = "foodCustomerSupportChats";
+const MAX_MESSAGE_LENGTH = 4000;
 
-function isRestaurantProfile(profile = {}) {
-  const category = String(profile.serviceCategory || "").toLowerCase();
-  const role = String(profile.foodRole || profile.role || "")
-    .toLowerCase()
-    .replace(/[\s_-]/g, "");
-  return (
-    category === "restaurant" ||
-    role.includes("restaurant") ||
-    role === "partner" ||
-    profile.isRestaurantAdmin === true
-  );
+function cleanMessage(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length > MAX_MESSAGE_LENGTH) {
+    throw new HttpsError(
+      "invalid-argument",
+      `message must be 1-${MAX_MESSAGE_LENGTH} characters.`
+    );
+  }
+  return text;
 }
 
-async function mirrorLegacyCustomerChat(event) {
-  const sourceChatId = String(event.params?.chatId || "");
-  if (!sourceChatId.endsWith(CUSTOMER_SUFFIX)) return null;
+function cleanDisplayName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
 
-  const sourceSnapshot = event.data?.after;
-  if (!sourceSnapshot?.exists) return null;
+async function sendFoodCustomerMessage(caller, data = {}) {
+  if (caller.role === ROLES.MASTER || caller.role === ROLES.OWNER) {
+    throw new HttpsError(
+      "permission-denied",
+      "This endpoint is for food customers only."
+    );
+  }
 
-  const customerId = sourceChatId.slice(0, -CUSTOMER_SUFFIX.length);
-  if (!customerId) return null;
-
+  const text = cleanMessage(data.message ?? data.text);
   const db = getFirestore();
-  const [profileSnapshot, restaurantSnapshot, roomSnapshot] = await Promise.all([
-    db.collection("users").doc(customerId).get(),
-    db.collection("restaurants").doc(customerId).get(),
-    db.collection("chatRooms").doc("CustomerSupport").get(),
-  ]);
-  const profile = profileSnapshot.exists ? profileSnapshot.data() : {};
-  if (restaurantSnapshot.exists || isRestaurantProfile(profile)) return null;
-
-  const source = sourceSnapshot.data() || {};
-  const messages = Array.isArray(source.messages) ? source.messages : [];
-  const lastMessage = messages.at(-1) || null;
-  const roomData = roomSnapshot.exists ? roomSnapshot.data() : {};
-  const roomEntry = roomData?.[customerId] || {};
-  const userInfo = {
-    ...(roomEntry.userInfo || {}),
-    uid: customerId,
-    displayName:
-      roomEntry.userInfo?.displayName ||
-      profile.displayName ||
-      profile.name ||
-      profile.email ||
-      "Customer",
+  const profileSnapshot = await db.collection("users").doc(caller.uid).get();
+  const profile = profileSnapshot.exists ? profileSnapshot.data() || {} : {};
+  const customerName =
+    cleanDisplayName(
+      data.customerName ||
+        profile.displayName ||
+        profile.name ||
+        caller.token?.name ||
+        caller.token?.email
+    ) || "Food customer";
+  const email = String(profile.email || caller.token?.email || "")
+    .trim()
+    .slice(0, 254);
+  const messageId = `${caller.uid}_${Date.now()}`;
+  const message = {
+    id: messageId,
+    text,
+    senderId: caller.uid,
+    senderType: "customer",
+    createdAt: Timestamp.now(),
   };
 
-  await db.collection("foodCustomerChats").doc(customerId).set(
+  await db.collection(FOOD_CUSTOMER_CHAT_COLLECTION).doc(caller.uid).set(
     {
-      customerId,
-      userId: customerId,
-      userInfo,
-      customerName: userInfo.displayName,
-      email: profile.email || roomEntry.userInfo?.email || "",
-      participants: Array.isArray(source.participants)
-        ? source.participants
-        : [customerId],
-      messages,
-      lastMessage: lastMessage
-        ? { text: lastMessage.text || lastMessage.message || "" }
-        : roomEntry.lastMessage || null,
-      isReadByAdmin: lastMessage?.senderId
-        ? lastMessage.senderId !== customerId
-        : roomEntry.isRead !== false,
-      updatedAt:
-        source.updatedAt || lastMessage?.createdAt || FieldValue.serverTimestamp(),
-      sourceChatId,
-      roomKey: customerId,
+      schemaVersion: 1,
+      channel: "food",
+      customerId: caller.uid,
+      userId: caller.uid,
+      participants: FieldValue.arrayUnion(caller.uid),
+      userInfo: {
+        uid: caller.uid,
+        displayName: customerName,
+        role: "Food Customer",
+      },
+      customerName,
+      email,
+      messages: FieldValue.arrayUnion(message),
+      lastMessage: { text, senderType: "customer" },
+      isReadByAdmin: false,
+      updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
-  return customerId;
+
+  return { messageId };
 }
 
 module.exports = {
-  CUSTOMER_SUFFIX,
-  isRestaurantProfile,
-  mirrorLegacyCustomerChat,
+  FOOD_CUSTOMER_CHAT_COLLECTION,
+  MAX_MESSAGE_LENGTH,
+  cleanMessage,
+  cleanDisplayName,
+  sendFoodCustomerMessage,
 };

@@ -7,7 +7,7 @@ export const useCustomerChatCount = () => {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
-      collection(db, "foodCustomerChats"),
+      collection(db, "foodCustomerSupportChats"),
       (snapshot) => {
         setCount(
           snapshot.docs.filter(

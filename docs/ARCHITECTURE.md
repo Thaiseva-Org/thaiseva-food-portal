@@ -34,7 +34,8 @@ graph TD
         CF -->|Admin SDK Read/Write| FS
         CF -->|Generate Signed URLs| ST
         CF -->|Set Custom Claims| FA[Firebase Authentication]
-        FS -->|Document Written Trigger| Trig[mirrorFoodCustomerChat]
+        CF -->|Food customer messages| FCHAT[foodCustomerSupportChats]
+        FCHAT --> FS
     end
 ```
 

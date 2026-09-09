@@ -1,8 +1,37 @@
 # Customer App API Integration Guide
 
-This document covers the two core APIs for the customer app:
+This document covers the three core APIs for the customer app:
 1. **Food Ordering API** (Delivery & Takeaway)
 2. **Dine-In Table Booking API** (Reservations)
+3. **Food Customer Chat** (dedicated food support)
+
+---
+
+# Food customer chat
+
+Food support is stored only in `foodCustomerSupportChats/{customerUid}`. Do not
+use the shared `chats`, `chatRooms`, or imported `foodCustomerChats` collections
+for this feature.
+
+Send a message through the authenticated callable in
+`asia-southeast1`:
+
+```javascript
+const sendFoodCustomerMessage = httpsCallable(
+  getFunctions(undefined, "asia-southeast1"),
+  "sendFoodCustomerMessage"
+);
+
+await sendFoodCustomerMessage({
+  message: "Where is my food order?",
+  customerName: "Riya" // optional; profile/auth name is the fallback
+});
+```
+
+The message must contain 1-4000 characters. For real-time replies, the signed-in
+customer may listen to `foodCustomerSupportChats/{auth.currentUser.uid}`. Customers
+cannot write directly to Firestore; the callable validates identity, rate limits
+messages, and marks the thread unread for the Food Master Admin.
 
 ---
 

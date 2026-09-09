@@ -9,7 +9,7 @@ rules_version = '2';
 //   - helpers under "FOOD PORTAL HELPERS ONLY"
 //   - food paths listed in FIRESTORE_RULES_NOTES.md (orders, dineInBookings,
 //     restaurants, restaurantApplications, foodRiders, foodRestaurantChats,
-//     foodCustomerChats, food_items items, food notifications, Earnings, auditLogs,
+//     foodCustomerSupportChats, food_items items, food notifications, Earnings, auditLogs,
 //     users food signup, settings/categories)
 //
 // Policy + checklist: FIRESTORE_RULES_NOTES.md
@@ -455,10 +455,12 @@ service cloud.firestore {
       allow delete: if isFoodAdmin();
     }
 
-    // The customer app continues using its existing support contract. A
-    // backend bridge copies those threads here for the food Master Admin.
-    match /foodCustomerChats/{customerId} {
-      allow read, create, update, delete: if isFoodAdmin();
+    // Dedicated food support inbox. Customers send through the
+    // sendFoodCustomerMessage callable; no legacy chat data is copied here.
+    match /foodCustomerSupportChats/{customerId} {
+      allow read: if isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == customerId);
+      allow create, update, delete: if isFoodAdmin();
     }
 
     match /cart/{cartId} {

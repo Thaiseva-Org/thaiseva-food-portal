@@ -14,7 +14,7 @@ The frontend is a **React 19** Single Page Application bundled with **Vite**. It
 - A global `AuthContext` listens to `onAuthStateChanged` and decodes the JWT custom claims to determine the user's role.
 
 ### B. Master Admin Dashboard (`/foodAdmin`)
-- **Support chat:** `/foodAdmin/restaurantChat` and `/foodAdmin/customerChat` are separate Master Admin panels. Restaurant Admin can access only its own Restaurant Chat; Customer Chat is not exposed under `/partner`.
+- **Support chat:** `/foodAdmin/restaurantChat` and `/foodAdmin/foodCustomerChat` share the Thaiseva brand theme while using separate collections. Restaurant Admin can access only its own Restaurant Chat; Food Customer Chat is not exposed under `/partner`.
 - **Table reservations:** `/foodAdmin/tableReservation` monitors bookings across the network; each restaurant workspace also includes a Reservations tab.
 - **Network Partners (`/foodAdmin/restaurants`)**: Displays a searchable list of all active/inactive restaurants. Shows GMV and order stats.
 - **Riders (`/foodAdmin/riders`)**: Full CRUD interface for managing delivery personnel.

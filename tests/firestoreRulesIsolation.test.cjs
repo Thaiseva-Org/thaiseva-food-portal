@@ -153,13 +153,11 @@ test("restaurant chat database is owner scoped and customer chat stays separate"
   assert.match(scoped, /allow delete: if isFoodAdmin\(\);/);
   assert.doesNotMatch(scoped, /CustomerSupport/);
 
-  const customerBlock = rules.split("match /foodCustomerChats/{customerId}")[1] || "";
+  const customerBlock = rules.split("match /foodCustomerSupportChats/{customerId}")[1] || "";
   const customerScoped = customerBlock.split("match /")[0];
-  assert.match(
-    customerScoped,
-    /allow read, create, update, delete: if isFoodAdmin\(\);/
-  );
-  assert.doesNotMatch(customerScoped, /request\.auth\.uid == customerId/);
+  assert.match(customerScoped, /allow read: if isFoodAdmin\(\)/);
+  assert.match(customerScoped, /request\.auth\.uid == customerId/);
+  assert.match(customerScoped, /allow create, update, delete: if isFoodAdmin\(\);/);
 });
 
 test("restaurant menu drafts stay private and all menu writes use callables", () => {

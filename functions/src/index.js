@@ -1,7 +1,6 @@
 const { verifyOrderPayment } = require("./lib/orderPayments");
 const { initializeApp } = require("firebase-admin/app");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
 const {
@@ -54,15 +53,10 @@ const {
   updateFoodRider,
   setFoodRiderActive,
 } = require("./lib/riders");
-const { mirrorLegacyCustomerChat } = require("./lib/customerChats");
+const { sendFoodCustomerMessage } = require("./lib/customerChats");
 
 initializeApp();
 setGlobalOptions({ region: "asia-southeast1", maxInstances: 20 });
-
-exports.mirrorFoodCustomerChat = onDocumentWritten(
-  "chats/{chatId}",
-  mirrorLegacyCustomerChat
-);
 
 function wrap(handler, { roles } = {}) {
   const enforceAppCheck =
@@ -232,6 +226,13 @@ exports.updateDineInBooking = wrap(async (caller, data) => {
 
 exports.cancelDineInBooking = wrap(async (caller, data) => {
   return cancelDineInBooking(caller, data);
+});
+
+// Dedicated food-customer support channel. This never reads or writes the
+// shared legacy `chats` collection.
+exports.sendFoodCustomerMessage = wrap(async (caller, data) => {
+  await enforceRateLimit(caller, "sendFoodCustomerMessage", 30);
+  return sendFoodCustomerMessage(caller, data);
 });
 
 exports.setDineInBookingStatus = wrap(async (caller, data) => {

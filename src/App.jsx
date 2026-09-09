@@ -296,7 +296,11 @@ const App = () => {
                       path="restaurantChat"
                       element={<MasterRestaurantChat />}
                     />
-                    <Route path="customerChat" element={<CustomerChat />} />
+                    <Route path="foodCustomerChat" element={<CustomerChat />} />
+                    <Route
+                      path="customerChat"
+                      element={<Navigate to="../foodCustomerChat" replace />}
+                    />
                     <Route
                       path="ordersDetails/ordersDetView/:orderId"
                       element={<OrdersDetView />}

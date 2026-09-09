@@ -218,7 +218,8 @@ Applicant documents uploaded via GCS signed URLs v4 (`getPublicApplicationUpload
 ---
 
 ## 24. Background Jobs & Triggers
-Firestore document trigger `mirrorFoodCustomerChat` on `chats/{chatId}` to sync support messages.
+Food customer support uses the authenticated `sendFoodCustomerMessage` callable
+and the standalone `foodCustomerSupportChats` collection. It has no legacy chat trigger.
 
 ---
 

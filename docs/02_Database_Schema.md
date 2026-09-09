@@ -66,12 +66,12 @@ Stores a restaurant-specific table reservation with `ownerId`, customer contact 
 - **Key fields:** `ownerId`, `restaurantName`, `participants`, `messages`, `lastMessage`, `isReadByAdmin`, and `updatedAt`.
 - **Security:** Master Admin can access every restaurant thread. A Restaurant Admin can read and update only the document matching its own UID.
 
-### Collection: `foodCustomerChats`
-**Purpose:** Stores customer conversations in a dedicated food-support collection visible only to Master Admin.
+### Collection: `foodCustomerSupportChats`
+**Purpose:** Stores food-customer conversations in a dedicated food-support collection. It is not shared with the legacy customer-support system.
 - **Document ID:** Customer UID.
-- **Key fields:** `customerId`, `customerName`, `participants`, `messages`, `lastMessage`, `isReadByAdmin`, `updatedAt`, and `sourceChatId`.
-- **Compatibility:** A backend bridge mirrors the customer app's existing `chats/{customerUid}_CustomerSupport` records into this collection. Master Admin replies are also written to the existing customer thread.
-- **Security:** Only Master Admin can access this collection. Restaurant Admin has no read or write access.
+- **Key fields:** `channel: "food"`, `customerId`, `customerName`, `participants`, `messages`, `lastMessage`, `isReadByAdmin`, and `updatedAt`.
+- **Write path:** Food customers send through the `sendFoodCustomerMessage` callable. Master Admin replies directly in this collection. Nothing is copied to or from `chats`.
+- **Security:** A customer can read only their own thread. Only Master Admin can directly create, update, or delete documents. Restaurant Admin has no access.
 
 ## 3. Data Flow Example: Order Lifecycle
 

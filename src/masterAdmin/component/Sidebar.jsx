@@ -106,9 +106,9 @@ const MasterSidebar = ({ show, toggle }) => {
     },
     {
       icon: <PeopleAltRoundedIcon fontSize="small" />,
-      label: "Customer Chat",
-      to: "customerChat",
-      path: "/foodAdmin/customerChat",
+      label: "Food Customer Chat",
+      to: "foodCustomerChat",
+      path: "/foodAdmin/foodCustomerChat",
       badge: customerChatCount,
       badgeTone: "danger",
     },

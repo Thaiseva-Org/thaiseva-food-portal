@@ -65,7 +65,7 @@ If you need a rules change, it should land in one of these **food-related** plac
 | **Helpers (food section)** | `isFoodAdmin()`, order owner/receiver helpers, `isSafeFoodPortalUserCreate()`, `restaurantLockedFieldsUnchanged()`, `isFoodOrderCustomerCancel()` | Food identity without changing `isAdmin()` |
 | **`orders`** | Tenant/admin reads; create and update false | Order routing, status, rider, and money stay in Functions |
 | **`foodRestaurantChats`** | Master Admin reads all; restaurant owner reads/writes only its own document | Keeps restaurant support separate from customer support |
-| **`foodCustomerChats`** | Master Admin only | Dedicated customer-support inbox; restaurant owners have no access |
+| **`foodCustomerSupportChats`** | Master Admin + owning customer's read | Dedicated food-support inbox; restaurant owners have no access |
 | **`dineInBookings`** | Tenant/admin reads; create and update false | Reservation mutations use validated callable functions |
 | **`users`** | Food signup OR; lock `isMasterAdmin` / `isRestaurantAdmin` on self-update; optional `isFoodAdmin` read | Onboarding |
 | **`restaurants`** | Owner create; update with locked money/verify fields | Commission integrity |
