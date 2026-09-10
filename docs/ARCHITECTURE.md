@@ -6,7 +6,7 @@ The **Thaiseva Food Portal** is an enterprise-grade food ordering, restaurant on
 
 ### Key Architectural Characteristics
 * **Frontend Layer**: Single Page Application (SPA) built with **React 19** and bundled via **Vite 8**. It implements strict role-based routing guarded by custom authentication context providers.
-* **Backend API Layer**: Trusted serverless backend running on **Firebase Cloud Functions v2** (Node.js 22 runtime, deployed to `asia-southeast1`). All mutated operations use HTTPS Callable Functions (`onCall`) wrapped with rate limiting and App Check verification.
+* **Backend API Layer**: Trusted serverless backend running on **Firebase Cloud Functions v2** (Node.js 22 runtime, deployed to `asia-southeast1`). Admin mutations use App Check-protected HTTPS callables. Flutter checkout uses `createFoodOrderHttp`, a standard HTTP endpoint protected by Firebase bearer-token verification and per-UID rate limiting.
 * **Data Layer**: **Cloud Firestore** NoSQL document store. Firestore provides real-time `onSnapshot` streaming capabilities directly to the React application while maintaining tenant-isolated database security rules.
 * **Storage Layer**: **Firebase Cloud Storage** for private partner verification documents (PDF/Image) and public assets (restaurant covers, dish photos).
 * **Identity & Security Layer**: **Firebase Authentication** supplemented with Firebase Custom Claims for Role-Based Access Control (RBAC) and **Firebase App Check** (reCAPTCHA Enterprise) to protect against API abuse.
@@ -26,12 +26,14 @@ graph TD
     subgraph Firebase Cloud Edge asia-southeast1
         FE -->|App Check Token + JWT| AC[Firebase App Check]
         AC -->|Verified Request| CF[Cloud Functions v2 API]
+        UA -->|Flutter HTTPS + Firebase bearer token| HTTP[Order and restaurant HTTP APIs]
         FE -->|Direct Snapshot Subscriptions| FS[Cloud Firestore Database]
         FE -->|Direct Signed Uploads| ST[Cloud Storage Bucket]
     end
 
     subgraph Trusted Backend Core
         CF -->|Admin SDK Read/Write| FS
+        HTTP -->|Verified order service / public catalog| FS
         CF -->|Generate Signed URLs| ST
         CF -->|Set Custom Claims| FA[Firebase Authentication]
         CF -->|Food customer messages| FCHAT[foodCustomerSupportChats]

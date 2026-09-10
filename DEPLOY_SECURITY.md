@@ -84,7 +84,16 @@ If production data lives under short public IDs, run a one-off Admin script to c
 
 `food_items/{publicId}/items/*` → `food_items/{ownerUid}/items/*`
 
-## API list (callable, region `asia-southeast1`)
+## API list (region `asia-southeast1`)
+
+Flutter customer HTTP endpoints:
+
+| Endpoint | Access |
+|----------|--------|
+| `GET listOrderableRestaurantsHttp` | public; verified/open restaurants; public fields only |
+| `POST createFoodOrderHttp` | Firebase bearer ID token; 30/min per UID; no App Check |
+
+Admin portal and remaining customer callables:
 
 | Function | Role |
 |----------|------|
@@ -130,6 +139,8 @@ may set `ENFORCE_APP_CHECK=false`.
 - [ ] `npm audit` triage remaining high/critical deps
 - [ ] Restrict API keys in Google Cloud Console
 - [ ] App Check requests show valid tokens; unverified callable requests fail
+- [ ] Flutter order HTTP request succeeds with Firebase bearer token and no App Check token
+- [ ] Flutter order HTTP request without bearer token returns HTTP 401
 
 `firebase deploy --only hosting` runs `npm run production:check` automatically
 and refuses to deploy when required Firebase/App Check configuration, tests,

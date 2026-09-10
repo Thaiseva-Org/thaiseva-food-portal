@@ -1,6 +1,6 @@
 const { verifyOrderPayment } = require("./lib/orderPayments");
 const { initializeApp } = require("firebase-admin/app");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
 const {
@@ -54,6 +54,10 @@ const {
   setFoodRiderActive,
 } = require("./lib/riders");
 const { sendFoodCustomerMessage } = require("./lib/customerChats");
+const {
+  createFoodOrderHttpHandler,
+  listOrderableRestaurantsHttpHandler,
+} = require("./lib/httpApi");
 
 initializeApp();
 setGlobalOptions({ region: "asia-southeast1", maxInstances: 20 });
@@ -174,6 +178,19 @@ exports.ensurePlatformRestaurant = wrap(async (caller, data) => {
 exports.createFoodOrder = wrap(async (caller, data) => {
   return createFoodOrder(caller, data); // Uses direct authentication check inside createFoodOrder
 });
+
+// Standard HTTP APIs for mobile clients. Authentication is handled inside the
+// order handler with a Firebase ID token; these endpoints do not require an
+// App Check token.
+exports.createFoodOrderHttp = onRequest(
+  { cors: true, invoker: "public" },
+  createFoodOrderHttpHandler
+);
+
+exports.listOrderableRestaurantsHttp = onRequest(
+  { cors: true, invoker: "public" },
+  listOrderableRestaurantsHttpHandler
+);
 
 exports.transitionOrderStatus = wrap(async (caller, data) => {
   requireOwnerOrMaster(caller);

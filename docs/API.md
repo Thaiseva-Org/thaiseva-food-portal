@@ -2,16 +2,18 @@
 
 ## 1. Overview & API Architecture
 
-The **Thaiseva Food Portal** backend uses **Firebase Cloud Functions v2 HTTPS Callable Functions** deployed to `asia-southeast1`. 
+The **Thaiseva Food Portal** backend uses Firebase Cloud Functions v2 HTTPS
+callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 
 ### Key Protocol Standards
-* **Protocol**: HTTPS JSON Callables (`httpsCallable` SDK / POST requests).
+* **Protocol**: HTTPS JSON callables for the admin portal; standard JSON HTTP for Flutter restaurant discovery and checkout.
 * **Base Endpoint Region**: `asia-southeast1`
 * **Content Type**: `application/json`
 * **Response Wrapper Format**: All endpoints return responses wrapped in `{ ok: true, data: { ... } }`.
-* **Error Handling**: Standardized `FirebaseFunctionsException` / `HttpsError` objects with canonical status codes (`unauthenticated`, `permission-denied`, `invalid-argument`, `already-exists`, `not-found`, `resource-exhausted`, `internal`).
+* **Error Handling**: Callables use `FirebaseFunctionsException`. Standard HTTP endpoints return `{ ok: false, error: { code, message } }` with an appropriate HTTP status.
 * **App Check Enforcement**: All authenticated callables enforce Firebase App Check reCAPTCHA Enterprise verification in production.
-* **Rate Limiting**: Public callables use IP-based rate limiting; authenticated callables enforce per-UID rate limits.
+* **Flutter Order Authentication**: `createFoodOrderHttp` verifies a Firebase ID token from `Authorization: Bearer <token>` and does not require App Check.
+* **Rate Limiting**: Public callables use IP-based rate limiting; authenticated callables and HTTP order creation enforce per-UID rate limits.
 
 ---
 
@@ -31,6 +33,8 @@ The **Thaiseva Food Portal** backend uses **Firebase Cloud Functions v2 HTTPS Ca
 | `setRestaurantOpenState` | Protected | Yes | Owner / Master | Standard | Toggles store open/closed status |
 | `adminUpdateCommission` | Protected | Yes | Master Admin | Standard | Updates partner commission percentage |
 | `ensurePlatformRestaurant` | Protected | Yes | Master Admin | Standard | Provisions official kitchen document |
+| `listOrderableRestaurantsHttp` | Public HTTP | No | Guest | 100 results/request | Lists verified, active restaurants using public fields only |
+| `createFoodOrderHttp` | Protected HTTP | Yes, Bearer ID token | Customer / User | 30 / min | Preferred Flutter food-order endpoint; no App Check required |
 | `createFoodOrder` | Protected | Yes | Customer / User | Standard | Places food order ("take booking") |
 | `transitionOrderStatus` | Protected | Yes | Owner / Master | Standard | Advances order state machine |
 | `markOrderDelivered` | Protected | Yes | Master Admin | Standard | Marks order delivered & updates financial ledger |
@@ -180,46 +184,64 @@ The **Thaiseva Food Portal** backend uses **Firebase Cloud Functions v2 HTTPS Ca
 
 ### 3.3 Order Lifecycle & Accounting APIs
 
-#### `createFoodOrder` ("Take Booking")
-* **Method**: HTTPS Callable (`wrap`)
-* **Auth**: Required (Customer Token)
+#### `createFoodOrderHttp` (preferred Flutter checkout)
+* **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/createFoodOrderHttp`
+* **Method**: `POST`
+* **Auth**: Firebase ID token in `Authorization: Bearer <token>`
+* **App Check**: Not required
+* **Content-Type**: `application/json`
 * **Request Body**:
 ```json
 {
-  "orderId": "ORD-2026-0091",
   "idempotencyKey": "idemp-key-9988",
   "Restaurant": {
-    "ownerId": "REST_OWNER_UID_123",
-    "id": "e4f8",
-    "name": "Bangkok Spice Kitchen"
+    "ownerId": "REST_OWNER_UID_123"
   },
   "Receiver": {
-    "id": "CUST_UID_555",
     "name": "Somchai",
     "phoneNumber": "+66898765432",
     "address": "123 Silom Road, Bangkok",
-    "location": { "lat": 13.725, "lng": 100.53 }
+    "location": { "latitude": 13.725, "longitude": 100.53 }
   },
   "Items": [
     { "ItemId": "#THAI-001", "Quantity": 2 },
     { "ItemId": "#THAI-005", "Quantity": 1 }
   ],
-  "deliveryCharge": 35.00,
-  "paymentMethod": "CashOnDelivery"
+  "paymentMethod": "Cash on Delivery"
 }
 ```
-* **Backend Processing**: Re-queries prices from master catalog `food_items/thaiseva-platform/items`, verifies total amount inside a transaction, and writes `orders/{orderId}` with status `"New Order"`.
+* **Backend Processing**: Calls the same `createFoodOrder` domain service used by
+  the legacy callable. It re-queries restaurant-owned menu prices, validates the
+  restaurant and cart inside a transaction, and writes the order with status
+  `"New Order"`.
 * **Response Data**:
 ```json
 {
   "ok": true,
   "data": {
-    "orderId": "ORD-2026-0091",
-    "totalAmount": 385.00,
-    "currentStatus": "New Order"
+    "alreadyApplied": false,
+    "orderId": "generated_order_document_id",
+    "amount": 350.00,
+    "restaurant": {
+      "ownerId": "REST_OWNER_UID_123",
+      "name": "Bangkok Spice Kitchen"
+    }
   }
 }
 ```
+
+HTTP `401` means the `Authorization` header is missing, expired, malformed, or
+belongs to another Firebase project. A missing Android App Check provider cannot
+reject this endpoint because it performs Firebase Auth verification directly.
+
+#### `listOrderableRestaurantsHttp`
+* **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/listOrderableRestaurantsHttp`
+* **Method**: `GET`
+* **Auth/App Check**: Not required
+* **Query**: Optional `limit` from 1 to 100
+* **Response**: `{ "ok": true, "data": { "restaurants": [...], "count": 4 } }`
+* **Privacy**: Returns an explicit public-field allowlist. Application documents,
+  tax IDs, commission, and earnings fields are excluded.
 
 #### `transitionOrderStatus`
 * **Method**: HTTPS Callable (`wrap`)

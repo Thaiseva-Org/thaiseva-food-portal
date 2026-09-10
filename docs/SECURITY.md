@@ -96,6 +96,20 @@ const enforceAppCheck =
 return onCall({ cors: true, enforceAppCheck }, async (request) => { ... });
 ```
 
+### Flutter order HTTP exception
+
+`createFoodOrderHttp` is a standard `onRequest` endpoint added for the Flutter
+customer app. It deliberately does not enforce App Check, preventing a missing
+Android App Check provider from being misreported as an authentication failure.
+It is not anonymous: the handler extracts a bearer token and verifies it with
+Firebase Admin `verifyIdToken()` before calling any order logic. It also applies
+a 30 requests/minute per-UID limit and the existing idempotency, restaurant,
+menu, price, and transaction validations.
+
+`listOrderableRestaurantsHttp` is public because restaurant catalog reads are
+already public. It returns only allowlisted public profile fields and never
+returns application documents or accounting data.
+
 ---
 
 ## 5. Firestore Security Rules Policy (`firestore.rules`)

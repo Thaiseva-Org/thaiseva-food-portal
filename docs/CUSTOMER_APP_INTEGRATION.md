@@ -37,32 +37,49 @@ messages, and marks the thread unread for the Food Master Admin.
 
 # ThaiSeva customer order API
 
-The customer app must use the callable `createFoodOrder`. Direct client creation or mutation of `orders` is denied by Firestore rules.
+The customer app must use the standard HTTPS `createFoodOrderHttp` endpoint.
+Direct client creation or mutation of `orders` is denied by Firestore rules. The
+legacy `createFoodOrder` callable remains available for existing App Check-enabled
+clients, but new Flutter checkout code must use the HTTP endpoint below.
+
+## Standard HTTPS endpoints (Flutter)
+
+The mobile app can use these regular JSON endpoints instead of Firebase
+callables. They do not require App Check. Order creation still requires a valid
+Firebase Authentication ID token.
+
+```text
+GET  https://asia-southeast1-gothai-ffea1.cloudfunctions.net/listOrderableRestaurantsHttp
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/createFoodOrderHttp
+```
+
+Send the order payload shown below directly as the POST JSON body and include:
+
+```text
+Authorization: Bearer <Firebase ID token>
+Content-Type: application/json
+```
+
+Both endpoints return `{ "ok": true, "data": ... }` on success. Errors return
+`{ "ok": false, "error": { "code": "...", "message": "..." } }` with an
+appropriate HTTP status. The restaurant response contains only public profile
+fields; application documents and accounting fields are never returned.
 
 ## Restaurant-first ordering
 
 Show the customer a restaurant list before showing food. The Firestore document ID is the canonical restaurant owner ID used by the menu and checkout APIs; the short `id` field is display-only.
 
-```javascript
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-} from "firebase/firestore";
+```dart
+final response = await http.get(Uri.parse(
+  'https://asia-southeast1-gothai-ffea1.cloudfunctions.net/'
+  'listOrderableRestaurantsHttp',
+));
 
-export async function listOrderableRestaurants(db) {
-  const snapshot = await getDocs(query(
-    collection(db, "restaurants"),
-    where("status", "==", "Verified"),
-    where("active", "==", true)
-  ));
-
-  return snapshot.docs.map((entry) => ({
-    ownerId: entry.id,
-    ...entry.data(),
-  }));
+final body = jsonDecode(response.body) as Map<String, dynamic>;
+if (response.statusCode != 200 || body['ok'] != true) {
+  throw Exception(body['error']?['message'] ?? 'Unable to load restaurants');
 }
+final restaurants = body['data']['restaurants'] as List<dynamic>;
 ```
 
 Render one card for each returned restaurant. When the customer opens a card, load only that restaurant's available menu:
@@ -85,30 +102,37 @@ Keep `selectedRestaurant.ownerId` with the cart. A cart can contain food from on
 
 The caller must be authenticated. A cart may contain items from exactly one restaurant-owned menu.
 
-```javascript
-import { getFunctions, httpsCallable } from "firebase/functions";
+```dart
+final user = FirebaseAuth.instance.currentUser;
+if (user == null) throw Exception('Please sign in before ordering');
+final idToken = await user.getIdToken();
 
-const createFoodOrder = httpsCallable(
-  getFunctions(undefined, "asia-southeast1"),
-  "createFoodOrder"
-);
-
-const result = await createFoodOrder({
-  Restaurant: { ownerId: "restaurant_owner_uid" },
-  Receiver: {
-    name: "John Doe",
-    phoneNumber: "+66812345678",
-    address: "123 Main Street",
-    location: { latitude: 13.75, longitude: 100.5 },
-    landmark: "Near the station"
+final response = await http.post(
+  Uri.parse(
+    'https://asia-southeast1-gothai-ffea1.cloudfunctions.net/'
+    'createFoodOrderHttp',
+  ),
+  headers: {
+    'Authorization': 'Bearer $idToken',
+    'Content-Type': 'application/json',
   },
-  Items: [
-    { ItemId: "pad-thai-01", Quantity: 2 },
-    { ItemId: "thai-tea", Quantity: 1 }
-  ],
-  paymentMethod: "Cash on Delivery",
-  idempotencyKey: crypto.randomUUID().replaceAll("-", "_")
-});
+  body: jsonEncode({
+    'Restaurant': {'ownerId': 'restaurant_owner_uid'},
+    'Receiver': {
+      'name': 'John Doe',
+      'phoneNumber': '+66812345678',
+      'address': '123 Main Street',
+      'location': {'latitude': 13.75, 'longitude': 100.5},
+      'landmark': 'Near the station',
+    },
+    'Items': [
+      {'ItemId': 'pad-thai-01', 'Quantity': 2},
+      {'ItemId': 'thai-tea', 'Quantity': 1},
+    ],
+    'paymentMethod': 'Cash on Delivery',
+    'idempotencyKey': orderRequestId,
+  }),
+);
 ```
 
 Do not send a trusted price, total, restaurant name, commission, or delivery fee. The server ignores customer totals and reads every dish only from `food_items/{Restaurant.ownerId}/items/{ItemId}`.
@@ -117,7 +141,8 @@ The restaurant must exist at `restaurants/{ownerUid}`, have `status == "Verified
 
 ## Response
 
-Callable responses use the repository wrapper:
+HTTP responses use the repository wrapper. A new order returns HTTP `201`; an
+idempotent retry returns HTTP `200`:
 
 ```json
 {
@@ -189,7 +214,7 @@ List verified open restaurants
   -> customer selects one restaurant ownerId
   -> load food_items/{ownerId}/items
   -> keep a single-restaurant cart
-  -> createFoodOrder with Restaurant.ownerId
+  -> POST createFoodOrderHttp with Restaurant.ownerId and bearer ID token
   -> show the returned restaurant and orderId
   -> listen to orders/{orderId}
 ```
