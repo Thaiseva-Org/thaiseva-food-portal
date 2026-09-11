@@ -37,6 +37,7 @@ const DateRangeFilter = ({
   applyLabel = "Apply",
   showPresets = true,
   compact = false,
+  selectedPreset,
   /** "strip" = own card (dashboard). "embedded" = no outer card (inside panels). */
   variant = "strip",
 }) => {
@@ -46,6 +47,11 @@ const DateRangeFilter = ({
   const [activePreset, setActivePreset] = useState(
     !startDate && !endDate ? "all" : "custom"
   );
+  const visiblePreset =
+    selectedPreset === undefined ||
+    (selectedPreset === null && activePreset === "custom")
+      ? activePreset
+      : selectedPreset;
   const today = toDateInputValue(new Date());
 
   const applyRange = (start, end, presetKey = null) => {
@@ -118,11 +124,11 @@ const DateRangeFilter = ({
                   onClick={() => handlePreset(preset)}
                   disabled={loading}
                   className={`period-toggle-btn ${
-                    activePreset === preset.key
+                    visiblePreset === preset.key
                       ? "period-toggle-btn-active"
                       : ""
                   }`}
-                  aria-pressed={activePreset === preset.key}
+                  aria-pressed={visiblePreset === preset.key}
                 >
                   {preset.label}
                 </button>

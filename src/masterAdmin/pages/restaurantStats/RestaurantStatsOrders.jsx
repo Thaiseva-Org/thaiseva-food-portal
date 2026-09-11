@@ -46,7 +46,9 @@ const RestaurantStatsOrders = () => {
   const [historyRows, setHistoryRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isRealTime, setIsRealTime] = useState(true);
+  // The period control defaults to "All time", so the initial query must match it.
+  // Live mode remains available through the explicit Live (24h) reset button.
+  const [isRealTime, setIsRealTime] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
@@ -129,7 +131,9 @@ const RestaurantStatsOrders = () => {
                 Live · last 24h
               </span>
             ) : (
-              <span className="badge-neutral">History</span>
+              <span className="badge-neutral">
+                {startDate && endDate ? `${startDate} → ${endDate}` : "All time"}
+              </span>
             )}
             <p className="text-xs text-ink-muted">
               {filteredRows.length} {getStatusFilterLabel(statusFilter)} of {stats.total}{" "}
@@ -188,6 +192,7 @@ const RestaurantStatsOrders = () => {
             setLastDocs([]);
             setError(null);
           }}
+          selectedPreset={isRealTime ? null : undefined}
           resetLabel="Live (24h)"
         />
       </div>

@@ -798,7 +798,14 @@ async function createFoodOrder(caller, payload) {
         phoneNumber: String(payload.Receiver.phoneNumber).slice(0, 30),
         address: String(payload.Receiver.address).slice(0, 500),
         location: payload.Receiver.location || null,
-        landmark: payload.Receiver.landmark || ""
+        landmark: payload.Receiver.landmark || "",
+        locationType: payload.Receiver.locationType ? String(payload.Receiver.locationType).slice(0, 20) : "",
+        buildingFloor: payload.Receiver.buildingFloor ? String(payload.Receiver.buildingFloor).slice(0, 100) : "",
+        street: payload.Receiver.street ? String(payload.Receiver.street).slice(0, 200) : "",
+        saveAddressAs: payload.Receiver.saveAddressAs ? String(payload.Receiver.saveAddressAs).slice(0, 100) : "",
+        googleMapUrl: payload.Receiver.googleMapUrl ? String(payload.Receiver.googleMapUrl).slice(0, 500) : "",
+        locationPhotos: Array.isArray(payload.Receiver.locationPhotos) ? payload.Receiver.locationPhotos.slice(0, 3) : [],
+        deliveryInstructions: payload.Receiver.deliveryInstructions ? String(payload.Receiver.deliveryInstructions).slice(0, 1000) : ""
       },
       Items: finalItems,
       deliveryCharge: 0,

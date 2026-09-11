@@ -8,6 +8,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
+import { isPlatformOwnerId } from "../utils/platformRestaurant";
 
 const fetchRestroRequests = async (
   startDate,
@@ -56,16 +57,20 @@ const fetchRestroRequests = async (
           ).catch(() => null)
         : Promise.resolve(null);
 
-    const [pendingCountSnapshot, appsSnap, verifiedCountSnapshot] =
+    const [pendingCountSnapshot, appsSnap, verifiedSnapshot] =
       await Promise.all([
         getCountFromServer(pendingQuery),
         applicationPendingPromise,
-        getCountFromServer(verifiedQuery),
+        getDocs(verifiedQuery),
       ]);
     const applicationPending = appsSnap?.data().count || 0;
+    const verifiedPartners = verifiedSnapshot.docs.filter((snapshot) => {
+      const data = snapshot.data();
+      return !isPlatformOwnerId(data.ownerId || snapshot.id);
+    });
 
     setReqData(pendingCountSnapshot.data().count + applicationPending);
-    setTotalRes(verifiedCountSnapshot.data().count);
+    setTotalRes(verifiedPartners.length);
 
     if (setActiveRes !== "" && setInactiveRes !== "") {
       const totalQuery = query(reqRef, where("status", "==", "Verified"));
@@ -74,12 +79,16 @@ const fetchRestroRequests = async (
         where("status", "==", "Verified"),
         where("active", "==", true)
       );
-      const [totalres, activeCountSnapshot] = await Promise.all([
-        getCountFromServer(totalQuery),
-        getCountFromServer(activeQuery),
+      const [totalres, activeSnapshot] = await Promise.all([
+        getDocs(totalQuery),
+        getDocs(activeQuery),
       ]);
-      const totalCount = totalres.data().count;
-      const activeCount = activeCountSnapshot.data().count;
+      const isPartner = (snapshot) => {
+        const data = snapshot.data();
+        return !isPlatformOwnerId(data.ownerId || snapshot.id);
+      };
+      const totalCount = totalres.docs.filter(isPartner).length;
+      const activeCount = activeSnapshot.docs.filter(isPartner).length;
 
       setActiveRes({
         count: activeCount,

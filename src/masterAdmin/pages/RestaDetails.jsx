@@ -6,6 +6,8 @@ import {
   startAfter,
   where,
   getCountFromServer,
+  getDoc,
+  doc,
 } from "firebase/firestore";
 import { Pagination } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -13,6 +15,7 @@ import { Link } from "react-router";
 import { db } from "../../../firebaseConfig";
 import Loading from "../../components/Loading";
 import { useAuth } from "../../AuthContext";
+import { PLATFORM_OWNER_ID, isPlatformOwnerId } from "../../utils/platformRestaurant";
 
 const RestaDetails = () => {
   const { isMasterAdmin } = useAuth();
@@ -35,8 +38,16 @@ const RestaDetails = () => {
       where("status", "==", "Verified"),
       where("active", "==", toggle)
     );
-    const pages = await getCountFromServer(q);
-    setTotalPages(Math.ceil(pages.data().count / 10));
+    const [pages, platformSnapshot] = await Promise.all([
+      getCountFromServer(q),
+      getDoc(doc(db, "restaurants", PLATFORM_OWNER_ID)).catch(() => null),
+    ]);
+    const platformMatches =
+      platformSnapshot?.exists?.() &&
+      platformSnapshot.data()?.status === "Verified" &&
+      platformSnapshot.data()?.active === toggle;
+    const partnerCount = Math.max(0, pages.data().count - (platformMatches ? 1 : 0));
+    setTotalPages(Math.ceil(partnerCount / 10));
   };
 
   const fetchRestaurants = async () => {
@@ -57,7 +68,9 @@ const RestaDetails = () => {
         );
       }
       const res = await getDocs(q);
-      const list = res.docs.map((doc) => doc.data());
+      const list = res.docs
+        .map((snapshot) => snapshot.data())
+        .filter((item) => !isPlatformOwnerId(item.ownerId));
       const lastDoc =
         res.docs.length > 0 ? res.docs[res.docs.length - 1] : null;
       setLastDocs((prev) => {

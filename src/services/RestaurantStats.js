@@ -13,7 +13,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { resolveOrderAccounting } from "../utils/commission";
+import { isPlatformOwnerId } from "../utils/platformRestaurant";
 import { mapOrderDoc, mapReservationDoc } from "./GetOrders";
+import { mergeOrderDocs, orderTime } from "../utils/orderData";
 
 const PAGE_SIZE = 10;
 const AGGREGATE_PAGE_SIZE = 10;
@@ -51,10 +53,24 @@ export function mapRestaurantDoc(snap) {
   };
 }
 
+export async function fetchRestaurantOrderCount(ownerId) {
+  if (!ownerId) return 0;
+  const snapshot = await getCountFromServer(
+    query(
+      collection(db, "orders"),
+      where("Restaurant.ownerId", "==", ownerId)
+    )
+  );
+  return snapshot.data().count;
+}
+
 export async function fetchRestaurantByOwnerId(ownerId) {
-  const snap = await getDoc(doc(db, "restaurants", ownerId));
+  const [snap, actualOrderCount] = await Promise.all([
+    getDoc(doc(db, "restaurants", ownerId)),
+    fetchRestaurantOrderCount(ownerId),
+  ]);
   if (!snap.exists()) return null;
-  return mapRestaurantDoc(snap);
+  return { ...mapRestaurantDoc(snap), orderCount: actualOrderCount };
 }
 
 export async function fetchVerifiedRestaurantPages(active) {
@@ -63,32 +79,39 @@ export async function fetchVerifiedRestaurantPages(active) {
     where("status", "==", "Verified"),
     where("active", "==", active)
   );
-  const pages = await getCountFromServer(q);
-  return Math.ceil(pages.data().count / PAGE_SIZE);
+  const snapshot = await getDocs(q);
+  const partnerCount = snapshot.docs.filter((snap) => {
+    const restaurant = mapRestaurantDoc(snap);
+    return !isPlatformOwnerId(restaurant.ownerId);
+  }).length;
+  return Math.ceil(partnerCount / PAGE_SIZE);
 }
 
-export async function fetchVerifiedRestaurants({ active, page, lastDocs }) {
+export async function fetchVerifiedRestaurants({ active, page }) {
   const restaurantCollection = collection(db, "restaurants");
-  let q = query(
+  const q = query(
     restaurantCollection,
     where("status", "==", "Verified"),
-    where("active", "==", active),
-    limit(PAGE_SIZE)
+    where("active", "==", active)
   );
-  if (page > 0 && lastDocs[page - 1]) {
-    q = query(
-      restaurantCollection,
-      where("status", "==", "Verified"),
-      where("active", "==", active),
-      startAfter(lastDocs[page - 1]),
-      limit(PAGE_SIZE)
-    );
-  }
   const res = await getDocs(q);
-  const lastDoc = res.docs.length > 0 ? res.docs[res.docs.length - 1] : null;
+  const pageIndex = Math.max(0, (Number(page) || 1) - 1);
+  const pageDocs = res.docs
+    .filter((snap) => {
+      const restaurant = mapRestaurantDoc(snap);
+      return !isPlatformOwnerId(restaurant.ownerId);
+    })
+    .slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE);
+  const restaurants = await Promise.all(
+    pageDocs.map(async (snap) => {
+      const restaurant = mapRestaurantDoc(snap);
+      const orderCount = await fetchRestaurantOrderCount(restaurant.ownerId);
+      return { ...restaurant, orderCount };
+    })
+  );
   return {
-    restaurants: res.docs.map(mapRestaurantDoc),
-    lastDoc,
+    restaurants,
+    lastDoc: pageDocs.at(-1) || null,
   };
 }
 
@@ -236,17 +259,29 @@ export async function fetchRestaurantOrdersInRange({
 
 export function subscribeRestaurantOrders(ownerId, onChange, onError) {
   const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const q = query(
-    collection(db, "orders"),
-    where("Restaurant.ownerId", "==", ownerId),
-    where("timestamp", ">=", last24Hours),
-    orderBy("timestamp", "desc")
+  const groups = [[], []];
+  const ready = new Set();
+  const unsubscribers = ["timestamp", "createdAt"].map((dateField, index) =>
+    onSnapshot(
+      query(
+        collection(db, "orders"),
+        where("Restaurant.ownerId", "==", ownerId),
+        where(dateField, ">=", last24Hours),
+        orderBy(dateField, "desc")
+      ),
+      (snapshot) => {
+        groups[index] = snapshot.docs;
+        ready.add(index);
+        if (ready.size < 2) return;
+        const docs = mergeOrderDocs(groups).filter(
+          (snap) => orderTime(snap.data()) >= last24Hours.getTime()
+        );
+        onChange(docs.map(mapOrderDoc));
+      },
+      (error) => onError?.(error)
+    )
   );
-  return onSnapshot(
-    q,
-    (snapshot) => onChange(snapshot.docs.map(mapOrderDoc)),
-    (error) => onError?.(error)
-  );
+  return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 }
 
 export function subscribeRestaurantReservations(ownerId, onChange, onError) {

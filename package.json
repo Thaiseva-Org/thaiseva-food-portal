@@ -13,10 +13,12 @@
     "production:check": "npm run verify:production && npm run check && npm --prefix functions run check && npm audit --omit=dev && npm --prefix functions audit --omit=dev",
     "preview": "vite preview",
     "seed:restaurant": "node scripts/seed-demo-restaurant.mjs",
+    "seed:partners": "node scripts/seed-connected-restaurants.mjs",
     "seed:riders": "node scripts/seed-demo-riders.mjs",
     "seed:master": "node scripts/seed-master-admin.mjs",
     "seed:food-chat": "node scripts/seed-food-customer-chat.mjs",
     "seed:global-food-hub-orders": "node scripts/seed-global-food-hub-orders.mjs",
+    "audit:restaurant-links": "node scripts/audit-restaurant-links.mjs",
     "seed:all": "node scripts/seed-master-admin.mjs",
     "migrate:restaurant-menus": "node scripts/migrate-restaurant-menus.mjs",
     "rename:email": "node scripts/rename-auth-email.mjs"

@@ -171,11 +171,6 @@ const MasterSidebar = ({ show, toggle }) => {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-neutral-100">
-          <div className="rounded-xl bg-secondary-50 border border-secondary-100 px-3 py-3 text-xs text-secondary-900 font-medium">
-            Platform control center — restaurants, orders & finance.
-          </div>
-        </div>
       </aside>
     )
   );

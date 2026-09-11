@@ -113,6 +113,35 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
 
 #### 1. `createFoodOrder`
 - **Purpose:** Customer creates a food order.
+- **Payload:** Requires `Restaurant` details, `Receiver` details, and `Items`. The `Receiver` object supports detailed address fields for delivery.
+  - **Example Payload:**
+    ```json
+    {
+      "idempotencyKey": "unique_cart_hash_123",
+      "Restaurant": {
+        "ownerId": "restaurant_uid_123"
+      },
+      "Receiver": {
+        "name": "John Doe",
+        "phoneNumber": "+66 812345678",
+        "address": "Motilal Nehru Nagar, Begumpet, Hyderabad",
+        "locationType": "House",
+        "buildingFloor": "Floor 3, Apt 304",
+        "street": "Main Street",
+        "saveAddressAs": "Home",
+        "googleMapUrl": "https://maps.app.goo.gl/example",
+        "locationPhotos": ["https://storage.googleapis.com/.../photo1.jpg"],
+        "deliveryInstructions": "Leave at the door, please call when arrived."
+      },
+      "Items": [
+        {
+          "ItemId": "item_123",
+          "Quantity": 2
+        }
+      ],
+      "paymentMethod": "Cash on Delivery"
+    }
+    ```
 - **Business Logic:** 
   - Validates that all items exist in the selected restaurant's menu.
   - Uses authoritative server-side prices from `food_items` to calculate totals, preventing client-side price spoofing.
@@ -150,6 +179,22 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
 
 ### G. Dine-in Reservation Callables
 Defined in: `functions/src/lib/bookings.js`
+
+#### `createDineInBooking`
+- **Purpose:** Customer requests a table reservation.
+- **Payload:** Requires guest details, party size, notes (e.g. occasions), and schedule.
+  - **Example Payload:**
+    ```json
+    {
+      "ownerId": "restaurant_uid_123",
+      "customerName": "Alice Smith",
+      "phoneNumber": "+66 812345678",
+      "adults": 2,
+      "children": 1,
+      "scheduledAt": "2024-12-25T19:00:00.000Z",
+      "notes": "Window seat, Anniversary celebration"
+    }
+    ```
 
 - `createDineInBooking`, `listMyDineInBookings`, and `getDineInBooking` serve the customer booking flow.
 - `updateDineInBooking` and `cancelDineInBooking` allow the customer to change an eligible booking.
