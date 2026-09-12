@@ -38,9 +38,8 @@ messages, and marks the thread unread for the Food Master Admin.
 # ThaiSeva customer order API
 
 The customer app must use the standard HTTPS `createFoodOrderHttp` endpoint.
-Direct client creation or mutation of `orders` is denied by Firestore rules. The
-legacy `createFoodOrder` callable remains available for existing App Check-enabled
-clients, but new Flutter checkout code must use the HTTP endpoint below.
+Direct client creation or mutation of `orders` is denied by Firestore rules.
+`createFoodOrderHttp` is the only deployed customer order-creation API.
 
 ## Standard HTTPS endpoints (Flutter)
 

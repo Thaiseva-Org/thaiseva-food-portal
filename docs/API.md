@@ -34,8 +34,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `adminUpdateCommission` | Protected | Yes | Master Admin | Standard | Updates partner commission percentage |
 | `ensurePlatformRestaurant` | Protected | Yes | Master Admin | Standard | Provisions official kitchen document |
 | `listOrderableRestaurantsHttp` | Public HTTP | No | Guest | 100 results/request | Lists verified, active restaurants using public fields only |
-| `createFoodOrderHttp` | Protected HTTP | Yes, Bearer ID token | Customer / User | 30 / min | Preferred Flutter food-order endpoint; no App Check required |
-| `createFoodOrder` | Protected | Yes | Customer / User | Standard | Places food order ("take booking") |
+| `createFoodOrderHttp` | Protected HTTP | Yes, Bearer ID token | Customer / User | 30 / min | The customer food-order endpoint; no App Check required |
 | `transitionOrderStatus` | Protected | Yes | Owner / Master | Standard | Advances order state machine |
 | `markOrderDelivered` | Protected | Yes | Master Admin | Standard | Marks order delivered & updates financial ledger |
 | `assignOrderRider` | Protected | Yes | Master Admin | Standard | Binds courier to order ticket |
@@ -184,7 +183,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 
 ### 3.3 Order Lifecycle & Accounting APIs
 
-#### `createFoodOrderHttp` (preferred Flutter checkout)
+#### `createFoodOrderHttp` (Flutter checkout)
 * **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/createFoodOrderHttp`
 * **Method**: `POST`
 * **Auth**: Firebase ID token in `Authorization: Bearer <token>`
@@ -210,8 +209,8 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
   "paymentMethod": "Cash on Delivery"
 }
 ```
-* **Backend Processing**: Calls the same `createFoodOrder` domain service used by
-  the legacy callable. It re-queries restaurant-owned menu prices, validates the
+* **Backend Processing**: Calls the internal `createFoodOrder` domain service. It
+  re-queries restaurant-owned menu prices, validates the
   restaurant and cart inside a transaction, and writes the order with status
   `"New Order"`.
 * **Response Data**:

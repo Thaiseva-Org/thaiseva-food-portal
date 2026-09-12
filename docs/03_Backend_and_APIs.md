@@ -111,8 +111,9 @@ Defined in: `functions/src/lib/riders.js`
 ### F. Order & Payment Management APIs
 Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.js`
 
-#### 1. `createFoodOrder`
-- **Purpose:** Customer creates a food order.
+#### 1. `createFoodOrderHttp`
+- **Purpose:** Customer creates a food order through the authenticated HTTP endpoint.
+- **Authentication:** Firebase ID token in the `Authorization: Bearer <token>` header.
 - **Payload:** Requires `Restaurant` details, `Receiver` details, and `Items`. The `Receiver` object supports detailed address fields for delivery.
   - **Example Payload:**
     ```json

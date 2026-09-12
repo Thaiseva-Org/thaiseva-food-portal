@@ -38,7 +38,7 @@ The sale price of a dish after applying discount percentage is calculated as fol
 $$\text{Sale Price} = \frac{\text{Math.round}\left(\text{Base Price} \times \left(1 - \frac{\text{Discount \%}}{100}\right) \times 100\right)}{100}$$
 
 ### 2.2 Order Subtotal & Verified Total
-When an order is submitted, Cloud Functions (`createFoodOrder` / `prepareVerifiedAccounting`) re-query dish unit prices from `food_items/thaiseva-platform/items` to re-verify totals inside an atomic transaction. Client-submitted prices are strictly ignored for financial ledger calculations.
+When an order is submitted, the `createFoodOrderHttp` endpoint and its internal accounting service re-query dish unit prices to verify totals inside an atomic transaction. Client-submitted prices are strictly ignored for financial ledger calculations.
 
 $$\text{Subtotal} = \sum_{i=1}^{N} \left( \text{Verified Sale Price}_i \times \text{Quantity}_i \right)$$
 
@@ -74,7 +74,7 @@ stateDiagram-v2
 
 | Current State | Target State | Triggering Function | Allowed Roles | System Requirements & Side Effects |
 | :--- | :--- | :--- | :--- | :--- |
-| `[None]` | `New Order` | `createFoodOrder` | Customer / User | Validates items in catalog; writes order document; sets `isPaymentClear = false`. |
+| `[None]` | `New Order` | `createFoodOrderHttp` | Customer / User | Validates items in catalog; writes order document; sets `isPaymentClear = false`. |
 | `New Order` | `Order Confirm` | `transitionOrderStatus` | Partner / Master | Confirms order acceptance; notifies customer. |
 | `New Order` | `Cancelled` | `transitionOrderStatus` | Partner / Master | Rejects order; marks terminal state. |
 | `Order Confirm` | `Preparing` | `transitionOrderStatus` | Partner / Master | Advances kitchen ticket display. |

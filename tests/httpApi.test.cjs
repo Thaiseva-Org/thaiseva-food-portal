@@ -54,4 +54,8 @@ test("Flutter order endpoint is standard HTTP and cannot enforce callable App Ch
     source,
     /exports\.createFoodOrderHttp\s*=\s*wrap\(/
   );
+  assert.doesNotMatch(
+    source,
+    /exports\.createFoodOrder\s*=/
+  );
 });
