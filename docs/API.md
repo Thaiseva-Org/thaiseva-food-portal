@@ -212,7 +212,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 * **Backend Processing**: Calls the internal `createFoodOrder` domain service. It
   re-queries restaurant-owned menu prices, validates the
   restaurant and cart inside a transaction, and writes the order with status
-  `"New Order"`.
+  `"New Order"`. For `paymentMethod: "Stripe"`, `verified` is set to `false` at checkout; once Stripe payment completes successfully, the backend updates `verified: true` to confirm payment.
 * **Response Data**:
 ```json
 {

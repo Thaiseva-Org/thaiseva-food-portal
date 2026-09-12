@@ -296,12 +296,12 @@ async function transitionOrderStatus(caller, { orderId, toStatus, idempotencyKey
     const order = snap.data();
     const ownerId = order.Restaurant?.ownerId;
     assertTenantAccess(caller, ownerId);
-    const restaurantSteps = ["Preparing", "Ready for pickup"];
+    const restaurantSteps = ["Preparing", "Ready for pickup", "Out for Delivery"];
     if (caller.role === ROLES.MASTER && ownerId !== "thaiseva-platform" && restaurantSteps.includes(toStatus)) {
-      throw new HttpsError("permission-denied", "Preparation is managed by the restaurant.");
+      throw new HttpsError("permission-denied", "Preparation and dispatch are managed by the restaurant.");
     }
     if (caller.role !== ROLES.MASTER && !restaurantSteps.includes(toStatus)) {
-      throw new HttpsError("permission-denied", "Only admin can confirm, cancel or dispatch orders.");
+      throw new HttpsError("permission-denied", "Only admin can confirm or cancel orders.");
     }
 
     const current = normalizeStoredStatus(order.currentStatus || "New Order");

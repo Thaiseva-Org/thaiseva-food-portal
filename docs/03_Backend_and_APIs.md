@@ -159,8 +159,8 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
 - **Purpose:** Moves the order through its lifecycle.
 - **Payload:** `{ "orderId": "ord_123", "toStatus": "Preparing" }`
 - **Business Logic:** 
-  - Enforces role-specific transitions. Restaurants control "Preparing" and "Ready for pickup". 
-  - Master Admin controls Cancellation and Dispatch ("Out for Delivery").
+  - Enforces role-specific transitions. Restaurants control "Preparing", "Ready for pickup", and "Out for Delivery".
+  - Master Admin controls Cancellation.
 
 #### 4. `assignOrderRider`
 - **Purpose:** Master Admin assigns an active rider before dispatch.
@@ -174,9 +174,11 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
   - Updates daily and monthly financial records in the `Earnings` collection.
   - Updates lifetime earnings and order counts on the `restaurants` document.
 
-#### 6. `verifyOrderPayment` & `clearOrderPayment`
-- **Purpose:** Master Admin verification of manual offline payments (e.g., Thai QR, Cash on Delivery).
-- **Business Logic:** Safely records the payment reference and marks the order as financially cleared in the system.
+#### 6. `verifyOrderPayment` & Stripe Payment Verification
+- **Purpose:** Verification of customer order payments after checkout.
+- **Business Logic:**
+  - **Manual Offline Payments (Thai QR, Cash on Delivery):** Master Admin calls `verifyOrderPayment` to record the payment reference and mark `isPaymentDone: true` / `paymentStatus: "verified"`.
+  - **Stripe Payments (`paymentMethod: "Stripe"`):** Manual verification via `verifyOrderPayment` is rejected with `failed-precondition`. Initial order creation sets `verified: false`. Once the Stripe payment process completes successfully (e.g. via Stripe Webhook `checkout.session.completed` / `payment_intent.succeeded`), the backend updates the order record to `verified: true` (and `isPaymentDone: true`), causing the portal UI to reflect status **Stripe verified**.
 
 ### G. Dine-in Reservation Callables
 Defined in: `functions/src/lib/bookings.js`

@@ -167,7 +167,7 @@ idempotent retry returns HTTP `200`:
 
 - `paymentMethod: "Cash on Delivery"`: Master Admin gets a **Verify cash received** button. Successful verification sets `isPaymentDone: true`.
 - `paymentMethod: "Thai QR"` (including PromptPay/legacy ThaiSeva aliases): Master Admin gets a **Verify Thai QR payment** button and may enter the transfer reference. Successful verification sets `isPaymentDone: true`.
-- `paymentMethod: "Stripe"`: there is no manual verification button. The trusted Stripe payment process must set the order field `verified: true`; the portal displays that field as **Stripe verified**. A customer-supplied `verified` value is not trusted by `createFoodOrder`, which initializes it to `false`.
+- `paymentMethod: "Stripe"`: there is no manual verification button. When an order request is submitted, `createFoodOrder` initializes `verified: false`. Once the Stripe payment process completes successfully (e.g. via Stripe Webhook `checkout.session.completed` / `payment_intent.succeeded`), the backend updates the order field `verified: true` (and `isPaymentDone: true`); the portal displays that field as **Stripe verified**. Customer-supplied `verified` values in request payloads are untrusted and ignored.
 
 ## Idempotency
 

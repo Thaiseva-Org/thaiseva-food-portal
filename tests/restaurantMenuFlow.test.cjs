@@ -142,10 +142,10 @@ test("checkout rejects shared fallback, mixed ownership, unavailable items and u
   }
 });
 
-test("only admin confirms and dispatches; delivery uses frozen prices and posts earnings once", async () => {
+test("only admin confirms; delivery uses frozen prices and posts earnings once", async () => {
   const f = fixture();
   const { orderId } = await f.createFoodOrder(customer, request());
-  for (const toStatus of ["Order Confirm", "Out for Delivery", "Cancelled"]) {
+  for (const toStatus of ["Order Confirm", "Cancelled"]) {
     await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus, reason: "Unavailable" }), { code: "permission-denied" });
   }
   await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus: "Preparing" }), { code: "failed-precondition" });
@@ -157,7 +157,7 @@ test("only admin confirms and dispatches; delivery uses frozen prices and posts 
   await f.assignOrderRider(admin, { orderId, riderId: "rider" });
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Preparing" });
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Ready for pickup" });
-  await f.transitionOrderStatus(admin, { orderId, toStatus: "Out for Delivery" });
+  await f.transitionOrderStatus(owner, { orderId, toStatus: "Out for Delivery" });
   await assert.rejects(f.assignOrderRider(admin, { orderId, riderId: "rider" }), { code: "failed-precondition" });
   await assert.rejects(f.markOrderDelivered(owner, { orderId }), { code: "permission-denied" });
   f.records.set("food_items/a/items/dish", { price: 999, discount: 0, active: false, deleted: true });
@@ -175,10 +175,10 @@ test("dispatch needs an active rider and cancellation needs an admin reason", as
   await f.transitionOrderStatus(admin, { orderId, toStatus: "Order Confirm" });
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Preparing" });
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Ready for pickup" });
-  await assert.rejects(f.transitionOrderStatus(admin, { orderId, toStatus: "Out for Delivery" }), { code: "failed-precondition" });
+  await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus: "Out for Delivery" }), { code: "failed-precondition" });
   await f.assignOrderRider(admin, { orderId, riderId: "rider" });
   f.records.set("foodRiders/rider", { id: "rider", active: false });
-  await assert.rejects(f.transitionOrderStatus(admin, { orderId, toStatus: "Out for Delivery" }), { code: "failed-precondition" });
+  await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus: "Out for Delivery" }), { code: "failed-precondition" });
   await assert.rejects(f.transitionOrderStatus(admin, { orderId, toStatus: "Cancelled" }), { code: "invalid-argument" });
   await f.transitionOrderStatus(admin, { orderId, toStatus: "Cancelled", reason: "Restaurant cannot fulfill" });
   assert.equal(f.records.get(`orders/${orderId}`).cancellationReason, "Restaurant cannot fulfill");
