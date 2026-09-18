@@ -29,14 +29,20 @@ export async function resolvePostLoginPath(user) {
 
   // All non-admin users are restaurant owners
   const resSnap = await getDoc(doc(db, "restaurants", user.uid));
-  if (!resSnap.exists()) {
-    return "/onboarding";
-  }
-
-  const restaurant = resSnap.data() || {};
+  
+  const restaurant = resSnap.exists() ? resSnap.data() : {};
   const status = restaurant.status || profile.applicationStatus || "Pending";
 
-  if (status === "Verified") {
+  const isRestaurantAdmin =
+    claims?.foodRole === "restaurantOwner" ||
+    claims?.foodRestaurantOwner === true ||
+    claims?.role === "restaurantOwner" ||
+    claims?.restaurantOwner === true ||
+    (profile?.isRestaurantAdmin === true &&
+      restaurant?.status === "Verified" &&
+      restaurant?.ownerId === user.uid);
+
+  if (isRestaurantAdmin || status === "Verified") {
     return PARTNER_BASE;
   }
 

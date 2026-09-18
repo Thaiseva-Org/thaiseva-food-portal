@@ -18,6 +18,7 @@ import MenuList from "./menu/MenuList";
 import MenuToolbar from "./menu/MenuToolbar";
 import { CSVLink } from "react-csv";
 import CsvImportModal from "./menu/CsvImportModal";
+import ConfirmModal from "../../components/ConfirmModal";
 import {
   DEFAULT_FILTERS,
   categorySectionId,
@@ -27,6 +28,7 @@ import {
   filterMenuItems,
   filtersAreActive,
   getItemKey,
+  getScopedItemKey,
   groupItemsByCategory,
   loadViewMode,
   saveViewMode,
@@ -58,6 +60,8 @@ const FoodItem = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
   const [restaurants, setRestaurants] = useState([]);
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
@@ -89,35 +93,100 @@ const FoodItem = () => {
     setLoading(true);
     setError(null);
     try {
-      // Each restaurant owns its menu.
-      const foodItemsRef = collection(db, `food_items/${menuRoot}/items`);
-      
       const promises = [
-        getDocs(foodItemsRef),
         getDoc(doc(db, "settings", "categories")).catch(() => null),
       ];
 
       if (isMasterAdmin) {
         promises.push(getDocs(collection(db, "restaurants")).catch(() => null));
+      } else {
+        promises.push(getDocs(collection(db, `food_items/${menuRoot}/items`)));
       }
 
-      const [itemsSnap, catSnap, restSnap] = await Promise.all(promises);
+      const [catSnap, secondSnap] = await Promise.all(promises);
 
-      const fetchedItems = itemsSnap.docs
-        .map((d) => {
-          const data = d.data();
-          const sanitizeStr = (val) => (val && typeof val === "object" && val.text) ? String(val.text) : val;
-          return {
-            id: d.id,
-            ...data,
-            itemName: sanitizeStr(data.itemName),
-            category: sanitizeStr(data.category),
-            cuisine: sanitizeStr(data.cuisine),
-            itemType: sanitizeStr(data.itemType),
-            description: sanitizeStr(data.description),
-          };
-        })
-        .filter((item) => item.deleted !== true);
+      let fetchedItems = [];
+
+      if (isMasterAdmin) {
+        const restSnap = secondSnap;
+        let fetchedRests = [];
+        if (restSnap) {
+          fetchedRests = restSnap.docs.map((d) => {
+            const rawName = d.data().name;
+            let safeName = "Unknown";
+            if (typeof rawName === "string") safeName = rawName;
+            else if (rawName && typeof rawName === "object" && rawName.text) safeName = String(rawName.text);
+            return {
+              ownerId: d.id,
+              name: safeName,
+            };
+          });
+        }
+        if (!fetchedRests.some((r) => r.ownerId === PLATFORM_OWNER_ID)) {
+          fetchedRests.unshift({
+            ownerId: PLATFORM_OWNER_ID,
+            name: "ThaiSeva Kitchen",
+          });
+        }
+        fetchedRests.sort((a, b) => a.name.localeCompare(b.name));
+        setRestaurants(fetchedRests);
+
+        const restNameMap = new Map(fetchedRests.map((r) => [r.ownerId, r.name]));
+        const allOwnerIds = Array.from(
+          new Set([PLATFORM_OWNER_ID, ...fetchedRests.map((r) => r.ownerId)])
+        );
+
+        const itemSnaps = await Promise.all(
+          allOwnerIds.map((oid) =>
+            getDocs(collection(db, `food_items/${oid}/items`)).catch((err) => {
+              console.warn(`Could not load items for ${oid}:`, err);
+              return { docs: [] };
+            })
+          )
+        );
+
+        const sanitizeStr = (val) =>
+          val && typeof val === "object" && val.text ? String(val.text) : val;
+
+        fetchedItems = itemSnaps.flatMap((snap, idx) => {
+          const oid = allOwnerIds[idx];
+          const rName = restNameMap.get(oid) || "Unknown";
+          return snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              ownerUid: data.ownerUid || oid,
+              restaurantName: data.restaurantName || rName,
+              itemName: sanitizeStr(data.itemName),
+              category: sanitizeStr(data.category),
+              cuisine: sanitizeStr(data.cuisine),
+              itemType: sanitizeStr(data.itemType),
+              description: sanitizeStr(data.description),
+            };
+          });
+        }).filter((item) => item.deleted !== true);
+      } else {
+        const itemsSnap = secondSnap;
+        const sanitizeStr = (val) =>
+          val && typeof val === "object" && val.text ? String(val.text) : val;
+
+        fetchedItems = itemsSnap.docs
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              ownerUid: data.ownerUid || menuRoot,
+              itemName: sanitizeStr(data.itemName),
+              category: sanitizeStr(data.category),
+              cuisine: sanitizeStr(data.cuisine),
+              itemType: sanitizeStr(data.itemType),
+              description: sanitizeStr(data.description),
+            };
+          })
+          .filter((item) => item.deleted !== true);
+      }
 
       setItems(fetchedItems);
 
@@ -128,20 +197,6 @@ const FoodItem = () => {
           data = rawData.map(c => (c && typeof c === 'object' && c.text) ? String(c.text) : c);
         }
         setSettingsCategories(data);
-      }
-
-      if (isMasterAdmin && restSnap) {
-        const fetchedRests = restSnap.docs.map((d) => {
-          const rawName = d.data().name;
-          let safeName = "Unknown";
-          if (typeof rawName === "string") safeName = rawName;
-          else if (rawName && typeof rawName === "object" && rawName.text) safeName = String(rawName.text);
-          return {
-            ownerId: d.id,
-            name: safeName,
-          };
-        });
-        setRestaurants(fetchedRests.sort((a, b) => a.name.localeCompare(b.name)));
       }
     } catch (err) {
       console.error("Error fetching food items:", err);
@@ -160,16 +215,25 @@ const FoodItem = () => {
     setLoading(false);
   }, [canManageMenu, menuRoot, fetchData]);
 
-  const stats = useMemo(() => computeMenuStats(items), [items]);
+  const restaurantScopedItems = useMemo(() => {
+    if (!filters.restaurantId || filters.restaurantId === "all") return items;
+    return items.filter((item) => {
+      const assigned = Array.isArray(item.assignedRestaurants) ? item.assignedRestaurants : [];
+      const itemOwner = item.ownerUid || item.restaurantId || item.restaurantOwnerUid || "";
+      return assigned.includes(filters.restaurantId) || itemOwner === filters.restaurantId;
+    });
+  }, [items, filters.restaurantId]);
+
+  const stats = useMemo(() => computeMenuStats(restaurantScopedItems), [restaurantScopedItems]);
 
   const categories = useMemo(
-    () => collectCategoryOptions(settingsCategories, items),
-    [settingsCategories, items]
+    () => collectCategoryOptions(settingsCategories, restaurantScopedItems),
+    [settingsCategories, restaurantScopedItems]
   );
 
   const cuisines = useMemo(
-    () => collectCuisineOptions(items),
-    [items]
+    () => collectCuisineOptions(restaurantScopedItems),
+    [restaurantScopedItems]
   );
 
   const deferredFilters = useDeferredValue(filters);
@@ -226,28 +290,39 @@ const FoodItem = () => {
 
   const handleEdit = (item) => {
     const id = getItemKey(item);
-    navigate(`edit/${encodeURIComponent(id)}`);
+    const itemOwner =
+      item?.ownerUid ||
+      (filters.restaurantId !== "all" ? filters.restaurantId : menuRoot);
+    navigate(
+      `edit/${encodeURIComponent(id)}?ownerUid=${encodeURIComponent(itemOwner)}`,
+      { state: { ownerUid: itemOwner } }
+    );
   };
 
   const handleToggleActive = async (item) => {
-    if (!item || !menuRoot) return;
+    if (!item) return;
     const itemId = getItemKey(item);
+    const scopedKey = getScopedItemKey(item);
+    const itemOwner =
+      item.ownerUid ||
+      (filters.restaurantId !== "all" ? filters.restaurantId : menuRoot);
+    if (!itemOwner) return;
     const nextActive = !item.active;
-    setBusyId(itemId);
+    setBusyId(scopedKey);
     setFeedback(null);
     try {
       await setFoodItemActive({
-        ownerUid: menuRoot,
+        ownerUid: itemOwner,
         itemId,
         active: nextActive,
       });
       setItems((prev) =>
         prev.map((row) =>
-          getItemKey(row) === itemId ? { ...row, active: nextActive } : row
+          getScopedItemKey(row) === scopedKey ? { ...row, active: nextActive } : row
         )
       );
       setSelectedItem((prev) =>
-        prev && getItemKey(prev) === itemId
+        prev && getScopedItemKey(prev) === scopedKey
           ? { ...prev, active: nextActive }
           : prev
       );
@@ -268,18 +343,28 @@ const FoodItem = () => {
     }
   };
 
-  const handleDelete = async (item) => {
-    if (!item || !menuRoot) return;
+  const handleDelete = (item) => {
+    if (!item) return;
+    setItemToDelete(item);
+    setDeleteConfirmOpen(true);
+  };
+
+  const executeDelete = async () => {
+    setDeleteConfirmOpen(false);
+    const item = itemToDelete;
+    if (!item) return;
+    const itemOwner =
+      item.ownerUid ||
+      (filters.restaurantId !== "all" ? filters.restaurantId : menuRoot);
+    if (!itemOwner) return;
+
     const itemId = getItemKey(item);
-    const ok = window.confirm(
-      `Archive "${item.itemName}" from your menu?`
-    );
-    if (!ok) return;
-    setBusyId(itemId);
+    const scopedKey = getScopedItemKey(item);
+    setBusyId(scopedKey);
     setFeedback(null);
     try {
-      await deleteFoodItem({ ownerUid: menuRoot, itemId });
-      setItems((prev) => prev.filter((row) => getItemKey(row) !== itemId));
+      await deleteFoodItem({ ownerUid: itemOwner, itemId });
+      setItems((prev) => prev.filter((row) => getScopedItemKey(row) !== scopedKey));
       setSelectedItem(null);
       setFeedback({
         type: "success",
@@ -293,6 +378,7 @@ const FoodItem = () => {
       });
     } finally {
       setBusyId(null);
+      setItemToDelete(null);
     }
   };
 
@@ -351,7 +437,20 @@ const FoodItem = () => {
               <i className="bi bi-upload" aria-hidden="true" />
               Import CSV
             </button>
-            <Link to="addItem" className="btn-primary !min-h-11">
+            <Link
+              to={
+                filters.restaurantId !== "all"
+                  ? `addItem?ownerUid=${encodeURIComponent(filters.restaurantId)}`
+                  : "addItem"
+              }
+              state={{
+                ownerUid:
+                  filters.restaurantId !== "all"
+                    ? filters.restaurantId
+                    : menuRoot,
+              }}
+              className="btn-primary !min-h-11"
+            >
               <i className="bi bi-plus-lg" aria-hidden="true" />
               Add menu item
             </Link>
@@ -486,7 +585,20 @@ const FoodItem = () => {
               Build your digital menu with photos, prices, and categories so
               customers can browse your dishes.
             </p>
-            <Link to="addItem" className="btn-primary mt-2 !min-h-11">
+            <Link
+              to={
+                filters.restaurantId !== "all"
+                  ? `addItem?ownerUid=${encodeURIComponent(filters.restaurantId)}`
+                  : "addItem"
+              }
+              state={{
+                ownerUid:
+                  filters.restaurantId !== "all"
+                    ? filters.restaurantId
+                    : menuRoot,
+              }}
+              className="btn-primary mt-2 !min-h-11"
+            >
               <i className="bi bi-plus-lg" aria-hidden="true" />
               Add your first item
             </Link>
@@ -540,7 +652,7 @@ const FoodItem = () => {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                     {rows.map((item) => (
                       <MenuItemCard
-                        key={getItemKey(item)}
+                        key={getScopedItemKey(item)}
                         item={item}
                         onView={setSelectedItem}
                         onEdit={handleEdit}
@@ -558,7 +670,7 @@ const FoodItem = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {paginatedItems.map((item) => (
               <MenuItemCard
-                key={getItemKey(item)}
+                key={getScopedItemKey(item)}
                 item={item}
                 onView={setSelectedItem}
                 onEdit={handleEdit}
@@ -597,7 +709,20 @@ const FoodItem = () => {
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImportComplete={fetchData}
-        ownerUid={menuRoot}
+        ownerUid={filters.restaurantId !== "all" ? filters.restaurantId : menuRoot}
+      />
+
+      <ConfirmModal
+        isOpen={deleteConfirmOpen}
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setItemToDelete(null);
+        }}
+        onConfirm={executeDelete}
+        title="Delete Item"
+        message={itemToDelete ? `Archive "${itemToDelete.itemName}" from your menu?` : ""}
+        confirmText="Yes, delete"
+        cancelText="Cancel"
       />
     </div>
   );

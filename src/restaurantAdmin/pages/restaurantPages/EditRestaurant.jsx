@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { db, storage } from "../../../../firebaseConfig"; // Adjust the import based on your firebase configuration
@@ -13,6 +14,7 @@ import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { partnerPath } from "../../../utils/partnerRoutes";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
+import ConfirmModal from "../../../components/ConfirmModal";
 
 const EditRestaurant = () => {
   const [restaurantName, setRestaurantName] = useState("");
@@ -24,6 +26,7 @@ const EditRestaurant = () => {
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const { currentUser } = useAuth();
   const modalRef = useRef(null);
   const navigate = useNavigate();
@@ -46,7 +49,7 @@ const EditRestaurant = () => {
           setDescription(data.description || "");
           setImage(data.imageUrl || "");
         } else {
-          alert("No such restaurant!");
+          customAlert("No such restaurant!");
         }
       } catch (error) {
         console.error("Error fetching document: ", error);
@@ -83,11 +86,11 @@ const EditRestaurant = () => {
   const handleImageUpload = async (file) => {
     if (file) {
       if (!file.type?.startsWith("image/")) {
-        alert("Only image files are allowed.");
+        customAlert("Only image files are allowed.");
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert("Image must be under 5MB.");
+        customAlert("Image must be under 5MB.");
         return;
       }
       setUploading(true);
@@ -125,62 +128,63 @@ const EditRestaurant = () => {
 
   const handleSubmit = async () => {
     if (restaurantName.trim() === "") {
-      alert("Please enter the restaurant name.");
+      customAlert("Please enter the restaurant name.");
       return;
     }
 
     if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
-      alert("Please enter a valid phone number.");
+      customAlert("Please enter a valid phone number.");
       return;
     }
 
     if (emailId.trim() === "") {
-      alert("Please enter the email ID.");
+      customAlert("Please enter the email ID.");
       return;
     }
 
     if (foodType.trim() === "") {
-      alert("Please select the food type.");
+      customAlert("Please select the food type.");
       return;
     }
 
     if (location.trim() === "") {
-      alert("Please enter the location.");
+      customAlert("Please enter the location.");
       return;
     }
 
     if (description.trim() === "") {
-      alert("Please enter the description.");
+      customAlert("Please enter the description.");
       return;
     }
 
     if (!image || image === "") {
-      alert("Please upload an image.");
+      customAlert("Please upload an image.");
       return;
     }
 
-    if (
-      confirm("Are you sure you want to update this restaurant's information?")
-    ) {
-      try {
-        await updateRestaurantProfile({
-          ownerUid: currentUser.uid,
-          fields: {
-            name: restaurantName || "N/A",
-            phoneNumber: phoneNumber || "N/A",
-            emailId: emailId || "N/A",
-            foodType: foodType || "N/A",
-            location: location || "N/A",
-            description: description || "N/A",
-            imageUrl: image || "N/A",
-          },
-        });
-        alert("Restaurant information updated successfully");
-        navigate(partnerPath("restaurant"));
-      } catch (error) {
-        console.error("Error updating documents: ", error.message);
-        alert(error.message || "Failed to update. Deploy Cloud Functions first.");
-      }
+    setIsConfirmModalOpen(true);
+  };
+
+  const handleConfirmUpdate = async () => {
+    setIsConfirmModalOpen(false);
+    try {
+      await updateRestaurantProfile({
+        ownerUid: currentUser.uid,
+        fields: {
+          name: restaurantName || "N/A",
+          phoneNumber: phoneNumber || "N/A",
+          emailId: emailId || "N/A",
+          foodType: foodType || "N/A",
+          location: location || "N/A",
+          description: description || "N/A",
+          imageUrl: image || "N/A",
+        },
+      });
+      customAlert("Restaurant information updated successfully");
+      navigate(partnerPath("restaurant"));
+    } catch (error) {
+      console.error("Error updating documents: ", error.message);
+      customAlert(error.message || "Failed to update. Deploy Cloud Functions first.");
     }
   };
 
@@ -198,7 +202,7 @@ const EditRestaurant = () => {
         }
       );
     } else {
-      alert("Geolocation is not supported by this browser.");
+      customAlert("Geolocation is not supported by this browser.");
     }
   };
 
@@ -361,7 +365,7 @@ const EditRestaurant = () => {
                       defaultCountry="TH"
                       limitMaxLength={true}
                       placeholder="XXX XXX XXXX"
-                      value={phoneNumber}
+                      value={phoneNumber?.replace(/\s+/g, "") || ""}
                       onChange={setPhoneNumber}
                     />
                   </div>
@@ -460,6 +464,15 @@ const EditRestaurant = () => {
           </div>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={isConfirmModalOpen}
+        onClose={() => setIsConfirmModalOpen(false)}
+        onConfirm={handleConfirmUpdate}
+        title="Update Restaurant"
+        message="Are you sure you want to update this restaurant's information?"
+        confirmText="Update"
+        cancelText="Cancel"
+      />
     </div>
   );
 };

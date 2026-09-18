@@ -2,6 +2,8 @@ import { Pagination } from "@mui/material";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
+import { useKitchenScope } from "../../hooks/useKitchenScope";
+import { transitionOrderStatus, markOrderDelivered } from "../../api";
 import DataBoxes from "../../components/DataBoxes";
 import { StatGrid } from "../../components/dashboard";
 import DateRangeFilter from "../../components/DateRangeFilter";
@@ -11,6 +13,7 @@ import StatusBadge from "../../components/StatusBadge";
 import { useOrders } from "../../context/OrdersProvider";
 import { fetchOrders, fetchOrdersTotalPages } from "../../services/GetOrders";
 import {
+  ORDER_STATUS,
   ORDER_STATUS_FILTERS,
   ORDER_STATUS_SUMMARY,
   countOrdersByStatus,
@@ -39,13 +42,35 @@ const matchesSearch = (item, query) => {
   return haystack.includes(query);
 };
 
+const nextStatusFor = (status, { canDeliver = false, hasRider = false } = {}) => {
+  if (status === ORDER_STATUS.NEW && canDeliver) return ORDER_STATUS.CONFIRM;
+  if (status === ORDER_STATUS.CONFIRM) return ORDER_STATUS.PREPARING;
+  if (status === ORDER_STATUS.PREPARING) return ORDER_STATUS.READY;
+  if (status === ORDER_STATUS.READY && hasRider && canDeliver) return ORDER_STATUS.OUT;
+  if (canDeliver && status === ORDER_STATUS.OUT) return ORDER_STATUS.DELIVERED;
+  return null;
+};
+
+const nextActionLabel = (status, opts) => {
+  const next = nextStatusFor(status, opts);
+  if (!next) return null;
+  if (status === ORDER_STATUS.NEW) return "Confirm";
+  if (status === ORDER_STATUS.CONFIRM) return "Start prep";
+  if (status === ORDER_STATUS.PREPARING) return "Mark ready";
+  if (status === ORDER_STATUS.READY) return "Mark out";
+  if (status === ORDER_STATUS.OUT) return "Confirm del.";
+  return next;
+};
+
 const ManageOrder = () => {
   const { isRestaurantAdmin, currentUser } = useAuth();
+  const kitchen = useKitchenScope();
   const { orders, ordersLoading, ordersError } = useOrders();
   const restaurantId = currentUser?.uid;
 
   const [orderDetailsRecord, setOrderDetailsRecord] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -98,6 +123,28 @@ const ManageOrder = () => {
 
   const handleChangePage = (_, newPage) => {
     setPage(newPage);
+  };
+
+  const handleAdvance = async (orderId, toStatus) => {
+    if (actionLoadingId) return;
+    setActionLoadingId(orderId);
+    try {
+      if (toStatus === ORDER_STATUS.DELIVERED) {
+        await markOrderDelivered({ orderId });
+      } else {
+        await transitionOrderStatus({ orderId, toStatus });
+      }
+      if (!isRealTime) {
+        setOrderDetailsRecord((prev) =>
+          prev.map((o) => (o.OrderID === orderId ? { ...o, Status: toStatus } : o))
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to update order status.");
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   const sourceRows = isRealTime ? orders : orderDetailsRecord;
@@ -367,16 +414,36 @@ const ManageOrder = () => {
                       <StatusBadge status={item.Status} />
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <Link
-                        to={partnerPath(
-                          "manageOrder",
-                          "orderView",
-                          encodeURIComponent(item.OrderID)
-                        )}
-                        className="btn-primary whitespace-nowrap px-3 py-1.5"
-                      >
-                        View
-                      </Link>
+                      <div className="flex items-center justify-center gap-2">
+                        <Link
+                          to={partnerPath(
+                            "manageOrder",
+                            "orderView",
+                            encodeURIComponent(item.OrderID)
+                          )}
+                          className="btn-primary whitespace-nowrap px-3 py-1.5"
+                        >
+                          View
+                        </Link>
+                        {(() => {
+                          const canDeliver = kitchen.isPlatformKitchen && kitchen.isMasterAdmin;
+                          const hasRider = Boolean(item.assignedRiderId || item.DeliveryPartner?.id);
+                          const nextStatus = nextStatusFor(item.Status, { canDeliver, hasRider });
+                          const nextLabel = nextActionLabel(item.Status, { canDeliver, hasRider });
+                          if (!nextStatus || !nextLabel) return null;
+                          const isLoading = actionLoadingId === item.OrderID;
+                          return (
+                            <button
+                              type="button"
+                              className="btn-success whitespace-nowrap px-3 py-1.5 shadow-sm"
+                              disabled={isLoading || Boolean(actionLoadingId)}
+                              onClick={() => handleAdvance(item.OrderID, nextStatus)}
+                            >
+                              {isLoading ? "..." : nextLabel}
+                            </button>
+                          );
+                        })()}
+                      </div>
                     </td>
                   </tr>
                 ))}

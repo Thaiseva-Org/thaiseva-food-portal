@@ -1,3 +1,4 @@
+import { customAlert } from "../../utils/alertService";
 import { useState, useEffect } from "react";
 import { RestaImg } from "../../assets";
 import { Link } from "react-router";
@@ -108,7 +109,7 @@ const Restaurant = () => {
     } catch (error) {
       console.error("Error updating active state:", error);
       setToggle(previous);
-      alert(error.message || "Failed to update open/closed state.");
+      customAlert(error.message || "Failed to update open/closed state.");
     } finally {
       setToggling(false);
     }

@@ -138,7 +138,7 @@ const TopNav = ({ toggle, show }) => {
   //   if (choice === "specific" && specificUserId) {
   //     userIdToUse = specificUserId; // Use specific user ID if choice is 'specific'
   //   } else if (!userIdToUse) {
-  //     alert("Please select a valid option.");
+  //     customAlert("Please select a valid option.");
   //     return;
   //   }
 
@@ -160,14 +160,14 @@ const TopNav = ({ toggle, show }) => {
 
   //       // Update Firestore with the new or updated coupons array
   //       await updateDoc(userDocRef, { coupons: updatedCoupons });
-  //       alert("Coupon successfully added to the user!");
+  //       customAlert("Coupon successfully added to the user!");
   //       setShowModal(false); // Close the modal after successful upload
   //     } else {
-  //       alert("User not found!");
+  //       customAlert("User not found!");
   //     }
   //   } catch (error) {
   //     console.error("Error updating coupon:", error);
-  //     alert("Failed to add the coupon. Please try again.");
+  //     customAlert("Failed to add the coupon. Please try again.");
   //   }
   // };
 

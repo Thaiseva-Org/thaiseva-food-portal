@@ -296,7 +296,7 @@ const PublicApply = () => {
                 <input className="modern-input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
               </Field>
               <Field label="Phone">
-                <PhoneInput defaultCountry="TH" className="modern-input" limitMaxLength={true} value={phoneNumber} onChange={setPhoneNumber} />
+                <PhoneInput defaultCountry="TH" className="modern-input" limitMaxLength={true} value={phoneNumber?.replace(/\s+/g, "") || ""} onChange={setPhoneNumber} />
               </Field>
               <Field label="Email">
                 <input className="modern-input" type="email" value={emailId} onChange={(e) => setEmailId(e.target.value)} />

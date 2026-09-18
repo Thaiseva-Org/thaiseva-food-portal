@@ -1,3 +1,4 @@
+import { customAlert } from "../../utils/alertService";
 import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { Link } from "react-router";
@@ -303,7 +304,7 @@ const Riders = () => {
         )
       );
     } catch (err) {
-      alert(err.message || "Could not update rider status.");
+      customAlert(err.message || "Could not update rider status.");
     } finally {
       setBusyId(null);
     }
@@ -458,7 +459,7 @@ const Riders = () => {
                   className="modern-input"
                   defaultCountry="TH"
                   limitMaxLength={true}
-                  value={form.phone}
+                  value={form.phone?.replace(/\s+/g, "") || ""}
                   onChange={(val) =>
                     setForm((p) => ({ ...p, phone: val }))
                   }

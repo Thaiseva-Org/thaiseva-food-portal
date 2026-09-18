@@ -25,7 +25,6 @@ import {
   RestaurantChat as MasterRestaurantChat,
   TodayOrders,
   TableBookings,
-  CustomerChat,
 } from "./masterAdmin/pages";
 import {
   AuthPage,
@@ -295,11 +294,6 @@ const App = () => {
                     <Route
                       path="restaurantChat"
                       element={<MasterRestaurantChat />}
-                    />
-                    <Route path="foodCustomerChat" element={<CustomerChat />} />
-                    <Route
-                      path="customerChat"
-                      element={<Navigate to="../foodCustomerChat" replace />}
                     />
                     <Route
                       path="ordersDetails/ordersDetView/:orderId"

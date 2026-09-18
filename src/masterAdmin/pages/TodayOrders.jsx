@@ -1,3 +1,4 @@
+import { customAlert } from "../../utils/alertService";
 import { useEffect, useState } from "react";
 import {
   fetchOrderRecordsTotalPages,
@@ -62,7 +63,7 @@ const TodayOrders = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Failed to generate invoice:", error);
-      alert("Could not generate the invoice. Please try again.");
+      customAlert("Could not generate the invoice. Please try again.");
     } finally {
       setGenerating((prev) => ({ ...prev, [item.OrderID]: false }));
     }
@@ -240,14 +241,14 @@ const TodayOrders = () => {
       setRefetch((p) => !p);
     } catch (err) {
       console.error(err);
-      alert(err.message || "Failed to clear payment. Deploy Cloud Functions first.");
+      customAlert(err.message || "Failed to clear payment. Deploy Cloud Functions first.");
     }
   };
 
   const handleDateRangeSubmit = (event) => {
     event.preventDefault();
     if (endDate == "") {
-      alert("Please select both start and end!!");
+      customAlert("Please select both start and end!!");
       return;
     }
     setPage(1);
@@ -301,7 +302,7 @@ const TodayOrders = () => {
                 value={endDate}
                 onChange={(event) => {
                   if (startDate == "") {
-                    alert("Please Select Start Date First!!");
+                    customAlert("Please Select Start Date First!!");
                     return;
                   }
                   setEndDate(event.target.value);

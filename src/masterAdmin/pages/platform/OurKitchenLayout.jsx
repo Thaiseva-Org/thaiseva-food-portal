@@ -23,7 +23,7 @@ const OurKitchenLayout = () => {
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-secondary-600">
           ThaiSeva kitchen
         </p>
-        <h1 className="page-header mt-1">Our kitchen</h1>
+        <h1 className="page-header mt-1">Menu</h1>
         <p className="page-subtext mt-1.5 max-w-2xl">
           Dishes for the ThaiSeva app and website.
         </p>

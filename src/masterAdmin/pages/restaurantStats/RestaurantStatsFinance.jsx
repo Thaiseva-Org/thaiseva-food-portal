@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { doc, updateDoc } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
@@ -301,7 +302,7 @@ const RestaurantStatsFinance = () => {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      alert("Could not generate the invoice.");
+      customAlert("Could not generate the invoice.");
     } finally {
       setGenerating(false);
     }

@@ -38,8 +38,8 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `transitionOrderStatus` | Protected | Yes | Owner / Master | Standard | Advances order state machine |
 | `markOrderDelivered` | Protected | Yes | Master Admin | Standard | Marks order delivered & updates financial ledger |
 | `assignOrderRider` | Protected | Yes | Master Admin | Standard | Binds courier to order ticket |
-| `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Atomic admin order confirmation |
-| `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies customer payment settlement |
+| `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Confirms an order, optionally assigns a rider, and applies the server-owned fixed delivery fee |
+| `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies COD/Thai QR settlement after order confirmation; Stripe stays webhook-controlled |
 | `clearOrderPayment` | Protected | Yes | Master Admin | Standard | Marks partner payout as cleared |
 | `createFoodItem` | Protected | Yes | Owner / Master | Standard | Adds dish to master catalog |
 | `updateFoodItem` | Protected | Yes | Owner / Master | Standard | Updates dish attributes in catalog |

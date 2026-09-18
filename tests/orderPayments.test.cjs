@@ -46,7 +46,7 @@ test("COD verification stores server amount, verifier and timestamp; retry write
 });
 
 test("Thai QR payment saves a trimmed reference", async () => {
-  const f = fixture({ paymentMethod: "Thai QR", Amount: "938" });
+  const f = fixture({ paymentMethod: "Thai QR", Amount: "938", currentStatus: "Order Confirm" });
   await f.verifyOrderPayment(master, { ...request, expectedMethod: "thaiqr", reference: " transfer-123 " });
   assert.equal(f.writes[0].paymentVerification.method, "thaiqr");
   assert.equal(f.writes[0].paymentVerification.reference, "transfer-123");
@@ -70,6 +70,7 @@ test("Stripe, unknown methods, cancelled orders and stale amounts are rejected",
     { paymentMethod: "card", Amount: 938 },
     { Amount: 938 },
     { paymentMethod: "COD", Amount: 938, currentStatus: "Cancelled" },
+    { paymentMethod: "COD", Amount: 938, currentStatus: "New Order" },
     { paymentMethod: "COD", Amount: 950 },
     { paymentMethod: "Thai QR", Amount: 938 },
     { paymentMethod: "COD", Amount: 0 },

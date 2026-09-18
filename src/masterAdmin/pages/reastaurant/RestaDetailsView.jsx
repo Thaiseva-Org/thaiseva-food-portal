@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
@@ -6,6 +7,7 @@ import ViewFoodItem from "../../component/ViewItem";
 import MasterApexChart from "../../component/ChartTwo";
 import { getTodayEarnings } from "../../../services/Earning";
 import Loading from "../../../components/Loading";
+import ConfirmModal from "../../../components/ConfirmModal";
 
 const RestaDetailsView = () => {
   const { resId } = useParams();
@@ -19,6 +21,7 @@ const RestaDetailsView = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [selectGraphType, SetSelectGraphType] = useState("today");
   const [todayEarning, SetTodayEarning] = useState(0);
+  const [statusConfirmOpen, setStatusConfirmOpen] = useState(false);
 
   const fetchRestaurant = useCallback(async () => {
     try {
@@ -37,28 +40,23 @@ const RestaDetailsView = () => {
     }
   }, [ownerId]);
 
-  const changeActiveStatus = async () => {
-    const userResponse = window.confirm(
-      `Are you sure!! You are making the restaurant ${
-        !active ? "active" : "inactive"
-      }.`
-    );
+  const changeActiveStatus = () => {
+    setStatusConfirmOpen(true);
+  };
 
-    if (userResponse) {
-      try {
-        const { setRestaurantOpenState } = await import("../../../api");
-        await setRestaurantOpenState({
-          ownerUid: ownerId,
-          active: !active,
-        });
-        setActive(!active);
-        alert("Restaurant updated!");
-      } catch (error) {
-        alert(error.message || "Error updating restaurant!");
-        console.error("Error updating restaurant:", error);
-      }
-    } else {
-      alert("Action canceled.");
+  const executeChangeActiveStatus = async () => {
+    setStatusConfirmOpen(false);
+    try {
+      const { setRestaurantOpenState } = await import("../../../api");
+      await setRestaurantOpenState({
+        ownerUid: ownerId,
+        active: !active,
+      });
+      setActive(!active);
+      customAlert("Restaurant updated!");
+    } catch (error) {
+      customAlert(error.message || "Error updating restaurant!");
+      console.error("Error updating restaurant:", error);
     }
   };
 
@@ -320,6 +318,15 @@ const RestaDetailsView = () => {
           </div>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={statusConfirmOpen}
+        onClose={() => setStatusConfirmOpen(false)}
+        onConfirm={executeChangeActiveStatus}
+        title="Change Status"
+        message={`Are you sure you want to make the restaurant ${!active ? "active" : "inactive"}?`}
+        confirmText="Yes, change status"
+        cancelText="Cancel"
+      />
     </>
   );
 };

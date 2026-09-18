@@ -16,8 +16,9 @@ export default function OrderPayment({ order, onVerified }) {
   const stripeVerified = stripe && order.verified === true;
   const paid = stripe ? stripeVerified : order.isPaymentDone === true || verified;
   const cancelled = ["cancelled", "canceled"].includes(String(order.CurrentStatus || "").toLowerCase());
+  const unconfirmed = String(order.CurrentStatus || "").toLowerCase() === "new order";
   const amount = Number(order.Amount);
-  const canVerify = isMasterAdmin && channel && !paid && !cancelled && Number.isFinite(amount) && amount > 0;
+  const canVerify = isMasterAdmin && channel && !paid && !cancelled && !unconfirmed && Number.isFinite(amount) && amount > 0;
   const verifiedAt = order.paymentVerification?.verifiedAt?.toDate?.();
 
   async function verify() {
@@ -73,6 +74,11 @@ export default function OrderPayment({ order, onVerified }) {
       {stripe && !stripeVerified && (
         <p className="text-sm text-amber-800">
           Waiting for Stripe verification. This status comes from the order&apos;s verified field and cannot be confirmed manually.
+        </p>
+      )}
+      {channel && unconfirmed && !paid && (
+        <p className="text-sm text-amber-800">
+          Confirm the order first so the final total includes the fixed delivery charge.
         </p>
       )}
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

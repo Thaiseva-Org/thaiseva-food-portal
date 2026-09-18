@@ -1,6 +1,8 @@
+import { customAlert } from "../../utils/alertService";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DoneRoundedIcon from "@mui/icons-material/DoneRounded";
 import { Pagination } from "@mui/material";
+
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../AuthContext";
 import { setDineInBookingStatus } from "../../api";
@@ -10,6 +12,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
+import ConfirmModal from "../../components/ConfirmModal";
 import { useBookings } from "../../context/BookingsProvider";
 import {
   fetchReservations,
@@ -59,6 +62,7 @@ const TableBookings = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [actionBusyId, setActionBusyId] = useState(null);
+  const [confirmModalState, setConfirmModalState] = useState({ isOpen: false, id: null, value: null, label: null });
 
   useEffect(() => {
     document.title = "Thaiseva | Reservations";
@@ -108,19 +112,23 @@ const TableBookings = () => {
     setPage(newPage);
   };
 
-  const handleConfirmTableBooking = async (id, value) => {
+  const handleConfirmTableBooking = (id, value) => {
     const label = value === "Canceled" ? "Rejected" : value;
-    const confirmStatus = window.confirm(
-      `Are you sure you want to mark this booking as ${label}?`
-    );
-    if (!confirmStatus) return;
+    setConfirmModalState({ isOpen: true, id, value, label });
+  };
+
+  const executeConfirmTableBooking = async () => {
+    const { id, value } = confirmModalState;
+    setConfirmModalState({ isOpen: false, id: null, value: null, label: null });
+    if (!id || !value) return;
+
     setActionBusyId(id);
     try {
       // API still stores Accepted | Canceled
       await setDineInBookingStatus({ bookingId: id, status: value });
     } catch (err) {
       console.error("Error updating status history:", err);
-      window.alert(err?.message || "Could not update booking status.");
+      customAlert(err?.message || "Could not update booking status.");
     } finally {
       setActionBusyId(null);
     }
@@ -506,6 +514,15 @@ const TableBookings = () => {
           />
         </div>
       )}
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        onClose={() => setConfirmModalState({ isOpen: false, id: null, value: null, label: null })}
+        onConfirm={executeConfirmTableBooking}
+        title="Confirm Booking Status"
+        message={`Are you sure you want to mark this booking as ${confirmModalState.label}?`}
+        confirmText="Yes, update status"
+        cancelText="Cancel"
+      />
     </div>
   );
 };

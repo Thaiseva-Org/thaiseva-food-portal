@@ -54,6 +54,17 @@ export function getItemKey(item) {
   return String(raw).replace(/^#/, "");
 }
 
+/**
+ * Unique key scoped to item owner, safe for React keys and multi-tenant views
+ * where different restaurants may share the same document id.
+ */
+export function getScopedItemKey(item) {
+  if (!item) return "";
+  const baseKey = getItemKey(item);
+  const owner = item.ownerUid || item.restaurantId || item.restaurantOwnerUid || "";
+  return owner ? `${owner}::${baseKey}` : baseKey;
+}
+
 export function getDiscountPct(item) {
   const d = Number(item?.discount);
   return Number.isFinite(d) && d > 0 ? d : 0;
@@ -79,6 +90,8 @@ export function itemMatchesSearch(item, query) {
   const haystack = [
     item.itemName,
     item.itemId,
+    item.id,
+    item.restaurantName,
     item.description,
     item.category,
     item.itemType,
@@ -90,23 +103,38 @@ export function itemMatchesSearch(item, query) {
   return haystack.includes(query);
 }
 
+function normalizeType(val) {
+  return String(val || "").toLowerCase().replace(/[\s-_]+/g, "");
+}
+
 export function filterMenuItems(items, filters) {
   const q = (filters.searchQuery || "").trim().toLowerCase();
   return (items || []).filter((item) => {
     if (filters.status === "active" && !item.active) return false;
     if (filters.status === "inactive" && item.active) return false;
-    if (filters.category !== "all" && item.category !== filters.category) {
-      return false;
+    if (filters.category && filters.category !== "all") {
+      const itemCat = String(item.category || "").trim().toLowerCase();
+      const filterCat = String(filters.category || "").trim().toLowerCase();
+      if (itemCat !== filterCat) return false;
     }
-    if (filters.itemType !== "all" && item.itemType !== filters.itemType) {
-      return false;
+    if (filters.itemType && filters.itemType !== "all") {
+      const filterTypeNorm = normalizeType(filters.itemType);
+      const itemTypeNorm = normalizeType(item.itemType);
+      if (filterTypeNorm !== itemTypeNorm) {
+        return false;
+      }
     }
-    if (filters.cuisine !== "all" && item.cuisine !== filters.cuisine) {
-      return false;
+    if (filters.cuisine && filters.cuisine !== "all") {
+      const itemCuisine = String(item.cuisine || "").trim().toLowerCase();
+      const filterCuisine = String(filters.cuisine || "").trim().toLowerCase();
+      if (itemCuisine !== filterCuisine) return false;
     }
-    if (filters.restaurantId !== "all") {
+    if (filters.restaurantId && filters.restaurantId !== "all") {
       const assigned = Array.isArray(item.assignedRestaurants) ? item.assignedRestaurants : [];
-      if (!assigned.includes(filters.restaurantId)) {
+      const itemOwner = item.ownerUid || item.restaurantId || item.restaurantOwnerUid || "";
+      const matchesAssigned = assigned.includes(filters.restaurantId);
+      const matchesOwner = itemOwner === filters.restaurantId;
+      if (!matchesAssigned && !matchesOwner) {
         return false;
       }
     }

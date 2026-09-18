@@ -234,7 +234,7 @@ const RestaurantStatsManage = () => {
               className="modern-input"
               defaultCountry="TH"
               limitMaxLength={true}
-              value={phoneNumber}
+              value={phoneNumber?.replace(/\s+/g, "") || ""}
               onChange={setPhoneNumber}
             />
           </label>

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import StatusBadge from "../../../components/StatusBadge";
 import {
   formatPrice,
   getDiscountPct,
   getItemKey,
+  getScopedItemKey,
   getSalePrice,
 } from "./menuUtils";
 
@@ -16,11 +17,16 @@ const MenuItemDetail = ({
   busyId,
   canManageMenu,
 }) => {
+  const [imgError, setImgError] = useState(false);
   const closeRef = useRef(null);
-  const isBusy = busyId === getItemKey(item);
+  const isBusy = busyId === getScopedItemKey(item);
   const discount = getDiscountPct(item);
   const salePrice = getSalePrice(item);
   const isVeg = item?.itemType === "Veg";
+
+  useEffect(() => {
+    setImgError(false);
+  }, [item?.imageUrl]);
 
   useEffect(() => {
     if (!item) return undefined;
@@ -54,10 +60,11 @@ const MenuItemDetail = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative aspect-[16/10] bg-neutral-100">
-          {item.imageUrl ? (
+          {item.imageUrl && !imgError ? (
             <img
               src={item.imageUrl}
               alt=""
+              onError={() => setImgError(true)}
               className="h-full w-full object-cover"
             />
           ) : (

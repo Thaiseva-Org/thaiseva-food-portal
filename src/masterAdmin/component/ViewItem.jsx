@@ -1,3 +1,4 @@
+import { customAlert } from "../../utils/alertService";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
@@ -121,7 +122,7 @@ const ViewFoodItem = ({ items, onClose, resId, ownerId }) => {
       setSelected((current) => (current?.id === id ? null : current));
     } catch (error) {
       console.error("Error deleting document: ", error);
-      alert(error.message || "Error deleting item");
+      customAlert(error.message || "Error deleting item");
     } finally {
       setDeleting(false);
     }

@@ -684,7 +684,7 @@ async function clearOrderPayment(caller, { orderId, idempotencyKey }) {
   return { orderId, isPaymentClear: true, alreadyApplied: false };
 }
 
-async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, deliveryCharge, idempotencyKey }) {
+async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, idempotencyKey }) {
   if (caller.role !== ROLES.MASTER) throw new HttpsError("permission-denied", "Only admin can confirm orders.");
   if (!orderId) throw new HttpsError("invalid-argument", "orderId is required.");
   const safeKey = validateIdempotencyKey(idempotencyKey);
@@ -697,11 +697,10 @@ async function masterConfirmOrder(caller, { orderId, restaurantUid, riderId, del
     if (restaurantUid && restaurantUid !== order.Restaurant?.ownerId) throw new HttpsError("failed-precondition", "The restaurant is fixed at checkout.");
     if (order.currentStatus === "Order Confirm") return { orderId, currentStatus: order.currentStatus, alreadyApplied: true };
     if (order.currentStatus !== "New Order") throw new HttpsError("failed-precondition", "Only new orders can be confirmed.");
-    const fee = Number(deliveryCharge ?? order.deliveryCharge ?? 0);
-    if (!Number.isFinite(fee) || fee < 0 || fee > 1000000) throw new HttpsError("invalid-argument", "Invalid delivery charge.");
     const rider = riderId ? await loadActiveRiderSnapshot(tx, db, riderId) : null;
     const subtotal = Number(order.foodSubtotal ?? (Number(order.Amount) - Number(order.deliveryCharge || 0)));
     if (!Number.isFinite(subtotal) || subtotal < 0) throw new HttpsError("failed-precondition", "Invalid order total.");
+    const fee = subtotal < 1000 ? 100 : 0;
     tx.update(ref, {
       currentStatus: "Order Confirm", foodSubtotal: subtotal, deliveryCharge: fee,
       Amount: Math.round((subtotal + fee) * 100) / 100,

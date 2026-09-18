@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -122,16 +123,16 @@ const RestaurantReqDet = () => {
   const handleAccept = async () => {
     const pct = Number(commission);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-      alert("Enter a valid commission between 0 and 100.");
+      customAlert("Enter a valid commission between 0 and 100.");
       return;
     }
     if (isApplication) {
       if (!username.trim() || !loginEmail.trim() || !password) {
-        alert("Enter username, login email, and password to create the account.");
+        customAlert("Enter username, login email, and password to create the account.");
         return;
       }
       if (password !== confirmPassword) {
-        alert("Passwords do not match.");
+        customAlert("Passwords do not match.");
         return;
       }
     }
@@ -168,12 +169,12 @@ const RestaurantReqDet = () => {
           username: result.username || username,
         });
       } else {
-        alert("Request accepted and verified. Owner claims updated.");
+        customAlert("Request accepted and verified. Owner claims updated.");
         navigate("/foodAdmin/restaRequest");
       }
     } catch (error) {
       console.error("Error accepting request: ", error);
-      alert(error.message || "Failed to accept request. Deploy Cloud Functions.");
+      customAlert(error.message || "Failed to accept request. Deploy Cloud Functions.");
     } finally {
       setActionLoading(false);
     }
@@ -188,11 +189,11 @@ const RestaurantReqDet = () => {
             ? { applicationId: restaurantData.applicationId || ownerId, decision: "Rejected" }
             : { ownerUid: ownerId, decision: "Rejected" }
         );
-        alert("Request rejected.");
+        customAlert("Request rejected.");
         navigate("/foodAdmin/restaRequest");
       } catch (error) {
         console.error("Error rejecting request: ", error);
-        alert(error.message || "Failed to reject request. Deploy Cloud Functions.");
+        customAlert(error.message || "Failed to reject request. Deploy Cloud Functions.");
       } finally {
         setActionLoading(false);
       }

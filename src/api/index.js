@@ -48,12 +48,11 @@ export const assignOrderRider = ({ orderId, riderId }) =>
     riderId,
     idempotencyKey: newIdempotencyKey("assign"),
   });
-export const masterConfirmOrder = ({ orderId, restaurantUid, riderId, deliveryCharge }) =>
+export const masterConfirmOrder = ({ orderId, restaurantUid, riderId }) =>
   callApi("masterConfirmOrder", {
     orderId,
     restaurantUid,
     ...(riderId ? { riderId } : {}),
-    deliveryCharge,
     idempotencyKey: newIdempotencyKey("confirm"),
   });
 export const createFoodRider = (data) =>

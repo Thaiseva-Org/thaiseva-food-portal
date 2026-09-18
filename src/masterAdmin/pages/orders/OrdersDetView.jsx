@@ -59,7 +59,6 @@ const OrdersDetView = () => {
   const [completeOrderDetails, setCompleteOrderDetails] = useState({});
   const [riders, setRiders] = useState([]);
   const [selectedRiderId, setSelectedRiderId] = useState("");
-  const [deliveryChargeInput, setDeliveryChargeInput] = useState("35");
   const [copied, setCopied] = useState(false);
   const itemidParam = useParams();
   const id = decodeURIComponent(itemidParam["orderId"]);
@@ -114,7 +113,7 @@ const OrdersDetView = () => {
         isPaymentDone: orderData.isPaymentDone === true,
         verified: orderData.verified === true,
         paymentVerification: orderData.paymentVerification || null,
-        deliveryCharge: orderData.deliveryCharge ?? 35,
+        deliveryCharge: orderData.deliveryCharge ?? 0,
         paymentMethod: orderData.paymentMethod || "",
         comission: orderData.comission ?? 12,
         CurrentStatus: status,
@@ -125,7 +124,6 @@ const OrdersDetView = () => {
         restaurantName: orderData.Restaurant?.name,
         accounting: orderData.accounting || null,
       });
-      setDeliveryChargeInput(String(orderData.deliveryCharge ?? 35));
       setOrderDetails(orderData.Items || []);
     } catch (err) {
       console.error(err);
@@ -235,7 +233,6 @@ const OrdersDetView = () => {
         orderId: id,
         restaurantUid: completeOrderDetails.ownerId,
         riderId: selectedRiderId || undefined,
-        deliveryCharge: Number(deliveryChargeInput),
       });
       await fetchOrders();
     } catch (err) {
@@ -526,23 +523,14 @@ const OrdersDetView = () => {
                 </div>
 
                 {/* Delivery Fee Input */}
-                <div>
-                  <label
-                    htmlFor="top-delivery-charge"
-                    className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider"
-                  >
-                    3. Delivery Fee (THB)
-                  </label>
-                  <input
-                    type="number"
-                    id="top-delivery-charge"
-                    className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-sky-500 focus:border-sky-500 shadow-xs"
-                    placeholder="35"
-                    min="0"
-                    value={deliveryChargeInput}
-                    onChange={(e) => setDeliveryChargeInput(e.target.value)}
-                    disabled={actionLoading}
-                  />
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                    Delivery charge
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-amber-900">
+                    {Number(completeOrderDetails.Amount) < 1000 ? "฿100" : "฿0"}
+                  </p>
+                  <p className="text-xs text-amber-700">Automatically applied for food subtotals below ฿1,000.</p>
                 </div>
 
                 {/* Action Button */}

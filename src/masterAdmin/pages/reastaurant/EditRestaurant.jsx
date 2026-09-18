@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
@@ -54,7 +55,7 @@ const EditRestaurantAdmin = () => {
           setImage(data.imageUrl || "");
           setComission(data.comission || 0);
         } else {
-          alert("No such restaurant!");
+          customAlert("No such restaurant!");
         }
       } catch (error) {
         console.error("Error fetching document: ", error);
@@ -69,11 +70,11 @@ const EditRestaurantAdmin = () => {
   const handleImageUpload = async (file) => {
     if (file) {
       if (!file.type?.startsWith("image/")) {
-        alert("Only image files are allowed.");
+        customAlert("Only image files are allowed.");
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert("Image must be under 5MB.");
+        customAlert("Image must be under 5MB.");
         return;
       }
       setUploading(true);
@@ -111,7 +112,7 @@ const EditRestaurantAdmin = () => {
 
   const handleSubmit = async () => {
     if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
-      alert("Please enter a valid phone number.");
+      customAlert("Please enter a valid phone number.");
       return;
     }
     try {
@@ -132,11 +133,11 @@ const EditRestaurantAdmin = () => {
         ownerUid,
         commission: Number(comission) || 0,
       });
-      alert("Restaurant information updated successfully");
+      customAlert("Restaurant information updated successfully");
       navigate(-1, { replace: true });
     } catch (error) {
       console.error("Error updating documents: ", error.message);
-      alert(error.message || "Failed to update. Deploy Cloud Functions first.");
+      customAlert(error.message || "Failed to update. Deploy Cloud Functions first.");
     }
   };
 
@@ -154,7 +155,7 @@ const EditRestaurantAdmin = () => {
         }
       );
     } else {
-      alert("Geolocation is not supported by this browser.");
+      customAlert("Geolocation is not supported by this browser.");
     }
   };
 
@@ -318,7 +319,7 @@ const EditRestaurantAdmin = () => {
                       defaultCountry="TH"
                       limitMaxLength={true}
                       placeholder="Phone Number"
-                      value={phoneNumber}
+                      value={phoneNumber?.replace(/\s+/g, "") || ""}
                       onChange={setPhoneNumber}
                     />
                   </div>

@@ -1,14 +1,16 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import StatusBadge from "../../../components/StatusBadge";
 import {
   formatPrice,
   getDiscountPct,
   getItemKey,
+  getScopedItemKey,
   getSalePrice,
 } from "./menuUtils";
 
 const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, canManageMenu }) => {
-  const key = getItemKey(item);
+  const [imgError, setImgError] = useState(false);
+  const key = getScopedItemKey(item);
   const isBusy = busyId === key;
   const discount = getDiscountPct(item);
   const salePrice = getSalePrice(item);
@@ -32,12 +34,13 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, canManageM
             inactive ? "grayscale-[35%]" : ""
           }`}
         >
-          {item.imageUrl ? (
+          {item.imageUrl && !imgError ? (
             <img
               src={item.imageUrl}
               alt=""
               loading="lazy"
               decoding="async"
+              onError={() => setImgError(true)}
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
@@ -66,11 +69,15 @@ const MenuItemCard = ({ item, onView, onEdit, onToggleActive, busyId, canManageM
           <h3 className="truncate text-base font-semibold text-ink" title={item.itemName}>
             {item.itemName || "Untitled"}
           </h3>
-          {item.category && (
-            <p className="mt-0.5 truncate text-xs font-medium text-ink-muted">
-              {item.category}
-            </p>
-          )}
+          <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs font-medium text-ink-muted">
+            {item.category && <span>{item.category}</span>}
+            {item.restaurantName && (
+              <>
+                {item.category && <span>•</span>}
+                <span className="truncate text-brand-600 font-medium">{item.restaurantName}</span>
+              </>
+            )}
+          </div>
         </div>
 
         {canManageMenu && (

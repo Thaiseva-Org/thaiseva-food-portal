@@ -43,6 +43,9 @@ async function verifyOrderPayment(caller, { orderId, expectedAmount, expectedMet
     if (["cancelled", "canceled"].includes(String(order.currentStatus || "").toLowerCase())) {
       throw new HttpsError("failed-precondition", "Cancelled orders cannot be verified.");
     }
+    if (String(order.currentStatus || "").toLowerCase() === "new order") {
+      throw new HttpsError("failed-precondition", "Confirm the order before verifying payment.");
+    }
     const amount = Number(order.Amount ?? order.totalAmount);
     if (!Number.isFinite(amount) || amount <= 0 || amount !== expectedAmount || method !== manualPaymentMethod(expectedMethod)) {
       throw new HttpsError("failed-precondition", "Payment details changed. Refresh the order before verifying.");

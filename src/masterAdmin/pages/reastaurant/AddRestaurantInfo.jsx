@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
@@ -39,7 +40,7 @@ const AddRestaInfo = () => {
 
   const handleSubmit = async () => {
     if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
-      alert("Please enter a valid phone number.");
+      customAlert("Please enter a valid phone number.");
       return;
     }
     try {
@@ -53,7 +54,7 @@ const AddRestaInfo = () => {
         description,
         imageUrl: image,
       });
-      alert("Restaurant information saved successfully!");
+      customAlert("Restaurant information saved successfully!");
     } catch (error) {
       console.error("Error adding document: ", error);
     }
@@ -73,7 +74,7 @@ const AddRestaInfo = () => {
         }
       );
     } else {
-      alert("Geolocation is not supported by this browser.");
+      customAlert("Geolocation is not supported by this browser.");
     }
   };
 
@@ -204,7 +205,7 @@ const AddRestaInfo = () => {
                       defaultCountry="TH"
                       limitMaxLength={true}
                       placeholder="Phone Number"
-                      value={phoneNumber}
+                      value={phoneNumber?.replace(/\s+/g, "") || ""}
                       onChange={setPhoneNumber}
                     />
                   </div>

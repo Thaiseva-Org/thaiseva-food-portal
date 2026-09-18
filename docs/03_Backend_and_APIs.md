@@ -150,9 +150,9 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
 
 #### 2. `masterConfirmOrder`
 - **Purpose:** Master Admin confirms a "New Order" to begin preparation.
-- **Payload:** `{ "orderId": "ord_123", "deliveryCharge": 50 }`
+- **Payload:** `{ "orderId": "ord_123", "riderId": "optional_rider_id" }`
 - **Business Logic:** 
-  - Evaluates the server-calculated `foodSubtotal` and injects the `deliveryCharge`.
+  - Evaluates the server-calculated `foodSubtotal` and applies a fixed ฿100 delivery charge only when the subtotal is below ฿1,000.
   - Transitions status to "Order Confirm" and alerts the Restaurant Owner to start preparing.
 
 #### 3. `transitionOrderStatus`

@@ -10,7 +10,6 @@ import TwoWheelerRoundedIcon from "@mui/icons-material/TwoWheelerRounded";
 import RestaurantMenuRoundedIcon from "@mui/icons-material/RestaurantMenuRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
-import PeopleAltRoundedIcon from "@mui/icons-material/PeopleAltRounded";
 import NavBadge from "../../components/NavBadge";
 import { useOrders } from "../../context/OrdersProvider";
 import { usePendingRequestCount } from "../../hooks/usePendingRequestCount";
@@ -19,13 +18,11 @@ import { hasAssignedRider } from "../../utils/orderRider";
 import { useRestaurantChatCount } from "../../hooks/useRestaurantChatCount";
 import { useBookings } from "../../context/BookingsProvider";
 import { normalizeBookingStatus } from "../../utils/bookingStatus";
-import { useCustomerChatCount } from "../../hooks/useCustomerChatCount";
 
 const MasterSidebar = ({ show, toggle }) => {
   const { orders } = useOrders() || {};
   const pendingRequests = usePendingRequestCount();
   const restaurantChatCount = useRestaurantChatCount();
-  const customerChatCount = useCustomerChatCount();
   const { bookings } = useBookings() || {};
 
   const pendingOrders = useMemo(
@@ -63,7 +60,7 @@ const MasterSidebar = ({ show, toggle }) => {
     },
     {
       icon: <RestaurantMenuRoundedIcon fontSize="small" />,
-      label: "Our kitchen",
+      label: "Menu",
       to: "ourKitchen",
       path: "/foodAdmin/ourKitchen",
     },
@@ -102,14 +99,6 @@ const MasterSidebar = ({ show, toggle }) => {
       to: "restaurantChat",
       path: "/foodAdmin/restaurantChat",
       badge: restaurantChatCount,
-      badgeTone: "danger",
-    },
-    {
-      icon: <PeopleAltRoundedIcon fontSize="small" />,
-      label: "Food Customer Chat",
-      to: "foodCustomerChat",
-      path: "/foodAdmin/foodCustomerChat",
-      badge: customerChatCount,
       badgeTone: "danger",
     },
     {

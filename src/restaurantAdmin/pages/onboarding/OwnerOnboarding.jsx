@@ -549,7 +549,7 @@ const OwnerOnboarding = () => {
                   defaultCountry="TH"
                   className="modern-input"
                   limitMaxLength={true}
-                  value={phoneNumber}
+                  value={phoneNumber?.replace(/\s+/g, "") || ""}
                   onChange={setPhoneNumber}
                   placeholder="XXX XXX XXXX"
                 />

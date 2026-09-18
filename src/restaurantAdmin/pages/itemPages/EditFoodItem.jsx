@@ -1,7 +1,7 @@
 import { doc, getDoc } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
 import { useAuth } from "../../../AuthContext";
 import { updateFoodItem } from "../../../api";
@@ -15,11 +15,16 @@ const EditItem = () => {
   const { roleData, currentUser, resData, isMasterAdmin } = useAuth();
   const itemidParam = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const itemid = decodeURIComponent(itemidParam["itemId"]);
   const kitchen = useKitchenScope();
+  const explicitOwnerUid =
+    location.state?.ownerUid || searchParams.get("ownerUid");
   const ownerUid =
-    isMasterAdmin ? PLATFORM_OWNER_ID :
-    kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
+    (isMasterAdmin && explicitOwnerUid) ||
+    (isMasterAdmin ? PLATFORM_OWNER_ID :
+    kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData }));
   const cleanItemId = String(itemid).replace("#", "");
   const [itemName, setItemName] = useState("");
   const [price, setPrice] = useState("");

@@ -30,6 +30,8 @@ export function mapOrderDoc(snap) {
     CustomerId: orderData.Receiver?.id || "N/A",
     Location: orderData.Location || "N/A",
     Amount: orderData.Amount ?? 0,
+    foodSubtotal: orderData.foodSubtotal ?? null,
+    deliveryCharge: orderData.deliveryCharge ?? 0,
     Status: orderData.currentStatus || "N/A",
     restaurantName: orderData?.Restaurant?.name || "N/A",
     RestaurantId: orderData?.RestaurantId || orderData?.Restaurant?.id || "N/A",
@@ -42,8 +44,14 @@ export function mapOrderDoc(snap) {
     isPaymentClear: orderData?.isPaymentClear === true,
     paymentMethod: orderData.paymentMethod || "",
     verified: orderData.verified === true,
+    paymentVerification: orderData.paymentVerification || null,
     isPaymentDone:
-      String(orderData.paymentMethod || "").trim().toLowerCase() === "stripe"
+      ["stripe", "stripecard", "cardstripe"].includes(
+        String(orderData.paymentMethod || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[\s_-]+/g, "")
+      )
         ? orderData.verified === true
         : orderData.isPaymentDone === true,
   };

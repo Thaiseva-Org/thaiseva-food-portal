@@ -1,3 +1,4 @@
+import { customAlert } from "../../../utils/alertService";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { db, storage } from "../../../../firebaseConfig";
@@ -34,43 +35,43 @@ const RestaInformation = () => {
 
   const handleSubmit = async () => {
     if (restaurantName.trim() === "") {
-      alert("Please enter the restaurant name.");
+      customAlert("Please enter the restaurant name.");
       return;
     }
 
     if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
-      alert("Please enter a valid phone number.");
+      customAlert("Please enter a valid phone number.");
       return;
     }
 
     if (emailId.trim() === "") {
-      alert("Please enter the email ID.");
+      customAlert("Please enter the email ID.");
       return;
     }
 
     if (foodType.trim() === "") {
-      alert("Please select the food type.");
+      customAlert("Please select the food type.");
       return;
     }
 
     if (location.trim() === "") {
-      alert("Please enter the location.");
+      customAlert("Please enter the location.");
       return;
     }
 
     if (description.trim() === "") {
-      alert("Please enter the description.");
+      customAlert("Please enter the description.");
       return;
     }
 
     if (!image || image === "") {
-      alert("Please upload an image.");
+      customAlert("Please upload an image.");
       return;
     }
 
     const querySnapshot = await getDoc(doc(db, "restaurants", currentUser.uid));
     if (querySnapshot.exists()) {
-      alert("Restaurant already exists!!");
+      customAlert("Restaurant already exists!!");
       return;
     }
 
@@ -88,11 +89,11 @@ const RestaInformation = () => {
           imageUrl: image,
         });
         if (refreshAuthProfile) await refreshAuthProfile();
-        alert("Restaurant application submitted for verification.");
+        customAlert("Restaurant application submitted for verification.");
         navigate("/onboarding");
       } catch (error) {
         console.error("Error adding document: ", error);
-        alert(error.message || "Failed to submit application. Deploy Cloud Functions first.");
+        customAlert(error.message || "Failed to submit application. Deploy Cloud Functions first.");
       } finally {
         setSubmitting(false);
       }
@@ -104,11 +105,11 @@ const RestaInformation = () => {
   const handleImageUpload = async (file) => {
     try {
       if (!file?.type?.startsWith("image/")) {
-        alert("Only image files are allowed.");
+        customAlert("Only image files are allowed.");
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert("Image must be under 5MB.");
+        customAlert("Image must be under 5MB.");
         return;
       }
       setUploading(true);
@@ -161,7 +162,7 @@ const RestaInformation = () => {
         }
       );
     } else {
-      alert("Geolocation is not supported by this browser.");
+      customAlert("Geolocation is not supported by this browser.");
     }
   };
 
@@ -325,7 +326,7 @@ const RestaInformation = () => {
                       defaultCountry="TH"
                       limitMaxLength={true}
                       placeholder="XXX XXX XXXX"
-                      value={phoneNumber}
+                      value={phoneNumber?.replace(/\s+/g, "") || ""}
                       onChange={setPhoneNumber}
                     />
                   </div>

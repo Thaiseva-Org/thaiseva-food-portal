@@ -135,8 +135,6 @@ const OrderActions = ({
   assignedRiderLabel = "",
   onAssign,
   showUnifiedMasterConfirm = false,
-  deliveryCharge = "",
-  setDeliveryCharge,
   onUnifiedConfirm,
   orderTotalAmount = 0,
 }) => {
@@ -333,28 +331,13 @@ const OrderActions = ({
           </div>
 
           {orderTotalAmount < 1000 && (
-            <div>
-              <label
-                htmlFor="unified-delivery-charge"
-                className="block text-sm font-semibold text-ink"
-              >
-                Delivery Charge (Order &lt; 1000)
-              </label>
-              <div className="relative mt-1.5">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <span className="text-neutral-500 sm:text-sm">฿</span>
-                </div>
-                <input
-                  type="number"
-                  id="unified-delivery-charge"
-                  className="modern-input pl-7"
-                  placeholder="e.g. 50"
-                  min="0"
-                  value={deliveryCharge}
-                  onChange={(e) => setDeliveryCharge?.(e.target.value)}
-                  disabled={actionLoading}
-                />
-              </div>
+            <div className="rounded-lg bg-neutral-50 p-3 border border-neutral-200">
+              <p className="text-sm font-medium text-ink">
+                Delivery Charge
+              </p>
+              <p className="text-xs text-ink-muted mt-0.5">
+                A default delivery charge of 100 ฿ will be applied (Order total &lt; 1000).
+              </p>
             </div>
           )}
 
@@ -484,7 +467,6 @@ const OrderView = () => {
   const [riders, setRiders] = useState([]);
   const [ridersError, setRidersError] = useState(null);
   const [selectedRiderId, setSelectedRiderId] = useState("");
-  const [deliveryCharge, setDeliveryCharge] = useState("");
 
   useEffect(() => {
     document.title = orderId
@@ -697,16 +679,10 @@ const OrderView = () => {
     setActionError(null);
     try {
       setActionLoading(true);
-      const chargeAmount =
-        Number(completeOrderDetails?.Amount) < 1000
-          ? Number(deliveryCharge) || 0
-          : 0;
-
       await masterConfirmOrder({
         orderId,
         restaurantUid: completeOrderDetails.Restaurant.ownerId,
         riderId: selectedRiderId || undefined,
-        deliveryCharge: chargeAmount,
       });
 
       navigate(ordersListPath);
@@ -803,8 +779,6 @@ const OrderView = () => {
     assignedRiderLabel: assignedRiderName,
     onAssign: handleAssignRider,
     showUnifiedMasterConfirm,
-    deliveryCharge,
-    setDeliveryCharge,
     onUnifiedConfirm: handleUnifiedConfirm,
     orderTotalAmount: Number(completeOrderDetails?.Amount) || 0,
   };

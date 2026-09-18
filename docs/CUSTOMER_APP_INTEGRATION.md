@@ -161,7 +161,7 @@ idempotent retry returns HTTP `200`:
 }
 ```
 
-`amount` is always the verified food subtotal at checkout, including on an idempotent retry after the order has progressed. `restaurant` confirms exactly where the server routed the order. Master Admin may set the delivery charge while confirming, after which `orders/{orderId}.Amount` is the subtotal plus delivery charge.
+`amount` is always the verified food subtotal at checkout, including on an idempotent retry after the order has progressed. `restaurant` confirms exactly where the server routed the order. On Master Admin confirmation, the server applies a fixed ฿100 delivery charge when the food subtotal is below ฿1,000; otherwise the charge is ฿0. `orders/{orderId}.Amount` then becomes the subtotal plus that fixed charge.
 
 ## Payment verification fields
 

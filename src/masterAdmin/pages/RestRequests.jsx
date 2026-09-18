@@ -69,12 +69,14 @@ const RestRequests = () => {
         .filter((d) => d.data()?.status === status)
         .map((d) => ({
           ...d.data(),
+          id: d.id,
           applicationId: d.id,
           ownerId: d.data().ownerUid || d.id,
           requestKind: "application",
         }));
       const legacy = restSnap.docs.map((d) => ({
         ...d.data(),
+        id: d.id,
         ownerId: d.data().ownerId || d.id,
         requestKind: "restaurant",
       }));

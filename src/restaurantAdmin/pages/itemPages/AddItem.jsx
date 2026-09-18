@@ -1,6 +1,6 @@
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { storage } from "../../../../firebaseConfig";
 import { useAuth } from "../../../AuthContext";
 import { createFoodItem } from "../../../api";
@@ -13,6 +13,10 @@ import Template from "./Template";
 const AddItem = () => {
   const { resData, currentUser, roleData, isMasterAdmin } = useAuth();
   const kitchen = useKitchenScope();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const explicitOwnerUid =
+    location.state?.ownerUid || searchParams.get("ownerUid");
   const [itemName, setItemName] = useState("");
   const [itemId, setItemId] = useState("");
   const [price, setPrice] = useState("");
@@ -30,8 +34,9 @@ const AddItem = () => {
   const [formSuccess, setFormSuccess] = useState(null);
   const [cuisine, setCuisine] = useState("");
   const ownerUid =
-    isMasterAdmin ? PLATFORM_OWNER_ID :
-    kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData });
+    (isMasterAdmin && explicitOwnerUid) ||
+    (isMasterAdmin ? PLATFORM_OWNER_ID :
+    kitchen.ownerUid || getMenuRootId({ currentUser, roleData, resData }));
 
   const navigate = useNavigate();
 

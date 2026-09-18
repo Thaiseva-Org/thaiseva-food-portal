@@ -1,7 +1,16 @@
 import { Pagination } from "@mui/material";
+import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext";
+import {
+  assignOrderRider,
+  markOrderDelivered,
+  masterConfirmOrder,
+  transitionOrderStatus,
+  verifyOrderPayment,
+} from "../../api";
 import DataBoxes from "../../components/DataBoxes";
 import { StatGrid } from "../../components/dashboard";
 import DateRangeFilter from "../../components/DateRangeFilter";
@@ -12,6 +21,7 @@ import { useOrders } from "../../context/OrdersProvider";
 import { fetchOrders, fetchOrdersTotalPages } from "../../services/GetOrders";
 import { isPlatformOrder } from "../../utils/platformRestaurant";
 import {
+  ORDER_STATUS,
   ORDER_STATUS_FILTERS,
   ORDER_STATUS_SUMMARY,
   countOrdersByStatus,
@@ -22,6 +32,33 @@ import {
   sortOrdersByStatus,
   summaryCardActive,
 } from "../../utils/orderStatus";
+import { hasAssignedRider, riderLabel } from "../../utils/orderRider";
+
+const normalizePaymentMethod = (value) =>
+  String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+
+const manualPaymentChannel = (value) => {
+  const method = normalizePaymentMethod(value);
+  if (["cod", "cashondelivery"].includes(method)) return "cod";
+  if (["thaiqr", "thaiqrpayment", "promptpay", "promptpayqr", "thaiseva", "thaisevapayment", "paytothaiseva"].includes(method)) return "thaiqr";
+  return null;
+};
+
+const isStripePayment = (value) =>
+  ["stripe", "stripecard", "cardstripe"].includes(normalizePaymentMethod(value));
+
+const nextListAction = (order) => {
+  if (order.Status === ORDER_STATUS.NEW) return { label: "Confirm", kind: "confirm" };
+  if (order.Status === ORDER_STATUS.CONFIRM) return { label: "Start preparing", toStatus: ORDER_STATUS.PREPARING };
+  if (order.Status === ORDER_STATUS.PREPARING) return { label: "Mark ready", toStatus: ORDER_STATUS.READY };
+  if (order.Status === ORDER_STATUS.READY) {
+    return hasAssignedRider(order)
+      ? { label: "Mark out", toStatus: ORDER_STATUS.OUT }
+      : { label: "Assign rider", kind: "assign" };
+  }
+  if (order.Status === ORDER_STATUS.OUT) return { label: "Mark delivered", kind: "deliver" };
+  return null;
+};
 
 const matchesSearch = (item, query) => {
   if (!query) return true;
@@ -54,10 +91,46 @@ const OrdersDetails = () => {
   const [refetch, setRefetch] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [busyId, setBusyId] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [dialog, setDialog] = useState(null);
+  const [riders, setRiders] = useState([]);
+  const [ridersError, setRidersError] = useState("");
+  const [selectedRiderId, setSelectedRiderId] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   useEffect(() => {
     document.title = "Thaiseva | Orders";
   }, []);
+
+  useEffect(() => {
+    if (!isMasterAdmin) return undefined;
+    let cancelled = false;
+    const loadRiders = async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, "foodRiders"), orderBy("name"))
+        );
+        if (cancelled) return;
+        setRiders(
+          snap.docs
+            .map((riderDoc) => ({ id: riderDoc.id, ...riderDoc.data() }))
+            .filter((rider) => rider.active !== false)
+        );
+        setRidersError("");
+      } catch (err) {
+        if (!cancelled) {
+          setRiders([]);
+          setRidersError(err.message || "Could not load riders.");
+        }
+      }
+    };
+    loadRiders();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMasterAdmin]);
 
   const applyDateRange = () => {
     setPage(1);
@@ -98,6 +171,111 @@ const OrdersDetails = () => {
     setPage(newPage);
   };
 
+  const refreshAfterAction = () => {
+    if (!isRealTime) setRefetch((previous) => !previous);
+  };
+
+  const closeDialog = () => {
+    if (busyId) return;
+    setDialog(null);
+    setSelectedRiderId("");
+    setPaymentReference("");
+    setPaymentConfirmed(false);
+  };
+
+  const openDialog = (kind, order) => {
+    setActionError("");
+    setSelectedRiderId(order.assignedRiderId || order.DeliveryPartner?.id || "");
+    setPaymentReference("");
+    setPaymentConfirmed(false);
+    setDialog({ kind, order });
+  };
+
+  const runStatusAction = async (order, action) => {
+    if (!action || busyId) return;
+    if (action.kind === "confirm" || action.kind === "assign") {
+      openDialog(action.kind, order);
+      return;
+    }
+
+    setActionError("");
+    setBusyId(order.OrderID);
+    try {
+      if (action.kind === "deliver") {
+        await markOrderDelivered({ orderId: order.OrderID });
+      } else {
+        await transitionOrderStatus({
+          orderId: order.OrderID,
+          toStatus: action.toStatus,
+        });
+      }
+      refreshAfterAction();
+    } catch (err) {
+      setActionError(err.message || "Could not update the order status.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const submitRiderDialog = async () => {
+    const order = dialog?.order;
+    if (!order || busyId) return;
+    if (dialog.kind === "assign" && !selectedRiderId) {
+      setActionError("Choose a rider before continuing.");
+      return;
+    }
+
+    setActionError("");
+    setBusyId(order.OrderID);
+    try {
+      if (dialog.kind === "confirm") {
+        await masterConfirmOrder({
+          orderId: order.OrderID,
+          restaurantUid: order.ownerId,
+          riderId: selectedRiderId || undefined,
+        });
+      } else {
+        await assignOrderRider({
+          orderId: order.OrderID,
+          riderId: selectedRiderId,
+        });
+      }
+      setDialog(null);
+      setSelectedRiderId("");
+      refreshAfterAction();
+    } catch (err) {
+      setActionError(err.message || "Could not save the rider assignment.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const submitPaymentVerification = async () => {
+    const order = dialog?.order;
+    const channel = manualPaymentChannel(order?.paymentMethod);
+    const amount = Number(order?.Amount);
+    if (!order || !channel || !paymentConfirmed || busyId) return;
+
+    setActionError("");
+    setBusyId(order.OrderID);
+    try {
+      await verifyOrderPayment({
+        orderId: order.OrderID,
+        expectedAmount: amount,
+        expectedMethod: channel,
+        reference: paymentReference,
+      });
+      setDialog(null);
+      setPaymentReference("");
+      setPaymentConfirmed(false);
+      refreshAfterAction();
+    } catch (err) {
+      setActionError(err.message || "Could not verify this payment.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
   const sourceRows = useMemo(
     () =>
       (isRealTime ? orders : orderDetailsRecord || []).filter(
@@ -125,8 +303,14 @@ const OrdersDetails = () => {
     return matched;
   }, [sourceRows, statusFilter, normalizedQuery]);
 
-  const pageError = error || (isRealTime ? ordersError : null);
+  const pageError = actionError || error || (isRealTime ? ordersError : null);
   const pageLoading = loading || (isRealTime && ordersLoading);
+  const dialogOrder = dialog?.order;
+  const dialogSubtotal = Number(
+    dialogOrder?.foodSubtotal ??
+      (Number(dialogOrder?.Amount || 0) - Number(dialogOrder?.deliveryCharge || 0))
+  );
+  const fixedDeliveryCharge = dialogSubtotal < 1000 ? 100 : 0;
 
   return (
     <div className="px-4 py-8 md:px-6 md:py-10">
@@ -314,7 +498,7 @@ const OrdersDetails = () => {
               <Loading />
             </div>
           ) : filteredRows.length > 0 ? (
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="table-head text-xs uppercase tracking-wide">
               <tr>
                 <th scope="col" className="px-4 py-3.5">
@@ -342,11 +526,22 @@ const OrdersDetails = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {filteredRows.map((item) => (
-                <tr
-                  key={item.OrderID}
-                  className="bg-white transition-colors hover:bg-brand-50/40"
-                >
+              {filteredRows.map((item) => {
+                const statusAction = nextListAction(item);
+                const manualChannel = manualPaymentChannel(item.paymentMethod);
+                const stripe = isStripePayment(item.paymentMethod);
+                const cancelled = [ORDER_STATUS.CANCELLED, "Canceled"].includes(item.Status);
+                const canVerifyPayment =
+                  manualChannel &&
+                  !item.isPaymentDone &&
+                  !cancelled &&
+                  item.Status !== ORDER_STATUS.NEW;
+                const isBusy = busyId === item.OrderID;
+                return (
+                  <tr
+                    key={item.OrderID}
+                    className="bg-white transition-colors hover:bg-brand-50/40"
+                  >
                   <td className="px-4 py-4">
                     <p
                       className="max-w-[12rem] truncate font-medium text-ink"
@@ -379,23 +574,48 @@ const OrdersDetails = () => {
                   <td className="px-4 py-4">
                     <StatusBadge status={item.Status} />
                   </td>
-                  <td className="px-4 py-4">
-                    <p className="text-xs text-ink-muted">{item.paymentMethod || "Not provided"}</p>
-                    <span className={item.isPaymentDone ? "text-emerald-700 font-medium" : "text-amber-700 font-medium"}>
-                      {item.isPaymentDone ? "Received" : "Awaiting payment"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <Link
-                      to={`/foodAdmin/ordersDetails/ordersDetView/${item.OrderID}`}
-                      state={{ restaurantId: item.RestaurantId }}
-                      className="btn-primary whitespace-nowrap px-3 py-1.5"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-4 py-4">
+                      <p className="text-xs text-ink-muted">{item.paymentMethod || "Not provided"}</p>
+                      <span className={item.isPaymentDone ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+                        {item.isPaymentDone
+                          ? stripe ? "Stripe verified" : "Payment received"
+                          : stripe ? "Awaiting Stripe" : "Awaiting payment"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Link
+                          to={`/foodAdmin/ordersDetails/ordersDetView/${item.OrderID}`}
+                          state={{ restaurantId: item.RestaurantId }}
+                          className="btn-outline whitespace-nowrap px-3 py-1.5"
+                        >
+                          View
+                        </Link>
+                        {statusAction && (
+                          <button
+                            type="button"
+                            className="btn-primary whitespace-nowrap px-3 py-1.5"
+                            disabled={Boolean(busyId)}
+                            onClick={() => runStatusAction(item, statusAction)}
+                          >
+                            {isBusy ? "Updating…" : statusAction.label}
+                          </button>
+                        )}
+                        {canVerifyPayment && (
+                          <button
+                            type="button"
+                            className="btn-success whitespace-nowrap px-3 py-1.5"
+                            disabled={Boolean(busyId)}
+                            onClick={() => openDialog("payment", item)}
+                          >
+                            Verify payment
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
@@ -441,6 +661,165 @@ const OrdersDetails = () => {
             siblingCount={0}
             boundaryCount={0}
           />
+        </div>
+      )}
+
+      {dialog && dialogOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-neutral-100 bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-action-title"
+          >
+            <div className="border-b border-neutral-100 px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="order-action-title" className="text-lg font-bold text-ink">
+                    {dialog.kind === "confirm"
+                      ? "Confirm order"
+                      : dialog.kind === "assign"
+                        ? "Assign rider"
+                        : "Verify payment"}
+                  </h2>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Order #{dialogOrder.OrderID} · {dialogOrder.CustomerName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost !min-h-0 !px-2 !py-1"
+                  onClick={closeDialog}
+                  disabled={Boolean(busyId)}
+                  aria-label="Close dialog"
+                >
+                  <i className="bi bi-x-lg" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              {dialog.kind === "confirm" && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-amber-800">Food subtotal</span>
+                    <strong className="tabular-nums text-amber-950">
+                      {formatOrderAmount(dialogSubtotal)}
+                    </strong>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <span className="text-amber-800">Fixed delivery charge</span>
+                    <strong className="tabular-nums text-amber-950">
+                      {formatOrderAmount(fixedDeliveryCharge)}
+                    </strong>
+                  </div>
+                  <p className="mt-2 text-xs text-amber-700">
+                    ฿100 is automatically added when the food subtotal is below ฿1,000.
+                  </p>
+                </div>
+              )}
+
+              {(dialog.kind === "confirm" || dialog.kind === "assign") && (
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink">
+                    {dialog.kind === "confirm" ? "Assign rider (optional)" : "Assign rider"}
+                  </span>
+                  <select
+                    className="modern-select mt-1.5"
+                    value={selectedRiderId}
+                    onChange={(event) => setSelectedRiderId(event.target.value)}
+                    disabled={Boolean(busyId) || riders.length === 0}
+                  >
+                    <option value="">
+                      {riders.length ? "Select a rider" : "No active riders"}
+                    </option>
+                    {riders.map((rider) => (
+                      <option key={rider.id} value={rider.id}>
+                        {riderLabel(rider)}
+                      </option>
+                    ))}
+                  </select>
+                  {ridersError && (
+                    <span className="mt-1 block text-xs text-danger-600">{ridersError}</span>
+                  )}
+                </label>
+              )}
+
+              {dialog.kind === "payment" && (
+                <>
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-ink-muted">Method</span>
+                      <strong className="text-ink">{dialogOrder.paymentMethod}</strong>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                      <span className="text-ink-muted">Amount received</span>
+                      <strong className="tabular-nums text-ink">
+                        {formatOrderAmount(dialogOrder.Amount)}
+                      </strong>
+                    </div>
+                  </div>
+                  <label className="block text-sm text-ink">
+                    Payment reference or collection note (optional)
+                    <input
+                      className="modern-input mt-1.5"
+                      value={paymentReference}
+                      onChange={(event) => setPaymentReference(event.target.value)}
+                      maxLength={200}
+                      disabled={Boolean(busyId)}
+                    />
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-ink">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={paymentConfirmed}
+                      onChange={(event) => setPaymentConfirmed(event.target.checked)}
+                      disabled={Boolean(busyId)}
+                    />
+                    <span>
+                      I confirm this {manualPaymentChannel(dialogOrder.paymentMethod) === "cod" ? "cash" : "Thai QR"} payment has been received.
+                    </span>
+                  </label>
+                </>
+              )}
+
+              {actionError && (
+                <p role="alert" className="text-sm font-medium text-danger-600">
+                  {actionError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={closeDialog}
+                disabled={Boolean(busyId)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={dialog.kind === "payment" ? submitPaymentVerification : submitRiderDialog}
+                disabled={
+                  Boolean(busyId) ||
+                  (dialog.kind === "assign" && !selectedRiderId) ||
+                  (dialog.kind === "payment" && !paymentConfirmed)
+                }
+              >
+                {busyId
+                  ? "Saving…"
+                  : dialog.kind === "confirm"
+                    ? "Confirm order"
+                    : dialog.kind === "assign"
+                      ? "Assign rider"
+                      : "Verify payment"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
