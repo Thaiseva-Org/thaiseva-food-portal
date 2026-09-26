@@ -164,7 +164,7 @@ const TopNav = ({ toggle, show }) => {
             {profileToggle && (
               <div className="profile-panel">
                 <h2 className="mb-3 text-lg font-semibold text-ink-heading">
-                  User profile
+                  {roleData?.name || currentUser?.displayName || "User profile"}
                 </h2>
                 <p className="mb-2 text-sm text-ink-muted break-all">
                   <span className="font-semibold text-ink">Email:</span>{" "}

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { AuthProvider } from "./AuthContext";
 import Loading from "./components/Loading";
+import AccountSettings from "./components/AccountSettings";
 import { MasterStat } from "./masterAdmin/component";
 import {
   Categories,
@@ -53,6 +54,7 @@ import {
   TableBooking,
 } from "./restaurantAdmin/pages";
 import { PARTNER_BASE } from "./utils/partnerRoutes";
+import { SHOW_TABLE_RESERVATIONS } from "./utils/bookingStatus";
 
 const RealtimeProviders = lazy(() => import("./context/RealtimeProviders"));
 const OurKitchenLayout = lazy(() =>
@@ -153,7 +155,16 @@ const App = () => {
                       }
                     />
                     <Route path="restaurantChat" element={<RestaurantChat />} />
-                    <Route path="tableReservation" element={<TableBooking />} />
+                    {SHOW_TABLE_RESERVATIONS ? (
+                      <Route path="tableReservation" element={<TableBooking />} />
+                    ) : (
+                      <Route
+                        path="tableReservation"
+                        element={
+                          <Navigate to={`${PARTNER_BASE}/manageOrder`} replace />
+                        }
+                      />
+                    )}
                     <Route path="foodItem" element={<FoodItem />} />
                     <Route path="foodItem/addItem" element={<AddItem />} />
                     <Route
@@ -161,6 +172,10 @@ const App = () => {
                       element={<EditFoodItem />}
                     />
                     <Route path="restaurant" element={<Restaurant />} />
+                    <Route
+                      path="settings"
+                      element={<Navigate to={`${PARTNER_BASE}/restaurant`} replace />}
+                    />
                     <Route
                       path="restaurant/edit"
                       element={<EditRestaurant />}
@@ -244,14 +259,28 @@ const App = () => {
                         path="finance"
                         element={<RestaurantStatsFinance />}
                       />
-                      <Route
-                        path="reservations"
-                        element={<RestaurantStatsReservations />}
-                      />
+                      {SHOW_TABLE_RESERVATIONS ? (
+                        <Route
+                          path="reservations"
+                          element={<RestaurantStatsReservations />}
+                        />
+                      ) : (
+                        <Route
+                          path="reservations"
+                          element={<Navigate to=".." relative="path" replace />}
+                        />
+                      )}
                     </Route>
                     <Route path="records" element={<TodayOrders />} />
                     <Route path="ordersDetails" element={<OrdersDetails />} />
-                    <Route path="tableReservation" element={<TableBookings />} />
+                    {SHOW_TABLE_RESERVATIONS ? (
+                      <Route path="tableReservation" element={<TableBookings />} />
+                    ) : (
+                      <Route
+                        path="tableReservation"
+                        element={<Navigate to="/foodAdmin" replace />}
+                      />
+                    )}
                     <Route path="ourKitchen" element={<OurKitchenLayout />}>
                       <Route index element={<FoodItem />} />
                       <Route path="addItem" element={<AddItem />} />
@@ -287,6 +316,10 @@ const App = () => {
                       <Route path=":orderId" element={<OrderView />} />
                     </Route>
                     <Route path="riders" element={<Riders />} />
+                    <Route
+                      path="settings"
+                      element={<AccountSettings roleLabel="Master Admin" />}
+                    />
                     <Route
                       path="riders/:riderId"
                       element={<RiderOverview />}

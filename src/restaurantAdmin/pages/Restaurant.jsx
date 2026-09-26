@@ -11,6 +11,7 @@ import { useAuth } from "../../AuthContext";
 import { setRestaurantOpenState } from "../../api";
 import { partnerPath } from "../../utils/partnerRoutes";
 import { useResolvedApplicationFileUrl } from "../../utils/applicationFiles";
+import AccountSettings from "../../components/AccountSettings";
 
 const DocumentChip = ({ label, url }) => {
   const href = useResolvedApplicationFileUrl(url);
@@ -61,7 +62,7 @@ const Restaurant = () => {
   const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
-    document.title = "Thaiseva | My Restaurant";
+    document.title = "Thaiseva | Settings";
   }, []);
 
   useEffect(() => {
@@ -143,9 +144,9 @@ const Restaurant = () => {
     <div className="page-shell w-full px-4 py-8 md:px-6 md:py-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between min-w-0">
         <div className="min-w-0">
-          <h1 className="page-header">My Restaurant</h1>
+          <h1 className="page-header">Settings</h1>
           <p className="page-subtext mt-1">
-            Profile, verification status, and store availability
+            Manage your restaurant profile, store availability, and account security.
           </p>
         </div>
 
@@ -215,7 +216,11 @@ const Restaurant = () => {
       )}
 
       {/* Profile card */}
-      <section className="panel mt-6 sm:mt-8 animate-slide-up">
+      <div className="mt-8 mb-4">
+        <h2 className="text-xl sm:text-2xl font-bold text-ink">Restaurant Profile</h2>
+        <p className="text-sm text-ink-muted">Public details and verification documents.</p>
+      </div>
+      <section className="panel animate-slide-up">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 min-w-0">
           {/* Cover image */}
           <div className="lg:col-span-5 min-w-0">
@@ -375,6 +380,15 @@ const Restaurant = () => {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Account Settings Section */}
+      <section className="mt-8 animate-slide-up">
+        <div className="mb-4">
+          <h2 className="text-xl sm:text-2xl font-bold text-ink">Account Settings</h2>
+          <p className="text-sm text-ink-muted">Manage your account security.</p>
+        </div>
+        <AccountSettings roleLabel="Restaurant Partner" embedded securityOnly />
       </section>
     </div>
   );

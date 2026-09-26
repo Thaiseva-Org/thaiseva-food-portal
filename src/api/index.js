@@ -29,10 +29,11 @@ export const ensurePlatformRestaurant = (data) =>
 
 // Orders / money
 export const verifyOrderPayment = (data) => callApi("verifyOrderPayment", data);
-export const transitionOrderStatus = ({ orderId, toStatus, reason }) =>
+export const transitionOrderStatus = ({ orderId, toStatus, riderId, reason }) =>
   callApi("transitionOrderStatus", {
     orderId,
     toStatus,
+    ...(riderId ? { riderId } : {}),
     ...(reason ? { reason } : {}),
     idempotencyKey: newIdempotencyKey("order"),
   });
@@ -52,7 +53,7 @@ export const masterConfirmOrder = ({ orderId, restaurantUid, riderId }) =>
   callApi("masterConfirmOrder", {
     orderId,
     restaurantUid,
-    ...(riderId ? { riderId } : {}),
+    riderId,
     idempotencyKey: newIdempotencyKey("confirm"),
   });
 export const createFoodRider = (data) =>

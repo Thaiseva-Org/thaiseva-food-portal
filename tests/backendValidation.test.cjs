@@ -176,5 +176,8 @@ test("food roles use namespaced claims without trusting unrelated app roles", ()
   assert.equal(getRoleFromToken({ foodRole: "restaurantOwner" }), ROLES.OWNER);
   assert.equal(getRoleFromToken({ foodMasterAdmin: true }), ROLES.MASTER);
   assert.equal(getRoleFromToken({ role: "hotelAdmin" }), null);
+  assert.equal(getRoleFromToken({ role: "masterAdmin" }), null);
+  assert.equal(getRoleFromToken({ role: "restaurantOwner" }), null);
+  assert.equal(getRoleFromToken({ masterAdmin: true }), null);
   assert.equal(getRoleFromToken({ email: "ADMIN@gmail.com" }), ROLES.MASTER);
 });

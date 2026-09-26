@@ -53,6 +53,13 @@ export function weekLabel(start, end) {
 }
 
 export function parseLocalDate(value) {
+  if (value instanceof Date) return new Date(value);
+  const [year, month = 1, day = 1] = String(value || "")
+    .split(/[-T /]/)
+    .map(Number);
+  if (Number.isFinite(year) && year > 0) {
+    return new Date(year, month - 1, day, 0, 0, 0, 0);
+  }
   return new Date(`${value}T00:00:00`);
 }
 
@@ -63,8 +70,9 @@ export function shiftWeek(startDate, deltaWeeks) {
 }
 
 export function monthRange(date = new Date()) {
-  const start = new Date(date.getFullYear(), date.getMonth(), 1);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  const d = date instanceof Date ? date : parseLocalDate(date);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
   return {
     startDate: formatLocalDate(start),
     endDate: formatLocalDate(end),
@@ -75,6 +83,23 @@ export function monthRange(date = new Date()) {
 export function shiftMonth(startDate, deltaMonths) {
   const d = parseLocalDate(startDate);
   return monthRange(new Date(d.getFullYear(), d.getMonth() + deltaMonths, 1));
+}
+
+export function yearRange(date = new Date()) {
+  const d = date instanceof Date ? date : parseLocalDate(date);
+  const year = d.getFullYear();
+  const start = new Date(year, 0, 1);
+  const end = new Date(year, 11, 31);
+  return {
+    startDate: formatLocalDate(start),
+    endDate: formatLocalDate(end),
+    label: `Year ${year}`,
+  };
+}
+
+export function shiftYear(startDate, deltaYears) {
+  const d = parseLocalDate(startDate);
+  return yearRange(new Date(d.getFullYear() + deltaYears, 0, 1));
 }
 
 export function listRecentWeeks(count = 8) {

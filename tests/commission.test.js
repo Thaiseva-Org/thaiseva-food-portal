@@ -85,6 +85,20 @@ test("unlocked orders estimate from order.comission then restaurant rate", () =>
   assert.equal(fromRestaurant.adminShare, 150);
 });
 
+test("discount changes customer total but not the original-price commission base", () => {
+  const order = {
+    Amount: 215,
+    deliveryCharge: 35,
+    comission: 10,
+    Items: [{ price: 100, Quantity: 2, discount: 10 }],
+  };
+  const resolved = resolveOrderAccounting(order, 20);
+  assert.equal(resolved.gross, 215);
+  assert.equal(resolved.commissionBase, 200);
+  assert.equal(resolved.adminShare, 55);
+  assert.equal(resolved.partnerShare, 160);
+});
+
 test("display helpers mark estimates", () => {
   assert.equal(formatCommissionRate(12, "locked"), "12%");
   assert.equal(formatCommissionRate(12, "estimate"), "12% est.");

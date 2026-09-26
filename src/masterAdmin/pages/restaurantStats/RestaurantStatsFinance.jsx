@@ -1,7 +1,5 @@
-import { customAlert } from "../../../utils/alertService";
-import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { doc, updateDoc } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CSVLink } from "react-csv";
 import { Link } from "react-router";
 import { db } from "../../../../firebaseConfig";
@@ -18,27 +16,30 @@ import {
   resolveOrderAccounting,
 } from "../../../utils/commission";
 import {
+  formatLocalDate,
   monthRange,
   shiftMonth,
   shiftWeek,
+  shiftYear,
   weekFromStartDate,
   weekIdFromDate,
+  yearRange,
 } from "../../../utils/weekRange";
 import {
   AccountingBadge,
-  SettlementBadge,
 } from "./components/AccountingBadge";
+import { formatDisplayOrderId } from "../../../utils/orderData";
 import CommissionSplit from "./components/CommissionSplit";
 import { useRestaurantStats } from "./components/RestaurantContext";
-
-const contactInfo = {
-  email: "thaiseva@gmail.com",
-  phone: "01723646378",
-};
+import {
+  buildFinanceCsvReport,
+  safeCsvFilenamePart,
+} from "../../../utils/financeCsv";
 
 const MODES = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
+  { value: "year", label: "Year" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -54,10 +55,12 @@ const RestaurantStatsFinance = () => {
   const defaultRate = Number(restaurant.comission || 0);
   const todayWeek = weekFromStartDate(weekIdFromDate());
   const todayMonth = monthRange();
+  const todayYear = yearRange();
 
   const [mode, setMode] = useState("week");
   const [weekStart, setWeekStart] = useState(todayWeek.startDate);
   const [monthStart, setMonthStart] = useState(todayMonth.startDate);
+  const [yearStart, setYearStart] = useState(todayYear.startDate);
   const [customStart, setCustomStart] = useState(todayWeek.startDate);
   const [customEnd, setCustomEnd] = useState(todayWeek.endDate);
   const [appliedCustom, setAppliedCustom] = useState({
@@ -67,13 +70,14 @@ const RestaurantStatsFinance = () => {
 
   const range = useMemo(() => {
     if (mode === "week") return weekFromStartDate(weekStart);
-    if (mode === "month") return monthRange(new Date(`${monthStart}T00:00:00`));
+    if (mode === "month") return monthRange(monthStart);
+    if (mode === "year") return yearRange(yearStart);
     return {
       startDate: appliedCustom.startDate,
       endDate: appliedCustom.endDate,
       label: `${appliedCustom.startDate} → ${appliedCustom.endDate}`,
     };
-  }, [mode, weekStart, monthStart, appliedCustom]);
+  }, [mode, weekStart, monthStart, yearStart, appliedCustom]);
 
   const savedOffer = findSavedOffer(
     restaurant.periodOffers,
@@ -103,7 +107,6 @@ const RestaurantStatsFinance = () => {
   const [partial, setPartial] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +139,10 @@ const RestaurantStatsFinance = () => {
   }, [ownerId, range.startDate, range.endDate]);
 
   const delivered = useMemo(
-    () => orders.filter((item) => item.Status === "Delivered"),
+    () =>
+      orders.filter(
+        (item) => String(item?.Status || "").trim().toLowerCase() === "delivered"
+      ),
     [orders]
   );
 
@@ -145,16 +151,20 @@ const RestaurantStatsFinance = () => {
     Number.isFinite(parsedOffer) && parsedOffer >= 0 && parsedOffer <= 100;
   const activeOffer = useOffer && offerValid;
 
-  const moneyFor = (item) =>
-    activeOffer
-      ? applyPeriodOffer(item, parsedOffer, defaultRate)
-      : resolveOrderAccounting(item, defaultRate);
+  const moneyFor = useCallback(
+    (item) =>
+      activeOffer
+        ? applyPeriodOffer(item, parsedOffer, defaultRate)
+        : resolveOrderAccounting(item, defaultRate),
+    [activeOffer, parsedOffer, defaultRate]
+  );
 
   const totals = useMemo(() => {
     let gmv = 0;
     let platform = 0;
     let payout = 0;
-    let open = 0;
+    let commissionBase = 0;
+    let deliveryFees = 0;
     for (const item of delivered) {
       const money = activeOffer
         ? applyPeriodOffer(item, parsedOffer, defaultRate)
@@ -162,17 +172,29 @@ const RestaurantStatsFinance = () => {
       gmv += money.gross;
       platform += money.adminShare;
       payout += money.partnerShare;
-      if (!item.isPaymentClear) open += 1;
+      commissionBase += money.commissionBase;
+      deliveryFees += money.deliveryCharge;
     }
+    const roundedGmv = Math.round(gmv * 100) / 100;
+    const roundedPlatform = Math.round(platform * 100) / 100;
+    const roundedPayout = Math.round(payout * 100) / 100;
+    const roundedCommissionBase = Math.round(commissionBase * 100) / 100;
+    const roundedDeliveryFees = Math.round(deliveryFees * 100) / 100;
+    const foodCommission = Math.round((roundedPlatform - roundedDeliveryFees) * 100) / 100;
+    const discountedFoodSubtotal = Math.round((roundedGmv - roundedDeliveryFees) * 100) / 100;
+
     return {
-      gmv: Math.round(gmv * 100) / 100,
-      platform: Math.round(platform * 100) / 100,
-      payout: Math.round(payout * 100) / 100,
-      open,
+      gmv: roundedGmv,
+      platform: roundedPlatform,
+      payout: roundedPayout,
+      commissionBase: roundedCommissionBase,
+      deliveryFees: roundedDeliveryFees,
+      foodCommission,
+      discountedFoodSubtotal,
       rate: activeOffer
         ? parsedOffer
-        : gmv > 0
-          ? Math.round((platform / gmv) * 10000) / 100
+        : commissionBase > 0
+          ? Math.round(((platform - deliveryFees) / commissionBase) * 10000) / 100
           : defaultRate,
     };
   }, [delivered, activeOffer, parsedOffer, defaultRate]);
@@ -196,21 +218,183 @@ const RestaurantStatsFinance = () => {
 
   const offerPreview = offerValid ? previewCommission(parsedOffer, 1000) : null;
 
-  const csvRows = delivered.map((item) => {
-    const money = moneyFor(item);
-    return {
-      orderId: item.OrderID,
-      date: item.Date,
-      customer: item.CustomerName,
-      status: item.Status,
-      gross: money.gross,
-      commission: money.rate,
-      platform: money.adminShare,
-      payout: money.partnerShare,
-      settlement: item.isPaymentClear ? "cleared" : "open",
-      pricing: money.source,
+  const periodicBreakdown = useMemo(() => {
+    if (!delivered.length) return [];
+
+    const getBucketKey = (dateObj) => {
+      if (mode === "year") {
+        return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}`;
+      }
+      if (mode === "week") {
+        return formatLocalDate(dateObj);
+      }
+      if (mode === "month") {
+        const day = dateObj.getDate();
+        const weekNum = Math.min(5, Math.floor((day - 1) / 7) + 1);
+        return `w${weekNum}`;
+      }
+      const diffDays = (new Date(range.endDate) - new Date(range.startDate)) / (1000 * 60 * 60 * 24);
+      if (diffDays <= 14) return formatLocalDate(dateObj);
+      if (diffDays <= 90) {
+        return weekFromStartDate(formatLocalDate(dateObj)).startDate;
+      }
+      return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}`;
     };
-  });
+
+    let buckets = [];
+
+    if (mode === "year") {
+      const year = Number(yearStart.slice(0, 4)) || new Date().getFullYear();
+      buckets = Array.from({ length: 12 }, (_, i) => {
+        const m = i + 1;
+        const key = `${year}-${String(m).padStart(2, "0")}`;
+        const monthDate = new Date(year, i, 1);
+        const label = monthDate.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+        const lastDay = new Date(year, m, 0).getDate();
+        const dateRange = `${key}-01 → ${key}-${String(lastDay).padStart(2, "0")}`;
+        return {
+          key,
+          label,
+          dateRange,
+          ordersCount: 0,
+          gmv: 0,
+          foodSubtotal: 0,
+          commissionBase: 0,
+          deliveryFees: 0,
+          foodCommission: 0,
+          platform: 0,
+          payout: 0,
+        };
+      });
+    } else if (mode === "month") {
+      const [y, m] = monthStart.split("-").map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      let startDay = 1;
+      let weekNum = 1;
+      while (startDay <= daysInMonth) {
+        const endDay = Math.min(startDay + 6, daysInMonth);
+        const pad = (n) => String(n).padStart(2, "0");
+        const sDate = `${y}-${pad(m)}-${pad(startDay)}`;
+        const eDate = `${y}-${pad(m)}-${pad(endDay)}`;
+        buckets.push({
+          key: `w${weekNum}`,
+          label: `Week ${weekNum}`,
+          dateRange: `${sDate} → ${eDate}`,
+          ordersCount: 0,
+          gmv: 0,
+          foodSubtotal: 0,
+          commissionBase: 0,
+          deliveryFees: 0,
+          foodCommission: 0,
+          platform: 0,
+          payout: 0,
+        });
+        startDay = endDay + 1;
+        weekNum += 1;
+      }
+    } else if (mode === "week") {
+      const [sY, sM, sD] = weekStart.split("-").map(Number);
+      const cursor = new Date(sY, sM - 1, sD, 0, 0, 0);
+      for (let i = 0; i < 7; i += 1) {
+        const d = new Date(cursor);
+        d.setDate(cursor.getDate() + i);
+        const dateStr = formatLocalDate(d);
+        const dayName = d.toLocaleDateString(undefined, { weekday: "short" });
+        const label = `${dayName}, ${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+        buckets.push({
+          key: dateStr,
+          label,
+          dateRange: dateStr,
+          ordersCount: 0,
+          gmv: 0,
+          foodSubtotal: 0,
+          commissionBase: 0,
+          deliveryFees: 0,
+          foodCommission: 0,
+          platform: 0,
+          payout: 0,
+        });
+      }
+    }
+
+    const bucketMap = new Map(buckets.map((b) => [b.key, b]));
+
+    for (const item of delivered) {
+      const dateObj = item.timestamp ? new Date(item.timestamp) : new Date(item.Date);
+      if (!Number.isFinite(dateObj.getTime())) continue;
+      const key = getBucketKey(dateObj);
+      let bucket = bucketMap.get(key);
+      if (!bucket) {
+        bucket = {
+          key,
+          label: key,
+          dateRange: key,
+          ordersCount: 0,
+          gmv: 0,
+          foodSubtotal: 0,
+          commissionBase: 0,
+          deliveryFees: 0,
+          foodCommission: 0,
+          platform: 0,
+          payout: 0,
+        };
+        buckets.push(bucket);
+        bucketMap.set(key, bucket);
+      }
+
+      const money = moneyFor(item);
+      const deliveryCharge = Number(money.deliveryCharge || 0);
+      const foodComm = Number(money.adminShare || 0) - deliveryCharge;
+      bucket.ordersCount += 1;
+      bucket.gmv += money.gross;
+      bucket.foodSubtotal += Math.max(0, Number(money.gross || 0) - deliveryCharge);
+      bucket.commissionBase += money.commissionBase;
+      bucket.deliveryFees += deliveryCharge;
+      bucket.foodCommission += foodComm;
+      bucket.platform += money.adminShare;
+      bucket.payout += money.partnerShare;
+    }
+
+    if (mode === "year") {
+      const curYear = new Date().getFullYear();
+      const curMonth = new Date().getMonth() + 1;
+      const selYear = Number(yearStart.slice(0, 4)) || curYear;
+      return buckets.filter((b) => {
+        const m = Number(b.key.slice(5, 7));
+        return selYear < curYear || m <= curMonth || b.ordersCount > 0;
+      });
+    }
+
+    return buckets;
+  }, [delivered, mode, yearStart, monthStart, weekStart, range, moneyFor]);
+
+  const financeCsvData = useMemo(() => {
+    return buildFinanceCsvReport({
+      restaurant,
+      ownerId,
+      mode,
+      range,
+      activeOffer,
+      parsedOffer,
+      defaultRate,
+      periodicBreakdown,
+      delivered,
+      moneyFor,
+      totals,
+    });
+  }, [
+    restaurant,
+    ownerId,
+    mode,
+    range,
+    activeOffer,
+    parsedOffer,
+    defaultRate,
+    periodicBreakdown,
+    delivered,
+    moneyFor,
+    totals,
+  ]);
 
   const persistOffers = async (nextOffers) => {
     await updateDoc(doc(db, "restaurants", ownerId), {
@@ -261,56 +445,19 @@ const RestaurantStatsFinance = () => {
     }
   };
 
-  const downloadInvoice = async () => {
-    if (!delivered.length || generating) return;
-    setGenerating(true);
-    try {
-      const [{ pdf }, { default: Invoice }] = await Promise.all([
-        import("@react-pdf/renderer"),
-        import("../../component/invoice/Invoice"),
-      ]);
-      const periodLabel = `${range.startDate} → ${range.endDate}`;
-      const invoice = {
-        paymentTo: {
-          partnerName: restaurant.name,
-          id: restaurant.id,
-        },
-        paymentDate: periodLabel,
-        invoiceDate: new Date().toLocaleDateString(),
-        paymentTable: {
-          description: `${
-            activeOffer ? `Offer ${parsedOffer}%` : "Payout"
-          } · ${delivered.length} delivered orders · ${periodLabel}`,
-          subTotal: totals.gmv,
-          commission: totals.rate,
-          total: totals.payout,
-          totalCommission: totals.platform,
-        },
-        partnerInfo: {
-          name: restaurant.name,
-          contact: restaurant.id,
-        },
-      };
-      const blob = await pdf(
-        <Invoice invoice={invoice} contactInfo={contactInfo} type="partner" />
-      ).toBlob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `payout-${restaurant.id || ownerId}-${range.startDate}-to-${range.endDate}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
-      customAlert("Could not generate the invoice.");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   const jumpToThisWeek = () => {
     setMode("week");
     setWeekStart(todayWeek.startDate);
+  };
+
+  const jumpToThisMonth = () => {
+    setMode("month");
+    setMonthStart(todayMonth.startDate);
+  };
+
+  const jumpToThisYear = () => {
+    setMode("year");
+    setYearStart(todayYear.startDate);
   };
 
   return (
@@ -318,33 +465,26 @@ const RestaurantStatsFinance = () => {
       <div className="panel !px-4 !py-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 className="section-title">Payout & invoices</h2>
+            <h2 className="section-title">Finance & payouts</h2>
             <p className="page-subtext mt-0.5">
-              Jump week by week, or build a custom invoice for any dates. An
+              Jump week by week, month by month, year by year, or select custom dates. An
               offer rate applies only to this period — the restaurant default
               stays {defaultRate}%.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {csvRows.length > 0 && (
+            {financeCsvData.length > 0 && (
               <CSVLink
-                data={csvRows}
-                filename={`${restaurant.name || "restaurant"}-${range.startDate}-${range.endDate}.csv`}
+                data={financeCsvData}
+                filename={`${safeCsvFilenamePart(restaurant.name)}-finance-${mode}-${range.startDate}-to-${range.endDate}.csv`}
+                separator=","
+                enclosingCharacter={'"'}
                 className="btn-ghost"
               >
-                <i className="bi bi-download" aria-hidden="true" />
-                Export CSV
+                <i className="bi bi-file-earmark-spreadsheet" aria-hidden="true" />
+                Export Finance CSV
               </CSVLink>
             )}
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={downloadInvoice}
-              disabled={generating || delivered.length === 0}
-            >
-              <FileDownloadIcon fontSize="small" />
-              {generating ? "Preparing…" : "Download invoice"}
-            </button>
           </div>
         </div>
 
@@ -363,11 +503,29 @@ const RestaurantStatsFinance = () => {
               </button>
             ))}
           </div>
-          {mode !== "week" && (
-            <button type="button" className="btn-ghost !py-1.5 text-xs" onClick={jumpToThisWeek}>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className={`btn-ghost !py-1.5 text-xs ${mode === "week" && weekStart === todayWeek.startDate ? "font-bold text-brand-600" : ""}`}
+              onClick={jumpToThisWeek}
+            >
               This week
             </button>
-          )}
+            <button
+              type="button"
+              className={`btn-ghost !py-1.5 text-xs ${mode === "month" && monthStart === todayMonth.startDate ? "font-bold text-brand-600" : ""}`}
+              onClick={jumpToThisMonth}
+            >
+              This month
+            </button>
+            <button
+              type="button"
+              className={`btn-ghost !py-1.5 text-xs ${mode === "year" && yearStart === todayYear.startDate ? "font-bold text-brand-600" : ""}`}
+              onClick={jumpToThisYear}
+            >
+              This year
+            </button>
+          </div>
         </div>
 
         {mode === "week" && (
@@ -436,6 +594,67 @@ const RestaurantStatsFinance = () => {
             >
               <i className="bi bi-chevron-right" aria-hidden="true" />
             </button>
+            <label className="text-xs font-semibold text-ink-muted">
+              Jump to
+              <input
+                type="month"
+                className="modern-input mt-1 !py-1.5"
+                value={monthStart.slice(0, 7)}
+                max={todayMonth.startDate.slice(0, 7)}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setMonthStart(`${e.target.value}-01`);
+                }}
+              />
+            </label>
+          </div>
+        )}
+
+        {mode === "year" && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="btn-outline !min-h-9"
+              onClick={() => setYearStart(shiftYear(yearStart, -1).startDate)}
+              aria-label="Previous year"
+            >
+              <i className="bi bi-chevron-left" aria-hidden="true" />
+            </button>
+            <div className="min-w-[12rem] rounded-xl border border-neutral-200 bg-white px-3 py-2 text-center">
+              <p className="text-sm font-semibold text-ink">{range.label}</p>
+              <p className="text-[11px] text-ink-muted">
+                {range.startDate} → {range.endDate}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-outline !min-h-9"
+              onClick={() => setYearStart(shiftYear(yearStart, 1).startDate)}
+              aria-label="Next year"
+              disabled={yearStart >= todayYear.startDate}
+            >
+              <i className="bi bi-chevron-right" aria-hidden="true" />
+            </button>
+            <label className="text-xs font-semibold text-ink-muted">
+              Jump to
+              <select
+                className="modern-input mt-1 !py-1.5"
+                value={yearStart.slice(0, 4)}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setYearStart(`${e.target.value}-01-01`);
+                }}
+              >
+                {Array.from({ length: 5 }, (_, i) => {
+                  const y = new Date().getFullYear() - i;
+                  return (
+                    <option key={y} value={String(y)}>
+                      {y}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
           </div>
         )}
 
@@ -448,7 +667,7 @@ const RestaurantStatsFinance = () => {
               endDate={customEnd}
               onStartDateChange={setCustomStart}
               onEndDateChange={setCustomEnd}
-              applyLabel="Build invoice"
+              applyLabel="Apply dates"
               resetLabel="This week"
               onApply={(start, end) =>
                 setAppliedCustom({
@@ -474,7 +693,7 @@ const RestaurantStatsFinance = () => {
           <div>
             <h3 className="section-title">Period offer</h3>
             <p className="page-subtext mt-0.5">
-              Optional. Recalculates this invoice only. Does not change the
+              Optional. Recalculates this period only. Does not change the
               restaurant default ({defaultRate}%) or rewrite old settled orders.
             </p>
           </div>
@@ -619,10 +838,8 @@ const RestaurantStatsFinance = () => {
                 </p>
                 <p className="mt-1 text-sm text-ink-muted">
                   {activeOffer
-                    ? `Invoice uses ${parsedOffer}% offer`
-                    : `Invoice uses recorded / default rates (${totals.rate}%)`}
-                  {" · "}
-                  {totals.open} still open for settlement
+                    ? `Period uses ${parsedOffer}% offer`
+                    : `Period uses recorded / default rates (${totals.rate}%)`}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -631,6 +848,12 @@ const RestaurantStatsFinance = () => {
                   className="btn-ghost"
                 >
                   All orders
+                </Link>
+                <Link
+                  to={`/foodAdmin/records?restaurantId=${ownerId}`}
+                  className="btn-ghost"
+                >
+                  Order records
                 </Link>
               </div>
             </div>
@@ -652,6 +875,88 @@ const RestaurantStatsFinance = () => {
             )}
           </div>
 
+          {periodicBreakdown.length > 0 && (
+            <div className="panel !p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div>
+                  <h4 className="text-sm font-bold text-ink">
+                    {mode === "year" ? "Monthly" : mode === "month" ? "Weekly" : mode === "week" ? "Daily" : "Period"} Breakdown
+                  </h4>
+                  <p className="text-xs text-ink-muted">
+                    Aggregated financial metrics across {mode === "year" ? "months" : mode === "month" ? "weeks" : mode === "week" ? "days" : "intervals"} of this period
+                  </p>
+                </div>
+                {financeCsvData.length > 0 && (
+                  <CSVLink
+                    data={financeCsvData}
+                    filename={`${safeCsvFilenamePart(restaurant.name)}-finance-${mode}-${range.startDate}-to-${range.endDate}.csv`}
+                    separator=","
+                    enclosingCharacter={'"'}
+                    className="btn-ghost !py-1 text-xs"
+                  >
+                    <i className="bi bi-file-earmark-spreadsheet" aria-hidden="true" />
+                    Export Finance CSV
+                  </CSVLink>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-left text-xs">
+                  <thead className="table-head uppercase">
+                    <tr>
+                      <th className="px-3 py-2.5">Period</th>
+                      <th className="px-3 py-2.5">Delivered</th>
+                      <th className="px-3 py-2.5">Gross (฿)</th>
+                      <th className="px-3 py-2.5">Food Subtotal (฿)</th>
+                      <th className="px-3 py-2.5">Delivery (฿)</th>
+                      <th className="px-3 py-2.5">Platform (฿)</th>
+                      <th className="px-3 py-2.5">Payout (฿)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {periodicBreakdown.map((b) => (
+                      <tr key={b.key} className="hover:bg-neutral-50/80">
+                        <td className="px-3 py-2.5 font-medium text-ink">
+                          <div>{b.label}</div>
+                          <div className="text-[10px] text-ink-muted">{b.dateRange}</div>
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums font-semibold">
+                          {b.ordersCount}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-ink">
+                          {formatCommissionMoney(b.gmv, "locked")}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-ink-muted">
+                          {formatCommissionMoney(b.foodSubtotal, "locked")}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums text-ink-muted">
+                          {formatCommissionMoney(b.deliveryFees, "locked")}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums font-medium text-secondary-700">
+                          {formatCommissionMoney(b.platform, "locked")}
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums font-semibold text-success-700">
+                          {formatCommissionMoney(b.payout, "locked")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t-2 border-neutral-200 bg-neutral-50/70 font-semibold text-ink">
+                    <tr>
+                      <td className="px-3 py-2.5">Total</td>
+                      <td className="px-3 py-2.5 tabular-nums">{delivered.length}</td>
+                      <td className="px-3 py-2.5 tabular-nums">{formatCommissionMoney(totals.gmv, "locked")}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-ink-muted">{formatCommissionMoney(totals.discountedFoodSubtotal, "locked")}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-ink-muted">{formatCommissionMoney(totals.deliveryFees, "locked")}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-secondary-700">{formatCommissionMoney(totals.platform, "locked")}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-success-700">{formatCommissionMoney(totals.payout, "locked")}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="table-shell overflow-hidden">
             <div className="overflow-auto">
               {delivered.length === 0 ? (
@@ -666,11 +971,11 @@ const RestaurantStatsFinance = () => {
                   <p className="mt-1 max-w-sm text-sm">
                     {orders.length
                       ? `${orders.length} order(s) here are not delivered yet.`
-                      : "Pick another week, month, or custom dates."}
+                      : "Pick another week, month, year, or custom dates."}
                   </p>
                 </div>
               ) : (
-                <table className="w-full min-w-[960px] text-left text-sm">
+                <table className="w-full min-w-[880px] text-left text-sm">
                   <thead className="table-head text-xs uppercase">
                     <tr>
                       <th className="px-4 py-3.5">Order</th>
@@ -681,7 +986,6 @@ const RestaurantStatsFinance = () => {
                       <th className="px-4 py-3.5">Platform</th>
                       <th className="px-4 py-3.5">Payout</th>
                       <th className="px-4 py-3.5">Accounting</th>
-                      <th className="px-4 py-3.5">Settlement</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
@@ -697,7 +1001,7 @@ const RestaurantStatsFinance = () => {
                               to={`/foodAdmin/restaurantStats/${ownerId}/orders/${item.OrderID}`}
                               className="text-brand-700 hover:underline"
                             >
-                              #{item.OrderID}
+                              <span title={item.OrderID}>#{formatDisplayOrderId(item.OrderID)}</span>
                             </Link>
                           </td>
                           <td className="px-4 py-4">{item.Date}</td>
@@ -720,13 +1024,33 @@ const RestaurantStatsFinance = () => {
                           <td className="px-4 py-4">
                             <AccountingBadge source={money.source} />
                           </td>
-                          <td className="px-4 py-4">
-                            <SettlementBadge cleared={item.isPaymentClear} />
-                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
+                  <tfoot className="border-t-2 border-neutral-200 bg-neutral-50/70 font-semibold text-ink">
+                    <tr>
+                      <td className="px-4 py-3.5">Total ({delivered.length} orders)</td>
+                      <td className="px-4 py-3.5" colSpan={2}>
+                        {range.startDate} → {range.endDate}
+                      </td>
+                      <td className="px-4 py-3.5 tabular-nums">
+                        {formatCommissionMoney(totals.gmv, activeOffer ? "offer" : "locked")}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {formatCommissionRate(totals.rate, activeOffer ? "offer" : "locked")}
+                      </td>
+                      <td className="px-4 py-3.5 tabular-nums">
+                        {formatCommissionMoney(totals.platform, activeOffer ? "offer" : "locked")}
+                      </td>
+                      <td className="px-4 py-3.5 tabular-nums">
+                        {formatCommissionMoney(totals.payout, activeOffer ? "offer" : "locked")}
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-ink-muted">
+                        {activeOffer ? "Period offer" : "Standard"}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               )}
             </div>

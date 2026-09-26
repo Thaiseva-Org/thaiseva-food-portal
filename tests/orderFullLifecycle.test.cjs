@@ -208,10 +208,10 @@ const customer = { uid: "customer-1", role: "customer" };
 const owner = { uid: "rest-owner-1", role: "restaurantOwner" };
 const master = { uid: "master-admin", role: "masterAdmin" };
 
-test("orderFullLifecycle: price tampering defense and delivery fee threshold", async () => {
+test("orderFullLifecycle: price tampering defense and server-managed delivery fee", async () => {
   const f = fixture();
 
-  // 1. Order below 1,000 Baht threshold has 100 Baht delivery fee on confirmation
+  // 1. The server charges 100 Baht when the verified subtotal is below 1,000.
   // Massaman Curry (250 - 10% discount = 225) * 2 = 450
   // Jasmine Rice (30) * 2 = 60
   // Subtotal = 510 Baht.
@@ -228,6 +228,7 @@ test("orderFullLifecycle: price tampering defense and delivery fee threshold", a
       phoneNumber: "0891234567",
     },
     paymentMethod: "Cash on Delivery",
+    deliveryCharge: 35,
     idempotencyKey: "test-order-1",
   });
 
@@ -241,19 +242,22 @@ test("orderFullLifecycle: price tampering defense and delivery fee threshold", a
   assert.equal(savedOrder.Items[0].discount, 10);
   assert.equal(savedOrder.Items[0].lineAmount, 450);
   assert.equal(savedOrder.foodSubtotal, 510);
+  assert.equal(savedOrder.deliveryCharge, 100);
+  assert.equal(savedOrder.Amount, 610);
   assert.equal(savedOrder.currentStatus, "New Order");
 
-  // Admin confirms order -> delivery charge of 100 Baht applied (< 1000 Baht)
+  // Admin confirms without changing the app-provided delivery charge.
   await f.transitionOrderStatus(master, {
     orderId,
     toStatus: "Order Confirm",
+    riderId: "rider-somchai",
   });
   const confirmedOrder = f.records.get(`orders/${orderId}`);
   assert.equal(confirmedOrder.currentStatus, "Order Confirm");
   assert.equal(confirmedOrder.deliveryCharge, 100);
   assert.equal(confirmedOrder.Amount, 610);
 
-  // 2. Order above 1,000 Baht threshold has 0 Baht delivery fee
+  // 2. Delivery is free when the verified subtotal is 1,000 Baht or more.
   const banquetResult = await f.createFoodOrder(customer, {
     Restaurant: { ownerId: "rest-owner-1" },
     Items: [{ ItemId: "item-feast", Quantity: 1 }], // 1200 Baht
@@ -263,14 +267,16 @@ test("orderFullLifecycle: price tampering defense and delivery fee threshold", a
       phoneNumber: "0897654321",
     },
     paymentMethod: "Thai QR",
+    deliveryCharge: 75,
     idempotencyKey: "test-order-2",
   });
   await f.transitionOrderStatus(master, {
     orderId: banquetResult.orderId,
     toStatus: "Order Confirm",
+    riderId: "rider-somchai",
   });
   const banquetOrder = f.records.get(`orders/${banquetResult.orderId}`);
-  assert.equal(banquetOrder.deliveryCharge, 0); // Free delivery >= 1000 Baht
+  assert.equal(banquetOrder.deliveryCharge, 0);
   assert.equal(banquetOrder.Amount, 1200);
 });
 
@@ -287,13 +293,15 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
       phoneNumber: "0811113333",
     },
     paymentMethod: "Cash on Delivery",
+    deliveryCharge: 25,
     idempotencyKey: "lifecycle-order",
   });
 
-  // Step 1: Master Admin confirms order (subtotal 450 < 1000 -> delivery fee 100, total 550)
+  // Step 1: Master Admin confirms the server-calculated 100 Baht fee.
   await f.transitionOrderStatus(master, {
     orderId,
     toStatus: "Order Confirm",
+    riderId: "rider-somchai",
   });
   assert.equal(f.records.get(`orders/${orderId}`).currentStatus, "Order Confirm");
   assert.equal(f.records.get(`orders/${orderId}`).deliveryCharge, 100);
@@ -322,7 +330,10 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   });
   assert.equal(f.records.get(`orders/${orderId}`).currentStatus, "Ready for pickup");
 
-  // Step 4: Dispatch attempt without assigned rider must fail
+  // Step 4: A legacy/corrupt order that loses its assignment cannot advance.
+  const beforeDispatch = f.records.get(`orders/${orderId}`);
+  delete beforeDispatch.assignedRiderId;
+  delete beforeDispatch.DeliveryPartner;
   await assert.rejects(
     f.transitionOrderStatus(owner, {
       orderId,
@@ -362,8 +373,9 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   assert.equal(delivered.deliveryProcessed, true);
   assert.ok(delivered.accounting);
   assert.equal(delivered.accounting.commissionPct, 15);
-  assert.equal(delivered.accounting.adminShare, 167.5); // 67.5 commission + 100 delivery fee
-  assert.equal(delivered.accounting.partnerShare, 382.5);
+  assert.equal(delivered.accounting.commissionBase, 500); // original price: 250 x 2
+  assert.equal(delivered.accounting.adminShare, 175); // 75 commission + 100 delivery fee
+  assert.equal(delivered.accounting.partnerShare, 375);
   assert.equal(delivered.comission, 15);
 
   // Step 8: Payment Verification (COD)
@@ -394,5 +406,5 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   // Delivered order remains locked at 15% and 382.5 Baht earnings
   const finalOrder = f.records.get(`orders/${orderId}`);
   assert.equal(finalOrder.comission, 15);
-  assert.equal(finalOrder.accounting.partnerShare, 382.5);
+  assert.equal(finalOrder.accounting.partnerShare, 375);
 });

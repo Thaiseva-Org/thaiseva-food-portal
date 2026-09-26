@@ -215,15 +215,10 @@ function formatDateToDDMMMLocal(dateString) {
 
 async function getEarningsForRange(id = "", startDate, endDate) {
   if (!startDate || !endDate) return getAllTimeEarnings(id);
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const days = Math.round((end - start) / 86400000);
   const today = new Date().toISOString().slice(0, 10);
   if (startDate === endDate && startDate === today) {
     return getHourlyEarnings(id);
   }
-  if (days > 45) return getMonthlyEarnings(id);
-
   try {
     const earningsRef = collection(
       db,
@@ -252,6 +247,31 @@ async function getEarningsForRange(id = "", startDate, endDate) {
       });
       cursor.setDate(cursor.getDate() + 1);
     }
+    // Keep longer ranges readable while still respecting the exact dates the
+    // user selected (including partial first and last months).
+    if (rows.length > 45) {
+      const monthlyRows = new Map();
+      for (const [date, earnings] of earningsMap) {
+        const month = date.slice(0, 7);
+        monthlyRows.set(month, (monthlyRows.get(month) || 0) + Number(earnings || 0));
+      }
+
+      const months = [];
+      const monthCursor = new Date(`${startDate.slice(0, 7)}-01T00:00:00`);
+      const lastMonth = new Date(`${endDate.slice(0, 7)}-01T00:00:00`);
+      while (monthCursor <= lastMonth) {
+        const month = `${monthCursor.getFullYear()}-${String(
+          monthCursor.getMonth() + 1
+        ).padStart(2, "0")}`;
+        months.push({
+          data: formatDateToMMMYY(month),
+          earnings: monthlyRows.get(month) || 0,
+        });
+        monthCursor.setMonth(monthCursor.getMonth() + 1);
+      }
+      return months;
+    }
+
     return rows;
   } catch (error) {
     console.error("Error fetching earnings range:", error);

@@ -26,7 +26,6 @@ Defined in: `functions/src/lib/restaurants.js`
 
 #### 1. `submitRestaurantApplication`
 - **Purpose:** Allows a logged-in user to submit a restaurant application.
-- **Payload:** Requires `name`, `phoneNumber`, `emailId`, `foodType`, `location`, `description`, `serviceType` (Delivery, Dine-in, Both), and HTTPS URLs for `businessLicenseUrl` and `ownerIdDocUrl`.
 - **Business Logic:**
   - Prevents multiple pending applications from the same account.
   - Creates a restaurant record in `restaurants` collection with `status: "Pending"`.
@@ -180,11 +179,8 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
   - **Manual Offline Payments (Thai QR, Cash on Delivery):** Master Admin calls `verifyOrderPayment` to record the payment reference and mark `isPaymentDone: true` / `paymentStatus: "verified"`.
   - **Stripe Payments (`paymentMethod: "Stripe"`):** Manual verification via `verifyOrderPayment` is rejected with `failed-precondition`. Initial order creation sets `verified: false`. Once the Stripe payment process completes successfully (e.g. via Stripe Webhook `checkout.session.completed` / `payment_intent.succeeded`), the backend updates the order record to `verified: true` (and `isPaymentDone: true`), causing the portal UI to reflect status **Stripe verified**.
 
-### G. Dine-in Reservation Callables
 Defined in: `functions/src/lib/bookings.js`
 
-#### `createDineInBooking`
-- **Purpose:** Customer requests a table reservation.
 - **Payload:** Requires guest details, party size, notes (e.g. occasions), and schedule.
   - **Example Payload:**
     ```json
@@ -199,9 +195,6 @@ Defined in: `functions/src/lib/bookings.js`
     }
     ```
 
-- `createDineInBooking`, `listMyDineInBookings`, and `getDineInBooking` serve the customer booking flow.
-- `updateDineInBooking` and `cancelDineInBooking` allow the customer to change an eligible booking.
-- `setDineInBookingStatus` lets the owning restaurant or Master Admin accept or cancel a reservation.
 - The full customer-app contract is documented in `APP_BOOKING_API.md`.
 
 ### H. Food Customer Chat API

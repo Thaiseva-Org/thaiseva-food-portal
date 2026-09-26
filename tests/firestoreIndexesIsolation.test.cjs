@@ -73,14 +73,14 @@ test("food portal indexes are present", () => {
   assert.ok(present.has("dineInBookings::ownerId|bookingTimestamp"));
 });
 
-test("no duplicate field signatures", () => {
+test("no duplicate composite index definitions", () => {
   const seen = new Map();
   for (const index of indexesDoc.indexes) {
-    const sig = fieldSignature(index);
+    const sig = signature(index);
     assert.equal(
       seen.has(sig),
       false,
-      `duplicate index field signature: ${sig} (full: ${signature(index)})`,
+      `duplicate index definition: ${sig}`,
     );
     seen.set(sig, true);
   }

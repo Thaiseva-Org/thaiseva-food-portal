@@ -2,8 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../../../firebaseConfig"; // Import from the firebaseConfig file
@@ -51,17 +49,6 @@ const AdminLogin = () => {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setError("");
-    const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      checkAdminRights(result.user);
-    } catch (error) {
-      setError("Failed to sign in with Google.");
-    }
-  };
-
   return (
     <div className='flex justify-center items-center h-screen bg-gray-100'>
       <div className='bg-white p-8 rounded shadow-lg w-96'>
@@ -96,11 +83,6 @@ const AdminLogin = () => {
             Sign In
           </button>
         </form>
-        <button
-          onClick={handleGoogleLogin}
-          className='w-full bg-red-600 text-white py-2 px-4 rounded mt-4 hover:bg-red-700'>
-          Sign in with Google
-        </button>
       </div>
     </div>
   );

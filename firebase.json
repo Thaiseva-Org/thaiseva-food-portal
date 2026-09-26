@@ -23,7 +23,7 @@
     "site": "gothai-food",
     "public": "dist",
     "predeploy": [
-      "npm run production:check"
+      "npm run deploy:check"
     ],
     "ignore": [
       "firebase.json",

@@ -1,8 +1,10 @@
 import { customAlert } from "../../utils/alertService";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   fetchOrderRecordsTotalPages,
-  fetchOrderRecords,
+  subscribeOrderRecords,
+  fetchVerifiedRestaurantsList,
 } from "../../services/DailyRecords";
 import { CSVLink } from "react-csv";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
@@ -10,9 +12,16 @@ import Loading from "../../components/Loading";
 import { useAuth } from "../../AuthContext";
 import { Pagination } from "@mui/material";
 import { clearOrderPayment } from "../../api";
+import { formatDisplayOrderId } from "../../utils/orderData";
 
 const TodayOrders = () => {
   const { isMasterAdmin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedRestaurant, setSelectedRestaurant] = useState(
+    searchParams.get("restaurantId") || ""
+  );
+  const [restaurants, setRestaurants] = useState([]);
+  const [restaurantsLoading, setRestaurantsLoading] = useState(false);
   const [orderDetails, setOrderDetails] = useState([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -33,11 +42,75 @@ const TodayOrders = () => {
   }, []);
 
   useEffect(() => {
-    if (isMasterAdmin) {
-      fetchOrderRecordsTotalPages(setTotalPages, startDate, endDate);
-      loadData();
+    let isMounted = true;
+    setRestaurantsLoading(true);
+    fetchVerifiedRestaurantsList()
+      .then((list) => {
+        if (isMounted) setRestaurants(list);
+      })
+      .catch((err) => {
+        console.error("Failed to load restaurants list:", err);
+      })
+      .finally(() => {
+        if (isMounted) setRestaurantsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const qRest = searchParams.get("restaurantId") || "";
+    if (qRest !== selectedRestaurant) {
+      setSelectedRestaurant(qRest);
+      setPage(1);
+      setLastDocs([]);
     }
-  }, [isMasterAdmin, page, refetch]); // eslint-disable-line react-hooks/exhaustive-deps -- date values and cursors are applied only by explicit submit/page triggers
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let unsubscribe;
+    if (isMasterAdmin) {
+      fetchOrderRecordsTotalPages(
+        setTotalPages,
+        startDate,
+        endDate,
+        selectedRestaurant || null
+      );
+      unsubscribe = subscribeOrderRecords(
+        (data) => {
+          const datanew = (data || []).map((item) =>
+            createData(
+              item.OrderID,
+              item.restaurantName,
+              item.restaurantID,
+              item.CustomerName,
+              item.CustomerContact,
+              item.CustomerEmail,
+              item.Location,
+              item.Date,
+              item.Amount,
+              item.comission,
+              item.accounting,
+              item.isClear,
+              item.Status
+            )
+          );
+          setOrderDetails(datanew);
+        },
+        setLoading,
+        startDate,
+        endDate,
+        page,
+        lastDocs,
+        setLastDocs,
+        selectedRestaurant || null
+      );
+    }
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isMasterAdmin, page, refetch, selectedRestaurant]); // eslint-disable-line react-hooks/exhaustive-deps -- date values and cursors are applied only by explicit submit/page triggers
 
   const downloadInvoice = async (item, type) => {
     const setGenerating =
@@ -46,21 +119,14 @@ const TodayOrders = () => {
         : setGenerationPartnerInvoices;
     setGenerating((prev) => ({ ...prev, [item.OrderID]: true }));
     try {
-      const [{ pdf }, { default: Invoice }] = await Promise.all([
-        import("@react-pdf/renderer"),
-        import("../component/invoice/Invoice"),
-      ]);
+      const { legacyInvoiceToHtmlData, openInvoiceWindow } = await import(
+        "../../utils/invoiceHtml"
+      );
       const invoice =
         type === "user" ? item.userInvoice : item.partnerInvoiceInfo;
-      const blob = await pdf(
-        <Invoice invoice={invoice} contactInfo={contactInfo} type={type} />
-      ).toBlob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${type}-invoice-${item.OrderID}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      openInvoiceWindow(
+        legacyInvoiceToHtmlData(invoice, type, item.OrderID, contactInfo)
+      );
     } catch (error) {
       console.error("Failed to generate invoice:", error);
       customAlert("Could not generate the invoice. Please try again.");
@@ -74,34 +140,6 @@ const TodayOrders = () => {
     phone: "01723646378",
   };
 
-  const loadData = async () => {
-    const data = await fetchOrderRecords(
-      setOrderDetails,
-      setLoading,
-      startDate,
-      endDate,
-      page,
-      lastDocs,
-      setLastDocs
-    );
-    const datanew = (data || []).map((item) =>
-      createData(
-        item.OrderID,
-        item.restaurantName,
-        item.restaurantID,
-        item.CustomerName,
-        item.CustomerContact,
-        item.CustomerEmail,
-        item.Location,
-        item.Date,
-        item.Amount,
-        item.comission,
-        item.isClear
-      )
-    );
-    setOrderDetails(datanew);
-  };
-
   const handleChangePage = (_, newPage) => {
     setPage(newPage);
   };
@@ -110,14 +148,15 @@ const TodayOrders = () => {
 
   const headers = [
     { label: "Order ID", key: "OrderID" },
-    { label: "Retaurant Name", key: "restaurantName" },
-    { label: "Retaurant ID", key: "restaurantID" },
+    { label: "Restaurant Name", key: "restaurantName" },
+    { label: "Restaurant ID", key: "restaurantID" },
     { label: "Customer Name", key: "CustomerName" },
     { label: "Customer Contact", key: "CustomerContact" },
     { label: "Customer Email", key: "CustomerEmail" },
     { label: "Order Location", key: "Location" },
     { label: "Order Time", key: "Date" },
     { label: "Order Amount", key: "Amount" },
+    { label: "Status", key: "Status" },
   ];
 
   const createData = (
@@ -131,12 +170,23 @@ const TodayOrders = () => {
     date,
     Amount,
     comission,
-    isClear
+    accounting,
+    isClear,
+    Status = "Delivered"
   ) => {
     const invoicedate = new Date();
-    const partnerAmount = (Amount - (Amount * comission) / 100).toFixed(2);
-    const comissionAmount = ((Amount * comission) / 100).toFixed(2);
-    const subTotal = Amount / 1.07;
+    const totalAmount = Number(accounting?.amount ?? Amount) || 0;
+    const foodSubtotal = Number(
+      accounting?.foodSubtotal ??
+        totalAmount - Number(accounting?.deliveryCharge || 0)
+    ) || 0;
+    const partnerAmount = Number(
+      accounting?.partnerShare ??
+        totalAmount - (totalAmount * comission) / 100
+    ).toFixed(2);
+    const commissionAmount = Number(
+      accounting?.adminShare ?? (totalAmount * comission) / 100
+    ).toFixed(2);
     return {
       OrderID: String(OrderID),
       restaurantName,
@@ -146,7 +196,8 @@ const TodayOrders = () => {
       CustomerEmail,
       Location,
       Date: date,
-      Amount: Number(Amount).toFixed(2),
+      Amount: totalAmount.toFixed(2),
+      Status: Status || "-",
       isClear,
       userInvoice: {
         paymentTo: {
@@ -159,10 +210,10 @@ const TodayOrders = () => {
         invoiceDate: invoicedate.toLocaleDateString(),
         paymentTable: {
           description: `Food Order`,
-          subTotal: Number(subTotal).toFixed(2),
+          subTotal: foodSubtotal.toFixed(2),
           commission: comission,
-          total: Number(Amount).toFixed(2),
-          totalCommission: Number(subTotal * 0.07).toFixed(2),
+          total: totalAmount.toFixed(2),
+          totalCommission: Number(accounting?.deliveryCharge || 0).toFixed(2),
         },
         partnerInfo: {
           name: restaurantName,
@@ -178,10 +229,10 @@ const TodayOrders = () => {
         invoiceDate: invoicedate.toLocaleDateString(),
         paymentTable: {
           description: `Food Order`,
-          subTotal: Number(Amount).toFixed(2),
+          subTotal: totalAmount.toFixed(2),
           commission: comission,
           total: partnerAmount,
-          totalCommission: comissionAmount,
+          totalCommission: commissionAmount,
         },
         partnerInfo: {
           name: CustomerName,
@@ -200,7 +251,8 @@ const TodayOrders = () => {
     CustomerEmail,
     Location,
     date,
-    Amount
+    Amount,
+    Status
   ) => {
     const toStringSafe = (value) => `\u200C${value}`;
     return {
@@ -213,6 +265,7 @@ const TodayOrders = () => {
       Location,
       Date: date,
       Amount: toStringSafe(Amount),
+      Status: toStringSafe(Status || "-"),
     };
   };
 
@@ -228,7 +281,8 @@ const TodayOrders = () => {
         item.CustomerEmail,
         item.Location,
         item.Date,
-        item.Amount
+        item.Amount,
+        item.Status
       )
     );
     setCsvData(data);
@@ -245,6 +299,30 @@ const TodayOrders = () => {
     }
   };
 
+  const handleRestaurantChange = (e) => {
+    const newOwnerId = e.target.value;
+    setSelectedRestaurant(newOwnerId);
+    setPage(1);
+    setLastDocs([]);
+    const nextParams = new URLSearchParams(searchParams);
+    if (newOwnerId) {
+      nextParams.set("restaurantId", newOwnerId);
+    } else {
+      nextParams.delete("restaurantId");
+    }
+    setSearchParams(nextParams);
+  };
+
+  const handleResetFilters = () => {
+    setStartDate("");
+    setEndDate("");
+    setSelectedRestaurant("");
+    setPage(1);
+    setLastDocs([]);
+    setSearchParams({});
+    setRefetch((p) => !p);
+  };
+
   const handleDateRangeSubmit = (event) => {
     event.preventDefault();
     if (endDate == "") {
@@ -256,7 +334,17 @@ const TodayOrders = () => {
     setRefetch((p) => !p);
   };
 
-  const fileName = `Orders_data _from_${startDate}_to_${endDate}.csv`;
+  const activeRestaurantObj = restaurants.find(
+    (r) => r.ownerId === selectedRestaurant
+  );
+  const restaurantSlug = activeRestaurantObj
+    ? `${activeRestaurantObj.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`
+    : "";
+  const dateRangeSlug =
+    startDate && endDate
+      ? `from_${startDate}_to_${endDate}`
+      : "all_time";
+  const fileName = `Orders_${restaurantSlug}${dateRangeSlug}.csv`;
 
   if (loading)
     return (
@@ -269,21 +357,40 @@ const TodayOrders = () => {
     <div className="px-6 py-10 w-full">
       <div className="flex justify-between items-center mb-4">
         <p className="lg:text-3xl md:text-2xl font-bold text-[var(--main-headings-color)]">
-          Booking Records
+          Order Records
         </p>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-end">
+          <fieldset className="px-2 pb-2 border border-neutral-300 rounded-md bg-white">
+            <legend className="px-1 text-xs font-semibold text-neutral-600">
+              Restaurant
+            </legend>
+            <select
+              className="w-[11rem] md:w-[13rem] bg-transparent outline-none text-sm py-0.5 text-neutral-800 cursor-pointer"
+              value={selectedRestaurant}
+              onChange={handleRestaurantChange}
+              disabled={restaurantsLoading}
+            >
+              <option value="">All Restaurants</option>
+              {restaurants.map((r) => (
+                <option key={r.ownerId} value={r.ownerId}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </fieldset>
+
           <form
             onSubmit={(e) => {
               handleDateRangeSubmit(e);
             }}
-            className="flex items-end justify-between"
+            className="flex items-end gap-2 flex-wrap"
           >
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">Start</legend>
+            <fieldset className="px-2 pb-2 border border-neutral-300 rounded-md bg-white">
+              <legend className="px-1 text-xs font-semibold text-neutral-600">Start</legend>
               <input
                 type="date"
-                className="date-input w-[7.5rem] outline-none"
+                className="date-input w-[7.5rem] outline-none text-sm"
                 placeholder="Select date"
                 value={startDate}
                 onChange={(event) => {
@@ -292,12 +399,12 @@ const TodayOrders = () => {
                 max={new Date().toISOString().split("T")[0]}
               />
             </fieldset>
-            <p className="px-2 pt-1 m-auto"> to </p>
-            <fieldset className="px-2 pb-2 border border-black rounded-md">
-              <legend className="px-1 text-sm">End</legend>
+            <span className="text-sm text-neutral-500 self-center">to</span>
+            <fieldset className="px-2 pb-2 border border-neutral-300 rounded-md bg-white">
+              <legend className="px-1 text-xs font-semibold text-neutral-600">End</legend>
               <input
                 type="date"
-                className="date-input w-[7.5rem] outline-none"
+                className="date-input w-[7.5rem] outline-none text-sm"
                 placeholder="Select date"
                 value={endDate}
                 onChange={(event) => {
@@ -314,22 +421,33 @@ const TodayOrders = () => {
 
             <button
               type="submit"
-              className="w-24 py-2 mb-1 ml-2 text-sm font-semibold text-white bg-orange-400 rounded hover:bg-orange-500 focus:outline-none focus:shadow-outline"
+              className="px-4 py-2 mb-0.5 text-sm font-semibold text-white bg-orange-400 rounded hover:bg-orange-500 focus:outline-none transition-colors"
             >
               Apply
             </button>
+
+            {(startDate || endDate || selectedRestaurant) && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="px-3 py-2 mb-0.5 text-sm font-semibold text-neutral-600 bg-neutral-100 border border-neutral-300 rounded hover:bg-neutral-200 transition-colors"
+              >
+                Clear
+              </button>
+            )}
           </form>
-          <div className="mb-1 flex items-end">
+
+          <div className="mb-0.5 flex items-end">
             {!csvData ? (
               <button
-                className={`py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none focus:shadow-outline text-sm`}
+                className="py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none text-sm transition-colors"
                 onClick={handleDownload}
               >
                 {isDownloading ? "Generating..." : "Generate CSV"}
               </button>
             ) : (
               <CSVLink
-                className={`py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none focus:shadow-outline text-sm`}
+                className="py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none text-sm transition-colors"
                 data={csvData}
                 headers={headers}
                 filename={fileName}
@@ -353,6 +471,7 @@ const TodayOrders = () => {
                   <th className="px-6 py-3">Customer Name</th>
                   <th className="px-2 py-3">Location</th>
                   <th className="px-3 py-3">Amount</th>
+                  <th className="px-3 py-3 text-center">Status</th>
                   <th className="px-3 py-3">User Invoice</th>
                   <th className="px-3 py-3">Partner Invoice</th>
                   <th className="px-8 py-3">Action</th>
@@ -367,8 +486,8 @@ const TodayOrders = () => {
                     <td className="px-6 py-4">
                       {getValueOrNA(item.restaurantName)}
                     </td>
-                    <td className="px-3 py-4">{`#${getValueOrNA(
-                      item?.OrderID
+                    <td className="px-3 py-4" title={item?.OrderID}>{`#${getValueOrNA(
+                      formatDisplayOrderId(item?.OrderID)
                     )}`}</td>
                     <td className="px-6 py-4">{getValueOrNA(item?.Date)}</td>
                     <td className="px-6 py-4">
@@ -380,6 +499,19 @@ const TodayOrders = () => {
                       {!isNaN(Number(item?.Amount))
                         ? Number(item.Amount).toFixed(2)
                         : 0}
+                    </td>
+                    <td className="px-3 py-4 text-center">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full ${
+                          item?.Status?.toLowerCase() === "delivered"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : item?.Status?.toLowerCase() === "cancelled"
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {item?.Status || "-"}
+                      </span>
                     </td>
                     <td className="px-1 py-4">
                       <div className="flex items-center justify-center gap-1">

@@ -5,7 +5,7 @@
 1. **Cloud Functions API** (`functions/`) owns money, order status, commission, approvals, and menu mutations.
 2. **Firestore rules** block client kitchen/rider/money writes on `orders` (customer cancel only before Out) and all `Earnings` writes; lock financial restaurant fields.
 3. **Storage rules** require image MIME + size limits; prefer `restaurants/{uid}/...` paths. Public-apply files stay under `applications/{id}/` (admin/food-admin read only; signed URLs for preview and review).
-4. **SPA** calls callables via `src/api/*`; auth no longer overwrites profiles on Google login.
+4. **SPA** calls callables via `src/api/*`; authentication uses email and password.
 5. **`firebase-admin` removed** from the frontend package.
 
 ## Auth session security (Firebase JWT)
@@ -127,7 +127,7 @@ may set `ENFORCE_APP_CHECK=false`.
 ## Post-deploy checklist
 
 - [ ] Partner cannot set commission on apply
-- [ ] Google login does not wipe `isRestaurantAdmin`
+- [ ] Email/password login preserves `isRestaurantAdmin`
 - [ ] Order kitchen / rider / money writes only via API
 - [ ] Customer cancel on `orders` is blocked after Out / Delivered
 - [ ] Ready for pickup requires a rider before Out for Delivery

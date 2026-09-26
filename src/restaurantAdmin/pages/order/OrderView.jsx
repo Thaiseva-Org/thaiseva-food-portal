@@ -1,5 +1,5 @@
 import OrderPayment from "../../../components/OrderPayment";
-import { normalizeOrder } from "../../../utils/orderData";
+import { formatDisplayOrderId, normalizeOrder } from "../../../utils/orderData";
 import {
   collection,
   doc,
@@ -30,6 +30,7 @@ import { partnerPath } from "../../../utils/partnerRoutes";
 import { isPlatformOwnerId } from "../../../utils/platformRestaurant";
 import { useKitchenScope } from "../../../hooks/useKitchenScope";
 import { hasAssignedRider, riderLabel } from "../../../utils/orderRider";
+import { openInvoiceWindow } from "../../../utils/invoiceHtml";
 
 /** Kitchen flow steps (excludes terminal Cancelled). */
 const FLOW_STEPS = [
@@ -41,12 +42,15 @@ const FLOW_STEPS = [
   { key: ORDER_STATUS.DELIVERED, short: "Done" },
 ];
 
-const nextStatusFor = (status, { canDeliver = false, hasRider = false } = {}) => {
-  if (status === ORDER_STATUS.NEW && canDeliver) return ORDER_STATUS.CONFIRM;
-  if (status === ORDER_STATUS.CONFIRM) return ORDER_STATUS.PREPARING;
-  if (status === ORDER_STATUS.PREPARING) return ORDER_STATUS.READY;
-  if (status === ORDER_STATUS.READY && hasRider && canDeliver) return ORDER_STATUS.OUT;
-  if (canDeliver && status === ORDER_STATUS.OUT) return ORDER_STATUS.DELIVERED;
+const nextStatusFor = (
+  status,
+  { canConfirmDelivery = false, canManageKitchen = false, hasRider = false } = {}
+) => {
+  if (status === ORDER_STATUS.NEW && canConfirmDelivery) return ORDER_STATUS.CONFIRM;
+  if (status === ORDER_STATUS.CONFIRM && canManageKitchen) return ORDER_STATUS.PREPARING;
+  if (status === ORDER_STATUS.PREPARING && canManageKitchen) return ORDER_STATUS.READY;
+  if (status === ORDER_STATUS.READY && hasRider && canManageKitchen) return ORDER_STATUS.OUT;
+  if (status === ORDER_STATUS.OUT && canConfirmDelivery) return ORDER_STATUS.DELIVERED;
   return null;
 };
 
@@ -61,16 +65,19 @@ const nextActionLabel = (status, opts) => {
   return next;
 };
 
-const nextActionHint = (status, { canDeliver = false, hasRider = false } = {}) => {
+const nextActionHint = (
+  status,
+  { canConfirmDelivery = false, canManageKitchen = false, hasRider = false } = {}
+) => {
   if (status === ORDER_STATUS.NEW)
-    return canDeliver ? "Confirm this order so the kitchen can start." : "Awaiting admin confirmation.";
-  if (status === ORDER_STATUS.CONFIRM)
+    return canConfirmDelivery ? "Confirm this order so the kitchen can start." : "Awaiting admin confirmation.";
+  if (status === ORDER_STATUS.CONFIRM && canManageKitchen)
     return "Move the order into preparation.";
-  if (status === ORDER_STATUS.PREPARING)
+  if (status === ORDER_STATUS.PREPARING && canManageKitchen)
     return "Food is ready for the courier to collect.";
-  if (status === ORDER_STATUS.READY && hasRider)
+  if (status === ORDER_STATUS.READY && hasRider && canManageKitchen)
     return "Courier has picked up — mark as out for delivery.";
-  if (status === ORDER_STATUS.OUT && canDeliver)
+  if (status === ORDER_STATUS.OUT && canConfirmDelivery)
     return "Confirm delivery. This posts earnings.";
   return null;
 };
@@ -112,6 +119,16 @@ const initialsFromName = (name) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+const mapsUrlFor = (customer = {}) => {
+  if (customer.googleMapUrl) return customer.googleMapUrl;
+  const point = customer.location || {};
+  const lat = point.lat ?? point.latitude;
+  const lng = point.lng ?? point.longitude;
+  return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
+    : "";
+};
+
 /** Shared primary / cancel action UI for desktop panel + mobile bar. */
 const OrderActions = ({
   nextLabel,
@@ -136,7 +153,6 @@ const OrderActions = ({
   onAssign,
   showUnifiedMasterConfirm = false,
   onUnifiedConfirm,
-  orderTotalAmount = 0,
 }) => {
   if (isTerminal) {
     return (
@@ -159,7 +175,7 @@ const OrderActions = ({
           </p>
           <p className="text-xs text-warning-800 mt-0.5 leading-relaxed">
             Master Admin will assign a rider now that this order is ready for
-            pickup. Admin will confirm dispatch after rider pickup.
+            pickup. Mark it out for delivery after the rider collects it.
           </p>
         </div>
       </div>
@@ -300,7 +316,7 @@ const OrderActions = ({
         <div className={compact ? "space-y-3" : "space-y-4"}>
           {!compact && (
             <p className="text-xs text-ink-muted leading-relaxed px-0.5">
-              Confirm this order and optionally assign a rider.
+              Select an active rider before confirming this order.
             </p>
           )}
 
@@ -330,21 +346,10 @@ const OrderActions = ({
             </select>
           </div>
 
-          {orderTotalAmount < 1000 && (
-            <div className="rounded-lg bg-neutral-50 p-3 border border-neutral-200">
-              <p className="text-sm font-medium text-ink">
-                Delivery Charge
-              </p>
-              <p className="text-xs text-ink-muted mt-0.5">
-                A default delivery charge of 100 ฿ will be applied (Order total &lt; 1000).
-              </p>
-            </div>
-          )}
-
           <button
             type="button"
             className="btn-primary w-full py-3 text-base shadow-md"
-            disabled={actionLoading}
+            disabled={actionLoading || !selectedRiderId}
             onClick={onUnifiedConfirm}
           >
             {actionLoading ? (
@@ -470,7 +475,7 @@ const OrderView = () => {
 
   useEffect(() => {
     document.title = orderId
-      ? `Thaiseva | Order ${orderId}`
+      ? `Thaiseva | Order ${formatDisplayOrderId(orderId)}`
       : "Thaiseva | Order details";
   }, [orderId]);
 
@@ -526,6 +531,7 @@ const OrderView = () => {
           assignedRiderId: assignedId,
           Location: orderData.Location || "",
           paymentMethod: orderData.paymentMethod || "",
+          deliveryCharge: orderData.deliveryCharge ?? 0,
           Amount: orderData.Amount ?? 0,
           isPaymentDone: orderData.isPaymentDone === true,
           verified: orderData.verified === true,
@@ -551,7 +557,8 @@ const OrderView = () => {
     return unsubscribe;
   }, [orderId, currentUser?.uid, kitchen.isPlatformKitchen]);
 
-  const canDeliver = kitchen.isPlatformKitchen && kitchen.isMasterAdmin;
+  const canConfirmDelivery = kitchen.isMasterAdmin;
+  const canManageKitchen = !kitchen.isMasterAdmin || kitchen.isPlatformKitchen;
   const currentStatus = completeOrderDetails?.CurrentStatus;
   const hasRider = hasAssignedRider(completeOrderDetails);
   const canAssignRider =
@@ -564,7 +571,7 @@ const OrderView = () => {
     isPlatformOwner;
   const waitingForRider =
     currentStatus === ORDER_STATUS.READY && !hasRider && !canAssignRider;
-  const actionOpts = { canDeliver, hasRider };
+  const actionOpts = { canConfirmDelivery, canManageKitchen, hasRider };
   const nextStatus = nextStatusFor(currentStatus, actionOpts);
   const nextLabel = nextActionLabel(currentStatus, actionOpts);
   const nextHint = nextActionHint(currentStatus, actionOpts);
@@ -589,7 +596,7 @@ const OrderView = () => {
   );
 
   useEffect(() => {
-    if (!canAssignRider && !canDeliver && !showUnifiedMasterConfirm) return undefined;
+    if (!canAssignRider && !canConfirmDelivery && !showUnifiedMasterConfirm) return undefined;
     let cancelled = false;
     const loadRiders = async () => {
       try {
@@ -614,7 +621,7 @@ const OrderView = () => {
     return () => {
       cancelled = true;
     };
-  }, [canAssignRider, canDeliver, showUnifiedMasterConfirm]);
+  }, [canAssignRider, canConfirmDelivery, showUnifiedMasterConfirm]);
 
   const handleAssignRider = async () => {
     if (!orderId || actionLoading || !selectedRiderId) {
@@ -652,11 +659,20 @@ const OrderView = () => {
       if (value === ORDER_STATUS.DELIVERED) {
         await markOrderDelivered({ orderId });
       } else {
+        if (value === ORDER_STATUS.CONFIRM && !selectedRiderId) {
+          setActionError("Choose an active rider before confirming the order.");
+          return;
+        }
         const reason = value === ORDER_STATUS.CANCELLED
           ? window.prompt("Reason for cancelling this order:")
           : undefined;
         if (value === ORDER_STATUS.CANCELLED && !reason?.trim()) return;
-        await transitionOrderStatus({ orderId, toStatus: value, reason });
+        await transitionOrderStatus({
+          orderId,
+          toStatus: value,
+          riderId: value === ORDER_STATUS.CONFIRM ? selectedRiderId : undefined,
+          reason,
+        });
       }
       navigate(ordersListPath);
     } catch (err) {
@@ -676,13 +692,17 @@ const OrderView = () => {
       setActionError("Order is not available.");
       return;
     }
+    if (!selectedRiderId) {
+      setActionError("Choose an active rider before confirming the order.");
+      return;
+    }
     setActionError(null);
     try {
       setActionLoading(true);
       await masterConfirmOrder({
         orderId,
         restaurantUid: completeOrderDetails.Restaurant.ownerId,
-        riderId: selectedRiderId || undefined,
+        riderId: selectedRiderId,
       });
 
       navigate(ordersListPath);
@@ -749,7 +769,40 @@ const OrderView = () => {
   const email = customer?.email;
   const customerName = customer?.name || "Guest";
   const location = completeOrderDetails?.Location;
+  const customerMapsUrl = mapsUrlFor(customer);
   const assignedRiderName = riderLabel(completeOrderDetails?.DeliveryPartner);
+  const handlePrintInvoice = () => {
+    const restaurant = completeOrderDetails?.RestaurantName || {};
+    const total = Number(completeOrderDetails?.Amount) || 0;
+    const deliveryFee = Number(completeOrderDetails?.deliveryCharge) || 0;
+    openInvoiceWindow({
+      invoiceNumber: orderId,
+      title: "Customer Invoice",
+      invoiceDate: new Date().toLocaleDateString(),
+      orderDate: completeOrderDetails?.Date,
+      status: currentStatus,
+      billedTo: {
+        name: customerName,
+        address: customer.address || location,
+        phone: customer.phone || customer.phoneNumber,
+        email,
+      },
+      suppliedBy: {
+        name: restaurant.name || "Thaiseva",
+        address: restaurant.location || restaurant.address,
+        phone: restaurant.phone || restaurant.contact,
+        email: restaurant.email,
+      },
+      items: orderDetails,
+      subtotal: Math.max(0, total - deliveryFee),
+      deliveryFee,
+      total,
+      contactInfo: {
+        email: "thaiseva@gmail.com",
+        phone: "01723646378",
+      },
+    });
+  };
   const showActions =
     Boolean(nextLabel) ||
     canCancel ||
@@ -780,7 +833,6 @@ const OrderView = () => {
     onAssign: handleAssignRider,
     showUnifiedMasterConfirm,
     onUnifiedConfirm: handleUnifiedConfirm,
-    orderTotalAmount: Number(completeOrderDetails?.Amount) || 0,
   };
 
   return (
@@ -815,7 +867,7 @@ const OrderView = () => {
                 >
                   <i className="bi bi-hash text-brand-500" aria-hidden="true" />
                   <span className="max-w-[14rem] truncate sm:max-w-none">
-                    {orderId}
+                    {formatDisplayOrderId(orderId)}
                   </span>
                   <i
                     className={`bi ${copied ? "bi-check-lg text-success-600" : "bi-clipboard text-ink-muted"}`}
@@ -835,13 +887,19 @@ const OrderView = () => {
               </div>
             </div>
 
-            <div className="shrink-0 rounded-2xl border border-brand-100 bg-white px-5 py-3.5 shadow-sm min-w-[9.5rem]">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                Order total
-              </p>
-              <p className="mt-0.5 text-2xl font-bold tabular-nums text-ink-heading tracking-tight">
-                {formatOrderAmount(completeOrderDetails.Amount)}
-              </p>
+            <div className="shrink-0 space-y-2">
+              <div className="rounded-2xl border border-brand-100 bg-white px-5 py-3.5 shadow-sm min-w-[9.5rem]">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  Order total
+                </p>
+                <p className="mt-0.5 text-2xl font-bold tabular-nums text-ink-heading tracking-tight">
+                  {formatOrderAmount(completeOrderDetails.Amount)}
+                </p>
+              </div>
+              <button type="button" onClick={handlePrintInvoice} className="btn-outline w-full">
+                <i className="bi bi-printer" aria-hidden="true" />
+                Invoice / PDF
+              </button>
             </div>
           </div>
 
@@ -997,6 +1055,35 @@ const OrderView = () => {
                   <p className="text-sm text-ink-muted">Not provided</p>
                 )}
               </div>
+
+              {(customer.saveAddressAs || customer.locationType) && (
+                <span className="inline-flex rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700">
+                  {customer.saveAddressAs || customer.locationType}
+                </span>
+              )}
+
+              {(customer.street || customer.buildingFloor || customer.landmark) && (
+                <div className="rounded-xl bg-neutral-50 border border-neutral-100 p-3.5 space-y-2 text-sm">
+                  {customer.street && <p><span className="text-ink-muted">Street / House no.:</span> {customer.street}</p>}
+                  {customer.buildingFloor && <p><span className="text-ink-muted">Building / Floor:</span> {customer.buildingFloor}</p>}
+                  {customer.landmark && <p><span className="text-ink-muted">Landmark:</span> {customer.landmark}</p>}
+                </div>
+              )}
+
+              {customer.deliveryInstructions && (
+                <div className="rounded-xl border border-warning-100 bg-warning-50 p-3.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-warning-700 mb-1.5">
+                    <i className="bi bi-chat-left-text mr-1.5" aria-hidden="true" />Delivery instructions
+                  </p>
+                  <p className="text-sm text-ink leading-relaxed">{customer.deliveryInstructions}</p>
+                </div>
+              )}
+
+              {customerMapsUrl && (
+                <a href={customerMapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-brand-700 hover:text-brand-800 focus-ring rounded-md">
+                  <i className="bi bi-map" aria-hidden="true" />Open in Google Maps
+                </a>
+              )}
 
               {(phone || email) && (
                 <div className="rounded-xl bg-neutral-50 border border-neutral-100 p-3.5 space-y-2.5">
@@ -1313,7 +1400,7 @@ const OrderView = () => {
               <OrderActions {...actionProps} />
             ) : waitingForRider ||
               canAssignRider ||
-              (canDeliver && isOutForDelivery) ? (
+              (canConfirmDelivery && isOutForDelivery) ? (
               <OrderActions {...actionProps} compact />
             ) : (
               <div className="flex gap-2">

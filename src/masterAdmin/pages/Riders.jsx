@@ -1,6 +1,6 @@
 import { customAlert } from "../../utils/alertService";
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, orderBy, query, onSnapshot } from "firebase/firestore";
 import { Link } from "react-router";
 import { Pagination, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Button } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
@@ -13,8 +13,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
-import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+
 import {
   createFoodRider,
   setFoodRiderActive,
@@ -22,7 +21,7 @@ import {
 } from "../../api";
 import {
   RIDER_JOB_SCAN_LIMIT,
-  fetchJobsInDateRange,
+  subscribeJobsInDateRange,
 } from "../../services/RiderOrders";
 import { formatOrderAmount } from "../../utils/orderStatus";
 import {
@@ -86,12 +85,13 @@ const Riders = () => {
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [feedback, setFeedback] = useState(null);
-  
+  const [formError, setFormError] = useState("");
+
   // Modal & Form State
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
-  
+
   const [riderSearch, setRiderSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   
@@ -106,61 +106,59 @@ const Riders = () => {
   const [endDate, setEndDate] = useState(initialRange.end);
   const [refetchJobs, setRefetchJobs] = useState(0);
   const [jobSearchQuery, setJobSearchQuery] = useState("");
-  const [jobStatusFilter, setJobStatusFilter] = useState("completed");
+  const [jobStatusFilter, setJobStatusFilter] = useState("all");
   const [jobPage, setJobPage] = useState(1);
 
   useEffect(() => {
     document.title = "Thaiseva | Riders Overview & Directory";
   }, []);
 
-  const loadRiders = async () => {
-    setLoadingRiders(true);
-    try {
-      const snap = await getDocs(
-        query(collection(db, "foodRiders"), orderBy("name"))
-      );
-      setRiders(
-        snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }))
-      );
-    } catch (err) {
-      console.error(err);
-      setFeedback({ type: "error", message: err.message || "Could not load riders." });
-      setRiders([]);
-    } finally {
-      setLoadingRiders(false);
-    }
-  };
-
   useEffect(() => {
-    if (isMasterAdmin) loadRiders();
+    if (!isMasterAdmin) return;
+
+    setLoadingRiders(true);
+    const q = query(collection(db, "foodRiders"), orderBy("name"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        setRiders(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }))
+        );
+        setLoadingRiders(false);
+      },
+      (err) => {
+        console.error(err);
+        setFeedback({ type: "error", message: err.message || "Could not load riders." });
+        setRiders([]);
+        setLoadingRiders(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, [isMasterAdmin]);
 
   useEffect(() => {
     if (!isMasterAdmin) return undefined;
-    let cancelled = false;
-    const load = async () => {
-      setLoadingJobs(true);
-      setJobsError(null);
-      try {
-        const jobRows = await fetchJobsInDateRange(startDate, endDate);
-        if (cancelled) return;
+    setLoadingJobs(true);
+    setJobsError(null);
+    const unsubscribe = subscribeJobsInDateRange(
+      startDate,
+      endDate,
+      (jobRows) => {
         setJobs(jobRows);
-      } catch (err) {
-        if (!cancelled) {
-          setJobsError(err.message || "Could not load rider jobs.");
-          setJobs([]);
-        }
-      } finally {
-        if (!cancelled) setLoadingJobs(false);
+        setLoadingJobs(false);
+      },
+      (err) => {
+        setJobsError(err.message || "Could not load rider jobs.");
+        setJobs([]);
+        setLoadingJobs(false);
       }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
+    );
+    return () => unsubscribe();
   }, [isMasterAdmin, startDate, endDate, refetchJobs]);
 
   const displayJobs = useMemo(() => {
@@ -236,6 +234,7 @@ const Riders = () => {
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+    setFormError("");
   };
 
   const handleCloseModal = () => {
@@ -253,6 +252,7 @@ const Riders = () => {
       vehicleType: rider.vehicleType || "Motorcycle",
       vehicleNumber: rider.vehicleNumber || "",
     });
+    setFormError("");
     setModalOpen(true);
   };
 
@@ -260,9 +260,10 @@ const Riders = () => {
     event.preventDefault();
     if (saving) return;
     setSaving(true);
+    setFormError("");
     setFeedback(null);
-    if (!form.phone || !isValidPhoneNumber(form.phone)) {
-      setFeedback({ type: "error", message: "Please enter a valid phone number." });
+    if (!form.phone || form.phone.trim().length < 8) {
+      setFormError("Please enter a valid phone number.");
       setSaving(false);
       return;
     }
@@ -280,13 +281,13 @@ const Riders = () => {
         await createFoodRider(payload);
         setFeedback({ type: "success", message: "Rider added." });
       }
-      handleCloseModal();
-      await loadRiders();
+      // Do not call handleCloseModal here: it intentionally ignores close
+      // requests while saving, which previously left the dialog stuck open.
+      setModalOpen(false);
+      resetForm();
     } catch (err) {
-      setFeedback({
-        type: "error",
-        message: err.message || "Could not save the rider.",
-      });
+      setFormError(err.message || "Could not save the rider.");
+    } finally {
       setSaving(false);
     }
   };
@@ -319,7 +320,7 @@ const Riders = () => {
   const csvRows = jobsToCsvRows(
     jobStatusFilter === "all" ? displayJobs.filter((job) => matchesJobSearch(job, normalizedJobQuery)) : filteredJobs
   );
-  
+
   const selectedRider = riders.find((r) => r.id === selectedRiderFilterId);
   const fileName = selectedRiderFilterId 
     ? `rider-${(selectedRider?.name || selectedRiderFilterId).replace(/\s+/g, "-").toLowerCase()}-${startDate || "all"}-${endDate || "all"}.csv`
@@ -343,6 +344,7 @@ const Riders = () => {
             className="btn-primary"
             onClick={() => {
               resetForm();
+              setFeedback(null);
               setModalOpen(true);
             }}
           >
@@ -437,6 +439,11 @@ const Riders = () => {
           )}
 
           <DialogContent dividers sx={{ p: 3 }}>
+            {formError && (
+              <div className="mb-4">
+                <InfoMessage type="error" message={formError} />
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-semibold text-ink">
@@ -455,14 +462,11 @@ const Riders = () => {
                 <span className="mb-1.5 block text-sm font-semibold text-ink">
                   Phone
                 </span>
-                <PhoneInput
+                <input
+                  type="tel"
                   className="modern-input"
-                  defaultCountry="TH"
-                  limitMaxLength={true}
-                  value={form.phone?.replace(/\s+/g, "") || ""}
-                  onChange={(val) =>
-                    setForm((p) => ({ ...p, phone: val }))
-                  }
+                  value={form.phone}
+                  onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone number"
                   required
                   disabled={saving}
@@ -541,7 +545,11 @@ const Riders = () => {
                   : "All jobs"}
             </p>
           </div>
-          <IconButton onClick={() => setSelectedRiderFilterId(null)} sx={{ color: "#64748b", "&:hover": { color: "#0f172a", bgcolor: "#e2e8f0" } }}>
+          <IconButton
+            aria-label="Close rider jobs"
+            onClick={() => setSelectedRiderFilterId(null)}
+            sx={{ color: "#64748b", "&:hover": { color: "#0f172a", bgcolor: "#e2e8f0" } }}
+          >
             <CloseIcon />
           </IconButton>
         </DialogTitle>
@@ -762,6 +770,15 @@ const Riders = () => {
                       key={group.rider.id}
                       className="bg-white cursor-pointer transition-colors hover:bg-brand-50/40"
                       onClick={() => setSelectedRiderFilterId(group.rider.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedRiderFilterId(group.rider.id);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`View jobs for ${group.rider.name || "rider"}`}
                     >
                       <td className="px-4 py-4">
                         <p className="font-semibold text-ink">

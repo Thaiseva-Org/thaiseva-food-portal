@@ -29,6 +29,7 @@ import {
   AccountingBadge,
   SettlementBadge,
 } from "./components/AccountingBadge";
+import { formatDisplayOrderId } from "../../../utils/orderData";
 import { useRestaurantStats } from "./components/RestaurantContext";
 
 const matchesSearch = (item, query) => {
@@ -270,7 +271,7 @@ const RestaurantStatsOrders = () => {
                   const money = resolveOrderAccounting(item, restaurantRate);
                   return (
                     <tr key={item.OrderID} className="bg-white hover:bg-brand-50/40">
-                      <td className="px-4 py-4 font-medium">#{item.OrderID}</td>
+                      <td className="px-4 py-4 font-medium" title={item.OrderID}>#{formatDisplayOrderId(item.OrderID)}</td>
                       <td className="px-4 py-4">{item.CustomerName}</td>
                       <td className="px-4 py-4">{item.Date}</td>
                       <td className="px-4 py-4">

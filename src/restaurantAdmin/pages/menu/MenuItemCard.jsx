@@ -3,7 +3,6 @@ import StatusBadge from "../../../components/StatusBadge";
 import {
   formatPrice,
   getDiscountPct,
-  getItemKey,
   getScopedItemKey,
   getSalePrice,
 } from "./menuUtils";

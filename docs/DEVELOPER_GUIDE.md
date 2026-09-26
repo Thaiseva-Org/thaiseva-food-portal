@@ -76,7 +76,6 @@ npm test
 2. **`tests/commission.test.js`**: Verifies exact mathematical commission split calculations.
 3. **`tests/createFoodOrder.test.cjs`**: Validates order creation payload structures.
 4. **`tests/customerChats.test.cjs`**: Tests customer chat format migration and mirroring.
-5. **`tests/dineInBookings.test.cjs`**: Tests table reservation status state transitions.
 6. **`tests/firestoreIndexesIsolation.test.cjs`**: Ensures query indices match production requirements.
 7. **`tests/firestoreRulesIsolation.test.cjs`**: Verifies tenant isolation in Firestore security rules.
 8. **`tests/onboardingPhase.test.js`**: Tests partner onboarding phase state machine logic.

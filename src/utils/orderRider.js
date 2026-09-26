@@ -32,6 +32,16 @@ export function isCompletedRiderJob(status) {
   return status === "Delivered";
 }
 
+export function isRiderJobStatus(status) {
+  return [
+    "Order Confirm",
+    "Preparing",
+    "Ready for pickup",
+    "Out for Delivery",
+    "Delivered",
+  ].includes(status);
+}
+
 export function uniqueDropoffAddresses(jobs = []) {
   const map = new Map();
   for (const job of jobs) {

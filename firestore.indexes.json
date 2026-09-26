@@ -17,6 +17,23 @@
       ]
     },
     {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "currentStatus", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "Restaurant.ownerId", "order": "ASCENDING" },
+        { "fieldPath": "currentStatus", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "car_bookings",
       "queryScope": "COLLECTION",
       "fields": [
@@ -138,6 +155,15 @@
         { "fieldPath": "Restaurant.ownerId", "order": "ASCENDING" },
         { "fieldPath": "currentStatus", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "Restaurant.ownerId", "order": "ASCENDING" },
+        { "fieldPath": "currentStatus", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
       ]
     },
     {

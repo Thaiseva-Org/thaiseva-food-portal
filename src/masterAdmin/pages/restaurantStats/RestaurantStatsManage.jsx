@@ -15,8 +15,7 @@ import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import ConfirmDialog from "./components/ConfirmDialog";
 import MonitorModal from "./components/MonitorModal";
 import { useRestaurantStats } from "./components/RestaurantContext";
-import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+
 
 const RestaurantStatsManage = () => {
   const { ownerId, restaurant, refreshRestaurant } = useRestaurantStats();
@@ -105,7 +104,7 @@ const RestaurantStatsManage = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
       setError("Please enter a valid phone number.");
       return;
     }
@@ -230,12 +229,11 @@ const RestaurantStatsManage = () => {
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
               Phone number
             </span>
-            <PhoneInput
+            <input
+              type="tel"
               className="modern-input"
-              defaultCountry="TH"
-              limitMaxLength={true}
-              value={phoneNumber?.replace(/\s+/g, "") || ""}
-              onChange={setPhoneNumber}
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
             />
           </label>
           <label className="block">

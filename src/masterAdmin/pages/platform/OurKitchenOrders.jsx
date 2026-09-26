@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import {
   assignOrderRider,
   markOrderDelivered,
+  masterConfirmOrder,
   transitionOrderStatus,
 } from "../../../api";
 import DataBoxes from "../../../components/DataBoxes";
@@ -190,14 +191,18 @@ const OurKitchenOrders = () => {
     const next = nextStatusFor(status);
     if (!next || busyId) return;
     setActionError(null);
-    const needsAssign = status === ORDER_STATUS.READY && !assigned;
+    const needsAssign =
+      status === ORDER_STATUS.NEW ||
+      (status === ORDER_STATUS.READY && !assigned);
     if (needsAssign && !selectedRiderId) {
       setActionError("Choose a rider, then press Assign.");
       return;
     }
     setBusyId(orderId);
     try {
-      if (needsAssign) {
+      if (status === ORDER_STATUS.NEW) {
+        await masterConfirmOrder({ orderId, riderId: selectedRiderId });
+      } else if (needsAssign) {
         await assignOrderRider({ orderId, riderId: selectedRiderId });
       } else if (next === ORDER_STATUS.DELIVERED) {
         await markOrderDelivered({ orderId });
@@ -304,11 +309,11 @@ const OurKitchenOrders = () => {
             orders
           </p>
         </div>
-        {(stats.ready > 0 || stats.out > 0) && (
+        {(stats.new > 0 || stats.ready > 0 || stats.out > 0) && (
           <div className="mt-3 flex flex-col gap-2 border-t border-neutral-100 pt-3 sm:flex-row sm:items-end">
             <label className="block min-w-0 flex-1 sm:max-w-sm">
               <span className="mb-1 block text-xs font-semibold text-ink">
-                Rider for ready orders
+                Rider for new and ready orders
               </span>
               <select
                 className="modern-select"
@@ -393,7 +398,8 @@ const OurKitchenOrders = () => {
                   const assigned = hasAssignedRider(item);
                   const nextLabel = nextActionLabel(item.Status, assigned);
                   const needsAssign =
-                    item.Status === ORDER_STATUS.READY && !assigned;
+                    item.Status === ORDER_STATUS.NEW ||
+                    (item.Status === ORDER_STATUS.READY && !assigned);
                   return (
                     <tr
                       key={item.OrderID}

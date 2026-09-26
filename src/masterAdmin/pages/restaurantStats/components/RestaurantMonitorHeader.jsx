@@ -1,7 +1,8 @@
-import { NavLink } from "react-router";
+import { Link, NavLink } from "react-router";
 import { motion } from "motion/react";
 import { GradientCard } from "../../../../components/ui/gradient-card";
 import StatusBadge from "../../../../components/StatusBadge";
+import { SHOW_TABLE_RESERVATIONS } from "../../../../utils/bookingStatus";
 
 const RestaurantMonitorHeader = ({ restaurant, onUpdateCommission }) => {
   const active = Boolean(restaurant.active);
@@ -10,7 +11,9 @@ const RestaurantMonitorHeader = ({ restaurant, onUpdateCommission }) => {
   const tabs = [
     { to: base, end: true, label: "Information", icon: "bi-shop" },
     { to: `${base}/orders`, label: "Orders", icon: "bi-receipt" },
-    { to: `${base}/reservations`, label: "Reservations", icon: "bi-calendar2-check" },
+    ...(SHOW_TABLE_RESERVATIONS
+      ? [{ to: `${base}/reservations`, label: "Reservations", icon: "bi-calendar2-check" }]
+      : []),
     { to: `${base}/finance`, label: "Finance", icon: "bi-wallet2" },
   ];
 
@@ -62,6 +65,13 @@ const RestaurantMonitorHeader = ({ restaurant, onUpdateCommission }) => {
                 <span className="ms-1 text-xs font-medium text-ink-muted">per order</span>
               </p>
             </div>
+            <Link
+              to={`/foodAdmin/records?restaurantId=${restaurant.ownerId}`}
+              className="btn-outline"
+            >
+              <i className="bi bi-journal-text" aria-hidden="true" />
+              Order records
+            </Link>
             <button type="button" className="btn-primary" onClick={onUpdateCommission}>
               <i className="bi bi-percent" aria-hidden="true" />
               Update commission

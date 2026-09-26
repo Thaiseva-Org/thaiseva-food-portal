@@ -8,8 +8,6 @@ export function isMasterAdminIdentity(claims = {}, email = "") {
   return (
     MASTER_ADMIN_EMAILS.includes(normalizedEmail) ||
     claims.foodRole === "masterAdmin" ||
-    claims.foodMasterAdmin === true ||
-    claims.role === "masterAdmin" ||
-    claims.masterAdmin === true
+    claims.foodMasterAdmin === true
   );
 }

@@ -1,8 +1,8 @@
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   Timestamp,
@@ -49,17 +49,20 @@ const MonitorOrderView = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const snap = await getDoc(doc(db, `orders/${id}`));
+    setLoading(true);
+    
+    const unsub = onSnapshot(
+      doc(db, `orders/${id}`),
+      (snap) => {
         if (!snap.exists()) {
           if (!cancelled) setError("Order not found.");
+          setLoading(false);
           return;
         }
         const data = snap.data();
         if (data.Restaurant?.ownerId && data.Restaurant.ownerId !== ownerId) {
           if (!cancelled) setError("This order does not belong to this restaurant.");
+          setLoading(false);
           return;
         }
         if (!cancelled) {
@@ -67,16 +70,20 @@ const MonitorOrderView = () => {
           const existing =
             data.assignedRiderId || data.DeliveryPartner?.id || "";
           if (existing) setSelectedRiderId(existing);
+          setLoading(false);
         }
-      } catch (err) {
-        if (!cancelled) setError(err.message || "Failed to load order.");
-      } finally {
-        if (!cancelled) setLoading(false);
+      },
+      (err) => {
+        if (!cancelled) {
+          setError(err.message || "Failed to load order.");
+          setLoading(false);
+        }
       }
-    };
-    load();
+    );
+
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [id, ownerId]);
 

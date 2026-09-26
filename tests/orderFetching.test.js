@@ -60,3 +60,137 @@ test("mixed date fields do not duplicate an order; kitchen orders stay excluded"
   const kitchen = { id: "kitchen", data: () => ({ createdAt: new Date(300000), Restaurant: { ownerId: "thaiseva-platform" } }) };
   assert.deepEqual(await service([appDoc(0), both, kitchen])(1), ["both", "app-0"]);
 });
+
+function loadDailyRecordsService(mockDocs = []) {
+  const context = {
+    console,
+    db: {},
+    isPlatformOwnerId: (id) => id === "thaiseva-platform",
+    collection: (_, name) => name,
+    where: (field, op, value) => ({ type: "where", field, op, value }),
+    orderBy: (field, dir) => ({ type: "order", field, dir }),
+    limit: (value) => ({ type: "limit", value }),
+    startAfter: (cursor) => ({ type: "startAfter", cursor }),
+    getCountFromServer: async () => ({ data: () => ({ count: mockDocs.length }) }),
+    query: (collectionName, ...clauses) => ({ collectionName, clauses }),
+    getDocs: async (q) => {
+      let rows = [...mockDocs];
+      if (q && q.clauses) {
+        for (const clause of q.clauses) {
+          if (clause.type === "where") {
+            rows = rows.filter((d) => {
+              const val = d.data()[clause.field];
+              return clause.op === "==" ? val === clause.value : true;
+            });
+          }
+        }
+      }
+      return { docs: rows, size: rows.length };
+    },
+  };
+
+  const source = readFileSync(
+    new URL("../src/services/DailyRecords.js", import.meta.url),
+    "utf8"
+  )
+    .replace(/import[\s\S]*?from\s+"[^"]+";/g, "")
+    .replace(/export function/g, "function")
+    .replace(/export const/g, "const")
+    .replace(/export async function/g, "async function")
+    .replace(/export\s*\{[\s\S]*?\};/g, "");
+
+  vm.runInNewContext(
+    `${source}\nglobalThis.recordsQuery = recordsQuery;\nglobalThis.fetchVerifiedRestaurantsList = fetchVerifiedRestaurantsList;\nglobalThis.fetchOrderRecords = fetchOrderRecords;`,
+    context
+  );
+  return context;
+}
+
+test("recordsQuery filters by restaurantId when provided and excludes un-indexed status clauses", () => {
+  const ctx = loadDailyRecordsService();
+  const qWithRest = ctx.recordsQuery({
+    restaurantId: "rest-123",
+    start: new Date("2026-09-01"),
+    end: new Date("2026-09-20"),
+    pageSize: 10,
+  });
+
+  const clauses = qWithRest.clauses;
+  assert.equal(qWithRest.collectionName, "orders");
+  // Must filter Restaurant.ownerId
+  const restClause = clauses.find(
+    (c) => c.type === "where" && c.field === "Restaurant.ownerId"
+  );
+  assert.ok(restClause);
+  assert.equal(restClause.value, "rest-123");
+
+  // Must NOT include currentStatus in Firestore query (preserves production indexes)
+  const statusClause = clauses.find(
+    (c) => c.type === "where" && c.field === "currentStatus"
+  );
+  assert.equal(statusClause, undefined);
+
+  // Must order by createdAt desc
+  const orderClause = clauses.find((c) => c.type === "order");
+  assert.deepEqual(orderClause, {
+    type: "order",
+    field: "createdAt",
+    dir: "desc",
+  });
+});
+
+test("records pagination supports direct jumps and timestamp-only legacy orders", async () => {
+  const docs = Array.from({ length: 25 }, (_, index) => {
+    const date = new Date(25 - index);
+    return {
+      id: `order-${index + 1}`,
+      data: () => index % 2 === 0
+        ? { createdAt: date, currentStatus: "Delivered" }
+        : { timestamp: date, currentStatus: "Delivered" },
+    };
+  });
+  const ctx = loadDailyRecordsService(docs);
+  let rows = [];
+  let loading = null;
+  let cursors = [];
+  await ctx.fetchOrderRecords(
+    (value) => { rows = value; },
+    (value) => { loading = value; },
+    "",
+    "",
+    3,
+    [],
+    (updater) => { cursors = updater(cursors); }
+  );
+
+  assert.equal(loading, false);
+  assert.deepEqual(Array.from(rows, (row) => row.OrderID), [
+    "order-21", "order-22", "order-23", "order-24", "order-25",
+  ]);
+  assert.equal(cursors[2].id, "order-25");
+});
+
+test("fetchVerifiedRestaurantsList returns sorted partner restaurants and excludes platform kitchen", async () => {
+  const mockRestaurantDocs = [
+    {
+      id: "rest-2",
+      data: () => ({ name: "Zab Thai", status: "Verified", ownerId: "rest-2" }),
+    },
+    {
+      id: "thaiseva-platform",
+      data: () => ({ name: "Our Kitchen", status: "Verified", ownerId: "thaiseva-platform" }),
+    },
+    {
+      id: "rest-1",
+      data: () => ({ name: "Bangkok Bistro", status: "Verified", ownerId: "rest-1" }),
+    },
+  ];
+
+  const ctx = loadDailyRecordsService(mockRestaurantDocs);
+  const result = await ctx.fetchVerifiedRestaurantsList();
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].name, "Bangkok Bistro");
+  assert.equal(result[1].name, "Zab Thai");
+  assert.ok(!result.some((r) => r.ownerId === "thaiseva-platform"));
+});

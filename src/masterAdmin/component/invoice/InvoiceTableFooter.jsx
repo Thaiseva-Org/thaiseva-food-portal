@@ -29,8 +29,6 @@ const InvoiceTableFooter = ({ paymentTable, type }) => {
   let commission = paymentTable?.commission || 0;
   let total = paymentTable?.total || 0;
   const totalCommission = paymentTable?.totalCommission || 0;
-  console.log(type);
-
   return (
     <>
       <View style={styles.row}>
@@ -44,7 +42,7 @@ const InvoiceTableFooter = ({ paymentTable, type }) => {
         </View>
       ) : (
         <View style={styles.row}>
-          <Text style={styles.description}>VAT 7%</Text>
+          <Text style={styles.description}>Delivery charge</Text>
           <Text style={styles.total}>{totalCommission}</Text>
         </View>
       )}

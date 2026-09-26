@@ -25,9 +25,7 @@
 - **Key Fields:** `itemName`, `price`, `discount`, `category`, `itemType`, `description`, `active`, `deleted`, `ownerUid`, and `schemaVersion: 2`.
 - **Security:** Menu writes use validated Cloud Functions. The owner can read drafts; customers can read only active, non-deleted items.
 
-### `dineInBookings/{bookingId}`
 
-Stores a restaurant-specific table reservation with `ownerId`, customer contact details, party size, `scheduledTimestamp`, `bookingTimestamp`, and the `Pending`, `Accepted`, or `Canceled` status. Client writes are blocked; the booking callables validate and audit every mutation.
 - **Legacy:** Platform catalog assignments remain only for migration and historical orders; new partner checkouts never use them.
 
 ### Collection: `applications`

@@ -12,8 +12,7 @@ import AddressAutocomplete from "../../../components/AddressAutoComplete";
 import { updateRestaurantProfile } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { partnerPath } from "../../../utils/partnerRoutes";
-import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+
 import ConfirmModal from "../../../components/ConfirmModal";
 
 const EditRestaurant = () => {
@@ -23,6 +22,14 @@ const EditRestaurant = () => {
   const [foodType, setFoodType] = useState("");
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [businessRegistrationNumber, setBusinessRegistrationNumber] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [serviceType, setServiceType] = useState("");
+  const [openingHours, setOpeningHours] = useState("");
+  const [businessLicense, setBusinessLicense] = useState(null);
+  const [ownerIdDoc, setOwnerIdDoc] = useState(null);
+  const [foodSafetyCert, setFoodSafetyCert] = useState(null);
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -47,6 +54,14 @@ const EditRestaurant = () => {
           setFoodType(data.foodType || "");
           setLocation(data.location || "");
           setDescription(data.description || "");
+          setOwnerName(data.ownerName || "");
+          setBusinessRegistrationNumber(data.businessRegistrationNumber || "");
+          setTaxId(data.taxId || "");
+          setServiceType(data.serviceType || "");
+          setOpeningHours(data.openingHours || "");
+          setBusinessLicense(data.businessLicenseUrl ? { url: data.businessLicenseUrl, name: data.businessLicenseName || "Business license" } : null);
+          setOwnerIdDoc(data.ownerIdDocUrl ? { url: data.ownerIdDocUrl, name: data.ownerIdDocName || "Owner ID" } : null);
+          setFoodSafetyCert(data.foodSafetyCertUrl ? { url: data.foodSafetyCertUrl, name: data.foodSafetyCertName || "Food safety certificate" } : null);
           setImage(data.imageUrl || "");
         } else {
           customAlert("No such restaurant!");
@@ -114,6 +129,30 @@ const EditRestaurant = () => {
     }
   };
 
+  const handleDocumentUpload = async (file, kind, setter) => {
+    if (!file) return;
+    if (!file.type?.startsWith("image/") && file.type !== "application/pdf") {
+      customAlert("Documents must be a PDF or image file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      customAlert("Document must be under 10MB.");
+      return;
+    }
+    try {
+      setUploading(true);
+      const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const storageRef = ref(storage, `restaurants/${currentUser.uid}/documents/${kind}/${safeName}`);
+      await uploadBytes(storageRef, file);
+      setter({ url: await getDownloadURL(storageRef), name: file.name });
+    } catch (error) {
+      console.error("Document upload failed:", error);
+      customAlert("Unable to upload the document.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
@@ -132,13 +171,28 @@ const EditRestaurant = () => {
       return;
     }
 
-    if (!phoneNumber || !isValidPhoneNumber(phoneNumber)) {
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
       customAlert("Please enter a valid phone number.");
       return;
     }
 
     if (emailId.trim() === "") {
       customAlert("Please enter the email ID.");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailId.trim())) {
+      customAlert("Please enter a valid email address.");
+      return;
+    }
+
+    if (!ownerName.trim() || !businessRegistrationNumber.trim()) {
+      customAlert("Please enter the owner name and business registration number.");
+      return;
+    }
+
+    if (!serviceType || !openingHours.trim()) {
+      customAlert("Please select a service type and enter opening hours.");
       return;
     }
 
@@ -173,11 +227,18 @@ const EditRestaurant = () => {
         fields: {
           name: restaurantName || "N/A",
           phoneNumber: phoneNumber || "N/A",
-          emailId: emailId || "N/A",
           foodType: foodType || "N/A",
           location: location || "N/A",
           description: description || "N/A",
           imageUrl: image || "N/A",
+          ownerName,
+          businessRegistrationNumber,
+          ...(taxId.trim() ? { taxId } : {}),
+          serviceType,
+          openingHours,
+          ...(businessLicense ? { businessLicenseUrl: businessLicense.url, businessLicenseName: businessLicense.name } : {}),
+          ...(ownerIdDoc ? { ownerIdDocUrl: ownerIdDoc.url, ownerIdDocName: ownerIdDoc.name } : {}),
+          ...(foodSafetyCert ? { foodSafetyCertUrl: foodSafetyCert.url, foodSafetyCertName: foodSafetyCert.name } : {}),
         },
       });
       customAlert("Restaurant information updated successfully");
@@ -241,6 +302,17 @@ const EditRestaurant = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (!dropdownOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [dropdownOpen]);
 
   return (
     <div className="px-8 pt-10">
@@ -359,14 +431,13 @@ const EditRestaurant = () => {
                     >
                       Phone Number
                     </label>
-                    <PhoneInput
+                    <input
+                      type="tel"
                       className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                       id="phone-number"
-                      defaultCountry="TH"
-                      limitMaxLength={true}
-                      placeholder="XXX XXX XXXX"
-                      value={phoneNumber?.replace(/\s+/g, "") || ""}
-                      onChange={setPhoneNumber}
+                      placeholder="Phone number"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
                     />
                   </div>
 
@@ -387,6 +458,52 @@ const EditRestaurant = () => {
                       value={emailId}
                       onChange={(e) => setEmailId(e.target.value)}
                     />
+                    <p className="mt-1 text-xs text-gray-500">Email is managed by the platform administrator.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="owner-name">Owner Name</label>
+                      <input className="modern-input" id="owner-name" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} required />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="registration-number">Business Registration Number</label>
+                      <input className="modern-input" id="registration-number" value={businessRegistrationNumber} onChange={(e) => setBusinessRegistrationNumber(e.target.value)} required />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="tax-id">Tax ID</label>
+                      <input className="modern-input" id="tax-id" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="service-type">Service Type</label>
+                      <select className="modern-input" id="service-type" value={serviceType} onChange={(e) => setServiceType(e.target.value)} required>
+                        <option value="">Select service</option>
+                        <option value="Delivery">Delivery</option>
+                        <option value="Dine-in">Dine-in</option>
+                        <option value="Both">Both</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="opening-hours">Opening Hours</label>
+                      <input className="modern-input" id="opening-hours" value={openingHours} onChange={(e) => setOpeningHours(e.target.value)} placeholder="e.g. Mon–Sun, 9:00 AM–10:00 PM" required />
+                    </div>
+                  </div>
+
+                  <div className="mb-6">
+                    <h3 className="text-gray-700 text-sm font-bold mb-3">Verification Documents</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        ["Business license", "business-license", businessLicense, setBusinessLicense],
+                        ["Owner ID", "owner-id", ownerIdDoc, setOwnerIdDoc],
+                        ["Food safety certificate", "food-safety", foodSafetyCert, setFoodSafetyCert],
+                      ].map(([label, kind, document, setter]) => (
+                        <label key={kind} className="rounded-xl border border-neutral-200 p-3 text-sm cursor-pointer hover:border-brand-400">
+                          <span className="block font-semibold text-ink">{label}</span>
+                          <span className="mt-1 block truncate text-xs text-ink-muted">{document?.name || "Choose PDF or image"}</span>
+                          <input className="sr-only" type="file" accept="application/pdf,image/*" onChange={(e) => handleDocumentUpload(e.target.files?.[0], kind, setter)} />
+                        </label>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="mb-4">

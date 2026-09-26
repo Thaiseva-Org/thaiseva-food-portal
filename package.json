@@ -10,6 +10,7 @@
     "test": "node --test tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/dineInBookings.test.cjs tests/customerChats.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js tests/orderRider.test.js tests/orderData.test.js tests/orderPayments.test.cjs tests/orderFetching.test.js tests/createFoodOrder.test.cjs tests/httpApi.test.cjs tests/restaurantMenuFlow.test.cjs tests/frontendUtils.test.mjs tests/menuCatalog.test.mjs tests/platformOperations.test.cjs tests/tableReservations.test.cjs tests/orderFullLifecycle.test.cjs",
     "check": "npm run lint && npm test && npm run build",
     "verify:production": "node scripts/verify-production.mjs",
+    "deploy:check": "npm run verify:production && npm run check && npm --prefix functions run check",
     "production:check": "npm run verify:production && npm run check && npm --prefix functions run check && npm audit --omit=dev && npm --prefix functions audit --omit=dev",
     "preview": "vite preview",
     "seed:restaurant": "node scripts/seed-demo-restaurant.mjs",
@@ -21,7 +22,8 @@
     "audit:restaurant-links": "node scripts/audit-restaurant-links.mjs",
     "seed:all": "node scripts/seed-master-admin.mjs",
     "migrate:restaurant-menus": "node scripts/migrate-restaurant-menus.mjs",
-    "rename:email": "node scripts/rename-auth-email.mjs"
+    "orders:clean": "node scripts/delete-all-orders.mjs",
+    "clean:seeded": "node scripts/remove-seeded-data.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.11.4",
@@ -44,7 +46,6 @@
     "react-csv": "^2.2.2",
     "react-dom": "^19.2.8",
     "react-icons": "^5.2.1",
-    "react-phone-number-input": "^3.4.18",
     "react-router": "8.3.0",
     "rsuite": "^5.60.1",
     "styled-components": "^6.1.9",

@@ -14,6 +14,7 @@ import {
   periodToRange,
 } from "../../../services/RestaurantStats";
 import { formatCount, formatMoney } from "../../../utils/format";
+import { SHOW_TABLE_RESERVATIONS } from "../../../utils/bookingStatus";
 import CommissionSplit from "./components/CommissionSplit";
 import { useRestaurantStats } from "./components/RestaurantContext";
 
@@ -186,9 +187,11 @@ const RestaurantStatsOverview = () => {
             </p>
           )}
 
-          <StatGrid columns={6}>
+          <StatGrid columns={SHOW_TABLE_RESERVATIONS ? 6 : 5}>
             <DataBoxes data={stats.delivered} title="Orders" icon="bi-clipboard2-check" color="blue" />
-            <DataBoxes data={reservations} title="Reservations" icon="bi-calendar2-check" color="purple" />
+            {SHOW_TABLE_RESERVATIONS && (
+              <DataBoxes data={reservations} title="Reservations" icon="bi-calendar2-check" color="purple" />
+            )}
             <DataBoxes data={stats.gmv} title="GMV (฿)" icon="bi-cash-stack" color="green" />
             <DataBoxes
               data={stats.platform}

@@ -65,6 +65,7 @@ test("food helpers are separate from isAdmin", () => {
   const isFoodAdmin = extractFunction("isFoodAdmin");
   assert.match(isFoodAdmin, /admin@gmail\.com/);
   assert.match(isFoodAdmin, /foodRole/);
+  assert.doesNotMatch(isFoodAdmin, /token\.get\('role'|token\.get\('admin'|token\.get\('masterAdmin'/);
   assert.match(rules, /function isFoodOrderRestaurantOwner\(\)/);
   assert.match(rules, /function isSafeFoodPortalUserCreate\(\)/);
   assert.match(rules, /function restaurantLockedFieldsUnchanged\(\)/);

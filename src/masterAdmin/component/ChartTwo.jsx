@@ -10,9 +10,13 @@ const MasterApexChart = ({ id = "", startDate = "", endDate = "" }) => {
   const [content, setContent] = useState([]);
   const [options, setOptions] = useState({});
   const [series, setSeries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function fetchData() {
+      setLoading(true);
+      setError("");
       try {
         const data =
           startDate && endDate
@@ -21,10 +25,8 @@ const MasterApexChart = ({ id = "", startDate = "", endDate = "" }) => {
 
         const rows = Array.isArray(data) ? data : [];
         const categoryData = rows.map((entry) => entry.data);
-        const valueData = rows.map((entry) =>
-          Number(entry.earnings || 0).toFixed(2)
-        );
-        const hasValue = valueData.some((n) => Number(n) > 0);
+        const valueData = rows.map((entry) => Number(entry.earnings || 0));
+        const hasValue = valueData.some((value) => value > 0);
 
         setCategories(categoryData);
         setContent(hasValue ? valueData : []);
@@ -73,7 +75,13 @@ const MasterApexChart = ({ id = "", startDate = "", endDate = "" }) => {
           },
           tooltip: {
             theme: "dark",
-            y: { formatter: (val) => "฿" + val }
+            y: {
+              formatter: (value) =>
+                `฿${Number(value).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`,
+            },
           },
         });
 
@@ -85,9 +93,12 @@ const MasterApexChart = ({ id = "", startDate = "", endDate = "" }) => {
         ]);
       } catch (error) {
         console.error("Error fetching data:", error);
+        setError("Unable to load earnings right now");
         setCategories([]);
         setContent([]);
         setSeries([]);
+      } finally {
+        setLoading(false);
       }
     }
     fetchData();
@@ -95,7 +106,15 @@ const MasterApexChart = ({ id = "", startDate = "", endDate = "" }) => {
 
   return (
     <div id="chart">
-      {categories.length > 0 && content.length > 0 ? (
+      {loading ? (
+        <p className="flex items-center justify-center w-full h-[280px] text-sm text-ink-subtle">
+          Loading earnings…
+        </p>
+      ) : error ? (
+        <p className="flex items-center justify-center w-full h-[280px] text-sm text-red-600">
+          {error}
+        </p>
+      ) : categories.length > 0 && content.length > 0 ? (
         <SafeApexChart
           options={options}
           series={series}

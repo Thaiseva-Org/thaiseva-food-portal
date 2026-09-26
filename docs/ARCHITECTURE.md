@@ -79,7 +79,6 @@ thaiseva-food-portal/
 │           ├── applications.js        # Public & partner onboarding application processing
 │           ├── audit.js               # Administrative audit trail logger
 │           ├── auth.js                # Auth claims verification & tenant assertions
-│           ├── bookings.js            # Table reservation & dine-in booking handlers
 │           ├── customerChats.js       # Real-time customer chat sync handlers
 │           ├── menu.js                # Single catalog menu mutations & store overrides
 │           ├── orderPayments.js       # Payment clearing & accounting verification
@@ -148,7 +147,6 @@ thaiseva-food-portal/
     ├── commission.test.js             # Financial commission calculation tests
     ├── createFoodOrder.test.cjs       # Order creation payload tests
     ├── customerChats.test.cjs         # Support chat routing tests
-    ├── dineInBookings.test.cjs        # Table reservation status tests
     ├── firestoreIndexesIsolation.test.cjs # Index protection tests
     ├── firestoreRulesIsolation.test.cjs # Firestore security rules isolation tests
     ├── onboardingPhase.test.js        # Onboarding step resolver tests
@@ -201,13 +199,7 @@ The application is structured into seven primary functional domain modules:
   - Frontend: [OurKitchenLayout.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/platform/OurKitchenLayout.jsx), [OurKitchenOrders.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/platform/OurKitchenOrders.jsx)
   - Backend: `ensurePlatformRestaurant` in [restaurants.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/restaurants.js)
 
-### 4.6 Table Reservation & Dine-In Booking Engine
-* **Purpose**: Manages table reservation requests submitted by customers.
-* **Relevant Files**:
-  - Frontend: [TableBooking.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/TableBooking.jsx)
-  - Backend: [bookings.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/bookings.js)
-
-### 4.7 Support Chat & Messaging
+### 4.6 Support Chat & Messaging
 * **Purpose**: Real-time communication between customers, restaurant partners, and master admins.
 * **Relevant Files**:
   - Frontend: [CustomerChat.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/CustomerChat.jsx), [RestaurantChat.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/RestaurantChat.jsx)

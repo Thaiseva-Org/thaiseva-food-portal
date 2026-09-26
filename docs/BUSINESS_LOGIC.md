@@ -1,32 +1,27 @@
 # Business Logic & Workflow Specifications — Thaiseva Food Portal
 
-## 1. Single Centralized Menu Catalog Architecture
+## 1. Decentralized Partner Menu Architecture
 
-The platform uses a **Single Centralized Master Catalog** model. All dishes across all restaurant partners are maintained in a single master collection in Cloud Firestore:
+The platform uses a **Decentralized Partner Menu** model. Each partner restaurant independently creates and manages their own distinct catalog of dishes.
 
-$$\text{Collection Path: } \texttt{food\_items/thaiseva-platform/items/\{itemId\}}$$
+$$\text{Collection Path: } \texttt{food\_items/\{ownerUid\}/items/\{itemId\}}$$
+(or similar per-restaurant isolation path)
 
 ```
-+-----------------------------------------------------------------------------------+
-|                        Cloud Firestore Master Catalog                             |
-|                 food_items/thaiseva-platform/items/{itemId}                       |
-+-----------------------------------------------------------------------------------+
-                                          |
-          +-------------------------------+-------------------------------+
-          |                                                               |
-          v                                                               v
 +-----------------------------------+                           +-----------------------------------+
-| Assigned to Restaurant A          |                           | Assigned to Restaurant B          |
-| assignedRestaurants: ["owner_A"]  |                           | assignedRestaurants: ["owner_B"]  |
-| restaurantStatus.owner_A: active  |                           | restaurantStatus.owner_B: hidden  |
+|          Restaurant A Menu        |                           |          Restaurant B Menu        |
+| food_items/owner_A/items/{itemId} |                           | food_items/owner_B/items/{itemId} |
++-----------------------------------+                           +-----------------------------------+
+| - Pad Thai (Price: 120)           |                           | - Pad Thai (Price: 150)           |
+| - Green Curry (Price: 180)        |                           | - Tom Yum (Price: 200)            |
 +-----------------------------------+                           +-----------------------------------+
 ```
 
 ### Key Architectural Rules
-1. **Single Source of Truth**: Dishes exist exactly once under `food_items/thaiseva-platform/items`. Partner restaurants do not create isolated dish tables.
-2. **Master Control**: Master Admins manage base dish parameters (title, category, type, image, base price, discount, global active state `active`) and store assignments (`assignedRestaurants`).
-3. **Store-Level Availability**: Partner restaurants toggle local availability using `restaurantStatus[ownerUid].active`.
-4. **Data Isolation**: A partner restaurant can only view and toggle dishes that include their `ownerUid` in `assignedRestaurants`.
+1. **Partner Ownership**: Dishes exist independently for each restaurant. Partner restaurants create, update, and manage their own isolated dish tables.
+2. **Partner Control**: Restaurant Admins manage base dish parameters (title, category, type, image, base price, discount, and active state).
+3. **Master Admin Oversight**: While the creation is decentralized, Master Admins retain the ability to view, oversee, and override menu content across the platform for quality control.
+4. **Data Isolation**: A partner restaurant can only view and mutate dishes within their own designated collection space.
 
 ---
 
@@ -47,9 +42,13 @@ $$\text{Verified Order Total} = \text{Subtotal} + \text{Delivery Fee}$$
 ### 2.3 Financial Payout & Commission Split
 When an order is marked as `Delivered` via `markOrderDelivered`, the platform calculates revenue shares based on the stamped commission percentage:
 
-$$\text{Admin Commission Share} = \frac{\text{Verified Order Total} \times \text{Commission \%}}{100}$$
+Discounts are customer promotions and do not reduce the restaurant's commission base.
 
-$$\text{Partner Revenue Share} = \text{Verified Order Total} - \text{Admin Commission Share}$$
+$$\text{Admin Food Commission} = \frac{\text{Original Food Subtotal} \times \text{Commission \%}}{100}$$
+
+$$\text{Admin Share} = \text{Admin Food Commission} + \text{Delivery Fee}$$
+
+$$\text{Partner Revenue Share} = \text{Discounted Food Subtotal} - \text{Admin Food Commission}$$
 
 ---
 
@@ -60,8 +59,8 @@ Food orders transition through a strictly governed state machine:
 ```mermaid
 stateDiagram-v2
     [*] --> NewOrder: Customer Places Order
-    NewOrder --> OrderConfirm: Partner / Master Accepts
-    NewOrder --> Cancelled: Partner / Master Rejects
+    NewOrder --> OrderConfirm: Master Admin Accepts
+    NewOrder --> Cancelled: Master Admin Rejects
     OrderConfirm --> Preparing: Kitchen Starts Preparation
     OrderConfirm --> Cancelled: Order Cancelled
     Preparing --> ReadyForPickup: Kitchen Completes Food
@@ -75,8 +74,8 @@ stateDiagram-v2
 | Current State | Target State | Triggering Function | Allowed Roles | System Requirements & Side Effects |
 | :--- | :--- | :--- | :--- | :--- |
 | `[None]` | `New Order` | `createFoodOrderHttp` | Customer / User | Validates items in catalog; writes order document; sets `isPaymentClear = false`. |
-| `New Order` | `Order Confirm` | `transitionOrderStatus` | Partner / Master | Confirms order acceptance; notifies customer. |
-| `New Order` | `Cancelled` | `transitionOrderStatus` | Partner / Master | Rejects order; marks terminal state. |
+| `New Order` | `Order Confirm` | `transitionOrderStatus` | Master Admin | Confirms order acceptance; notifies customer. |
+| `New Order` | `Cancelled` | `transitionOrderStatus` | Master Admin | Rejects order; marks terminal state. |
 | `Order Confirm` | `Preparing` | `transitionOrderStatus` | Partner / Master | Advances kitchen ticket display. |
 | `Preparing` | `Ready for pickup` | `transitionOrderStatus` | Partner / Master | Signals dispatch interface that order is ready for courier assignment. |
 | `Ready for pickup` | `Out for Delivery` | `transitionOrderStatus` | Partner / Master | **Pre-condition**: Must have an assigned `riderId` (`DeliveryPartner` snapshot attached). |
@@ -115,17 +114,7 @@ sequenceDiagram
 
 ---
 
-## 5. Table Reservation & Dine-In Booking Workflow
-
-1. **Submission**: Customers submit table reservation requests via `createDineInBooking`. The system validates `guestCount` (`1` to `20`), validates date format (`YYYY-MM-DD`), and enforces rate limits (max 10 bookings per user per minute).
-2. **Pending Queue**: The reservation document is created in `dineInBookings/{bookingId}` with `status = "Pending"`.
-3. **Partner Review**: The target restaurant views incoming table reservations in [TableBooking.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/TableBooking.jsx).
-4. **Confirmation / Rejection**: Partner calls `setDineInBookingStatus` with `status: "Confirmed"` or `status: "Rejected"`.
-5. **Customer Cancellation**: Customers can cancel pending bookings using `cancelDineInBooking`.
-
----
-
-## 6. Documentation Source References
+## 5. Documentation Source References
 
 * Menu Catalog Backend: [functions/src/lib/menu.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/menu.js)
 * Order State Machine: [functions/src/lib/orders.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/orders.js)

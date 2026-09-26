@@ -2,17 +2,17 @@ import { memo, useMemo } from "react";
 import { NavLink } from "react-router";
 import { Logo } from "../../assets";
 import SpaceDashboardRoundedIcon from "@mui/icons-material/SpaceDashboardRounded";
-import RestaurantRoundedIcon from "@mui/icons-material/RestaurantRounded";
 import FastfoodRoundedIcon from "@mui/icons-material/FastfoodRounded";
 import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
+import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import { useAuth } from "../../AuthContext";
 import NavBadge from "../../components/NavBadge";
 import { useOrders } from "../../context/OrdersProvider";
 import { useBookings } from "../../context/BookingsProvider";
-import { normalizeBookingStatus } from "../../utils/bookingStatus";
+import { normalizeBookingStatus, SHOW_TABLE_RESERVATIONS } from "../../utils/bookingStatus";
 import { ORDER_STATUS } from "../../utils/orderStatus";
 import { PARTNER_BASE, partnerPath } from "../../utils/partnerRoutes";
 
@@ -43,11 +43,6 @@ const Sidebar = ({ show, toggle }) => {
       requiresVerified: true,
     },
     {
-      icon: <RestaurantRoundedIcon fontSize="small" />,
-      label: "My Restaurant",
-      to: partnerPath("restaurant"),
-    },
-    {
       icon: <FastfoodRoundedIcon fontSize="small" />,
       label: "Menu",
       to: partnerPath("foodItem"),
@@ -64,19 +59,28 @@ const Sidebar = ({ show, toggle }) => {
   ].filter((item) => !item.requiresVerified || verified);
 
   const bottomLinks = [
-    {
-      icon: <TableRestaurantRoundedIcon fontSize="small" />,
-      label: "Table Reservations",
-      to: partnerPath("tableReservation"),
-      requiresVerified: true,
-      badge: pendingBookings,
-      badgeTone: "warning",
-    },
+    ...(SHOW_TABLE_RESERVATIONS
+      ? [
+          {
+            icon: <TableRestaurantRoundedIcon fontSize="small" />,
+            label: "Table Reservations",
+            to: partnerPath("tableReservation"),
+            requiresVerified: true,
+            badge: pendingBookings,
+            badgeTone: "warning",
+          },
+        ]
+      : []),
     {
       icon: <ChatRoundedIcon fontSize="small" />,
       label: "Restaurant Chat",
       to: partnerPath("restaurantChat"),
       requiresVerified: true,
+    },
+    {
+      icon: <SettingsRoundedIcon fontSize="small" />,
+      label: "Settings",
+      to: partnerPath("restaurant"),
     },
     {
       icon: <ExitToAppRoundedIcon fontSize="small" />,

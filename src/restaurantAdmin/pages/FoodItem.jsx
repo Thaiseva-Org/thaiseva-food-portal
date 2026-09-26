@@ -1,5 +1,5 @@
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { collection, doc, getDoc, getDocs, onSnapshot } from "firebase/firestore";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext.jsx";
@@ -16,8 +16,6 @@ import MenuItemCard from "./menu/MenuItemCard";
 import MenuItemDetail from "./menu/MenuItemDetail";
 import MenuList from "./menu/MenuList";
 import MenuToolbar from "./menu/MenuToolbar";
-import { CSVLink } from "react-csv";
-import CsvImportModal from "./menu/CsvImportModal";
 import ConfirmModal from "../../components/ConfirmModal";
 import {
   DEFAULT_FILTERS,
@@ -59,7 +57,6 @@ const FoodItem = () => {
   const [feedback, setFeedback] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [importModalOpen, setImportModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [restaurants, setRestaurants] = useState([]);
@@ -68,6 +65,9 @@ const FoodItem = () => {
     viewMode: loadViewMode(),
   }));
   const [displayCount, setDisplayCount] = useState(24);
+  const [retryTrigger, setRetryTrigger] = useState(0);
+
+  const handleRetry = () => setRetryTrigger(prev => prev + 1);
 
   useEffect(() => {
     document.title = "Thaiseva | Menu";
@@ -84,136 +84,147 @@ const FoodItem = () => {
     return () => clearTimeout(t);
   }, [feedback]);
 
-  const fetchData = useCallback(async () => {
-    if (!menuRoot) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const promises = [
-        getDoc(doc(db, "settings", "categories")).catch(() => null),
-      ];
-
-      if (isMasterAdmin) {
-        promises.push(getDocs(collection(db, "restaurants")).catch(() => null));
-      } else {
-        promises.push(getDocs(collection(db, `food_items/${menuRoot}/items`)));
-      }
-
-      const [catSnap, secondSnap] = await Promise.all(promises);
-
-      let fetchedItems = [];
-
-      if (isMasterAdmin) {
-        const restSnap = secondSnap;
-        let fetchedRests = [];
-        if (restSnap) {
-          fetchedRests = restSnap.docs.map((d) => {
-            const rawName = d.data().name;
-            let safeName = "Unknown";
-            if (typeof rawName === "string") safeName = rawName;
-            else if (rawName && typeof rawName === "object" && rawName.text) safeName = String(rawName.text);
-            return {
-              ownerId: d.id,
-              name: safeName,
-            };
-          });
-        }
-        if (!fetchedRests.some((r) => r.ownerId === PLATFORM_OWNER_ID)) {
-          fetchedRests.unshift({
-            ownerId: PLATFORM_OWNER_ID,
-            name: "ThaiSeva Kitchen",
-          });
-        }
-        fetchedRests.sort((a, b) => a.name.localeCompare(b.name));
-        setRestaurants(fetchedRests);
-
-        const restNameMap = new Map(fetchedRests.map((r) => [r.ownerId, r.name]));
-        const allOwnerIds = Array.from(
-          new Set([PLATFORM_OWNER_ID, ...fetchedRests.map((r) => r.ownerId)])
-        );
-
-        const itemSnaps = await Promise.all(
-          allOwnerIds.map((oid) =>
-            getDocs(collection(db, `food_items/${oid}/items`)).catch((err) => {
-              console.warn(`Could not load items for ${oid}:`, err);
-              return { docs: [] };
-            })
-          )
-        );
-
-        const sanitizeStr = (val) =>
-          val && typeof val === "object" && val.text ? String(val.text) : val;
-
-        fetchedItems = itemSnaps.flatMap((snap, idx) => {
-          const oid = allOwnerIds[idx];
-          const rName = restNameMap.get(oid) || "Unknown";
-          return snap.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              ...data,
-              ownerUid: data.ownerUid || oid,
-              restaurantName: data.restaurantName || rName,
-              itemName: sanitizeStr(data.itemName),
-              category: sanitizeStr(data.category),
-              cuisine: sanitizeStr(data.cuisine),
-              itemType: sanitizeStr(data.itemType),
-              description: sanitizeStr(data.description),
-            };
-          });
-        }).filter((item) => item.deleted !== true);
-      } else {
-        const itemsSnap = secondSnap;
-        const sanitizeStr = (val) =>
-          val && typeof val === "object" && val.text ? String(val.text) : val;
-
-        fetchedItems = itemsSnap.docs
-          .map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              ...data,
-              ownerUid: data.ownerUid || menuRoot,
-              itemName: sanitizeStr(data.itemName),
-              category: sanitizeStr(data.category),
-              cuisine: sanitizeStr(data.cuisine),
-              itemType: sanitizeStr(data.itemType),
-              description: sanitizeStr(data.description),
-            };
-          })
-          .filter((item) => item.deleted !== true);
-      }
-
-      setItems(fetchedItems);
-
-      if (catSnap?.exists?.()) {
-        const rawData = catSnap.data()?.data;
-        let data = [];
-        if (Array.isArray(rawData)) {
-          data = rawData.map(c => (c && typeof c === 'object' && c.text) ? String(c.text) : c);
-        }
-        setSettingsCategories(data);
-      }
-    } catch (err) {
-      console.error("Error fetching food items:", err);
-      setError(err.message || "Could not load menu items.");
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [menuRoot, isMasterAdmin]);
-
   useEffect(() => {
-    if (canManageMenu && menuRoot) {
-      fetchData();
+    if (!canManageMenu || !menuRoot) {
+      setLoading(false);
       return;
     }
-    setLoading(false);
-  }, [canManageMenu, menuRoot, fetchData]);
+
+    let unsubscribers = [];
+    let isMounted = true;
+    
+    const loadCategoriesAndRestaurants = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const catSnap = await getDoc(doc(db, "settings", "categories")).catch(() => null);
+        if (catSnap?.exists?.()) {
+          const rawData = catSnap.data()?.data;
+          let data = [];
+          if (Array.isArray(rawData)) {
+            data = rawData.map(c => (c && typeof c === 'object' && c.text) ? String(c.text) : c);
+          }
+          if (isMounted) setSettingsCategories(data);
+        }
+
+        if (isMasterAdmin) {
+          const restSnap = await getDocs(collection(db, "restaurants")).catch(() => null);
+          let fetchedRests = [];
+          if (restSnap) {
+            fetchedRests = restSnap.docs.map((d) => {
+              const rawName = d.data().name;
+              let safeName = "Unknown";
+              if (typeof rawName === "string") safeName = rawName;
+              else if (rawName && typeof rawName === "object" && rawName.text) safeName = String(rawName.text);
+              return { ownerId: d.id, name: safeName };
+            });
+          }
+          if (!fetchedRests.some((r) => r.ownerId === PLATFORM_OWNER_ID)) {
+            fetchedRests.unshift({ ownerId: PLATFORM_OWNER_ID, name: "ThaiSeva Kitchen" });
+          }
+          fetchedRests.sort((a, b) => a.name.localeCompare(b.name));
+          if (isMounted) setRestaurants(fetchedRests);
+
+          const restNameMap = new Map(fetchedRests.map((r) => [r.ownerId, r.name]));
+          const allOwnerIds = Array.from(new Set([PLATFORM_OWNER_ID, ...fetchedRests.map((r) => r.ownerId)]));
+
+          let groupItems = new Array(allOwnerIds.length).fill([]);
+          let readyCount = 0;
+          
+          if (allOwnerIds.length === 0 && isMounted) {
+            setItems([]);
+            setLoading(false);
+            return;
+          }
+
+          allOwnerIds.forEach((oid, idx) => {
+            const rName = restNameMap.get(oid) || "Unknown";
+            const q = collection(db, `food_items/${oid}/items`);
+            const unsub = onSnapshot(q, (snap) => {
+              const sanitizeStr = (val) => val && typeof val === "object" && val.text ? String(val.text) : val;
+              const newItems = snap.docs.map(d => {
+                const data = d.data();
+                return {
+                  id: d.id,
+                  ...data,
+                  ownerUid: data.ownerUid || oid,
+                  restaurantName: data.restaurantName || rName,
+                  itemName: sanitizeStr(data.itemName),
+                  category: sanitizeStr(data.category),
+                  cuisine: sanitizeStr(data.cuisine),
+                  itemType: sanitizeStr(data.itemType),
+                  description: sanitizeStr(data.description),
+                };
+              }).filter((item) => item.deleted !== true);
+              groupItems[idx] = newItems;
+              
+              readyCount++;
+              if (isMounted) {
+                // If it's the first run, wait for all. Otherwise, update immediately.
+                if (readyCount >= allOwnerIds.length) {
+                  setItems(groupItems.flat());
+                  setLoading(false);
+                }
+              }
+            }, (err) => {
+              console.warn(`Could not load items for ${oid}:`, err);
+              readyCount++;
+              if (isMounted && readyCount >= allOwnerIds.length) {
+                setItems(groupItems.flat());
+                setLoading(false);
+              }
+            });
+            unsubscribers.push(unsub);
+          });
+        } else {
+          const q = collection(db, `food_items/${menuRoot}/items`);
+          const unsub = onSnapshot(q, (snap) => {
+            const sanitizeStr = (val) => val && typeof val === "object" && val.text ? String(val.text) : val;
+            const newItems = snap.docs.map(d => {
+              const data = d.data();
+              return {
+                id: d.id,
+                ...data,
+                ownerUid: data.ownerUid || menuRoot,
+                itemName: sanitizeStr(data.itemName),
+                category: sanitizeStr(data.category),
+                cuisine: sanitizeStr(data.cuisine),
+                itemType: sanitizeStr(data.itemType),
+                description: sanitizeStr(data.description),
+              };
+            }).filter((item) => item.deleted !== true);
+            
+            if (isMounted) {
+              setItems(newItems);
+              setLoading(false);
+            }
+          }, (err) => {
+            console.error("Error fetching food items:", err);
+            if (isMounted) {
+              setError(err.message || "Could not load menu items.");
+              setItems([]);
+              setLoading(false);
+            }
+          });
+          unsubscribers.push(unsub);
+        }
+      } catch (err) {
+        console.error("Error loading categories or restaurants:", err);
+        if (isMounted) {
+          setError(err.message || "Could not load items.");
+          setItems([]);
+          setLoading(false);
+        }
+      }
+    };
+
+    loadCategoriesAndRestaurants();
+
+    return () => {
+      isMounted = false;
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [canManageMenu, menuRoot, isMasterAdmin, retryTrigger]);
 
   const restaurantScopedItems = useMemo(() => {
     if (!filters.restaurantId || filters.restaurantId === "all") return items;
@@ -271,22 +282,6 @@ const FoodItem = () => {
       groupByCategory: prev.groupByCategory,
     }));
   };
-
-  const csvHeaders = useMemo(() => {
-    const baseHeaders = [
-      { label: "itemId", key: "id" },
-      { label: "itemName", key: "itemName" },
-      { label: "price", key: "price" },
-      { label: "discount", key: "discount" },
-      { label: "category", key: "category" },
-      { label: "itemType", key: "itemType" },
-      { label: "cuisine", key: "cuisine" },
-      { label: "description", key: "description" },
-    ];
-    return baseHeaders;
-  }, []);
-
-  const csvData = items;
 
   const handleEdit = (item) => {
     const id = getItemKey(item);
@@ -420,23 +415,6 @@ const FoodItem = () => {
         </div>
         {canManageMenu && (
           <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
-            <CSVLink
-              data={csvData}
-              headers={csvHeaders}
-              filename="menu_export.csv"
-              className="btn-outline !min-h-11"
-            >
-              <i className="bi bi-download" aria-hidden="true" />
-              Export CSV
-            </CSVLink>
-            <button
-              type="button"
-              className="btn-outline !min-h-11"
-              onClick={() => setImportModalOpen(true)}
-            >
-              <i className="bi bi-upload" aria-hidden="true" />
-              Import CSV
-            </button>
             <Link
               to={
                 filters.restaurantId !== "all"
@@ -564,7 +542,7 @@ const FoodItem = () => {
           <div className="min-w-0 flex-1">
             <InfoMessage type="error" message={error} />
           </div>
-          <button type="button" className="btn-outline !min-h-9" onClick={fetchData}>
+          <button type="button" className="btn-outline !min-h-9" onClick={handleRetry}>
             Retry
           </button>
         </div>
@@ -703,13 +681,6 @@ const FoodItem = () => {
         onDelete={handleDelete}
         busyId={busyId}
         canManageMenu={canManageMenu}
-      />
-
-      <CsvImportModal
-        open={importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-        onImportComplete={fetchData}
-        ownerUid={filters.restaurantId !== "all" ? filters.restaurantId : menuRoot}
       />
 
       <ConfirmModal

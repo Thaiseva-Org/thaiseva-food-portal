@@ -78,7 +78,7 @@ export default function OrderPayment({ order, onVerified }) {
       )}
       {channel && unconfirmed && !paid && (
         <p className="text-sm text-amber-800">
-          Confirm the order first so the final total includes the fixed delivery charge.
+          Confirm the order first so the app-provided delivery charge is included in the final total.
         </p>
       )}
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

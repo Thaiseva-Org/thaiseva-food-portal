@@ -2,10 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   groupJobsByRider,
+  isRiderJobStatus,
   jobsToCsvRows,
   riderIdFromOrder,
   uniqueDropoffAddresses,
 } from "../src/utils/orderRider.js";
+
+test("only live or completed assignments count as rider jobs", () => {
+  assert.equal(isRiderJobStatus("Order Confirm"), true);
+  assert.equal(isRiderJobStatus("Ready for pickup"), true);
+  assert.equal(isRiderJobStatus("Delivered"), true);
+  assert.equal(isRiderJobStatus("New Order"), false);
+  assert.equal(isRiderJobStatus("Cancelled"), false);
+});
 
 test("rider id prefers assignment fields", () => {
   assert.equal(riderIdFromOrder({ assignedRiderId: "rider_1" }), "rider_1");

@@ -2,7 +2,7 @@ import {
   collection,
   limit,
   query,
-  getDocs,
+  onSnapshot,
   startAfter,
   where,
   getCountFromServer,
@@ -50,51 +50,58 @@ const RestaDetails = () => {
     setTotalPages(Math.ceil(partnerCount / 10));
   };
 
-  const fetchRestaurants = async () => {
-    try {
-      let q = query(
+  useEffect(() => {
+    if (!isMasterAdmin) return;
+    
+    fetchTotalPages();
+    
+    let q = query(
+      restaurantCollection,
+      where("status", "==", "Verified"),
+      where("active", "==", toggle),
+      limit(10)
+    );
+    if (page > 0 && lastDocs[page - 1]) {
+      q = query(
         restaurantCollection,
         where("status", "==", "Verified"),
         where("active", "==", toggle),
+        startAfter(lastDocs[page - 1]),
         limit(10)
       );
-      if (page > 0 && lastDocs[page - 1]) {
-        q = query(
-          restaurantCollection,
-          where("status", "==", "Verified"),
-          where("active", "==", toggle),
-          startAfter(lastDocs[page - 1]),
-          limit(10)
-        );
-      }
-      const res = await getDocs(q);
-      const list = res.docs
-        .map((snapshot) => snapshot.data())
-        .filter((item) => !isPlatformOwnerId(item.ownerId));
-      const lastDoc =
-        res.docs.length > 0 ? res.docs[res.docs.length - 1] : null;
-      setLastDocs((prev) => {
-        const updated = [...prev];
-        updated[page] = lastDoc;
-        return updated;
-      });
-      setRestaurants(list);
-    } catch (error) {
-      console.error("Error fetching restaurants:", error);
-      setRestaurants([]);
-    } finally {
-      setLoading(false);
     }
-  };
+    
+    setLoading(true);
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (res) => {
+        const list = res.docs
+          .map((snapshot) => snapshot.data())
+          .filter((item) => !isPlatformOwnerId(item.ownerId));
+        const lastDoc =
+          res.docs.length > 0 ? res.docs[res.docs.length - 1] : null;
+        setLastDocs((prev) => {
+          const updated = [...prev];
+          updated[page] = lastDoc;
+          return updated;
+        });
+        setRestaurants(list);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error fetching restaurants:", error);
+        setRestaurants([]);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isMasterAdmin, page, toggle]); // eslint-disable-line react-hooks/exhaustive-deps -- fetch helpers intentionally follow these pagination controls
 
   const handleChangePage = (_, newPage) => {
     setPage(newPage);
   };
-
-  useEffect(() => {
-    isMasterAdmin && fetchTotalPages();
-    isMasterAdmin && fetchRestaurants();
-  }, [isMasterAdmin, page, toggle]); // eslint-disable-line react-hooks/exhaustive-deps -- fetch helpers intentionally follow these pagination controls
 
   if (loading)
     return (

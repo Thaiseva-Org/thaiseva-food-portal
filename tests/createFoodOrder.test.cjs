@@ -31,5 +31,5 @@ test("restaurant-specific checkout snapshots and returns the selected restaurant
   assert.match(source, /food_items.*doc\(root\).*collection\("items"\)/s);
   assert.match(source, /Restaurant: restaurantSnapshot/);
   assert.match(source, /restaurant: restaurantSnapshot/);
-  assert.match(source, /amount: Number\(prior\.foodSubtotal \?\? prior\.Amount\)/);
+  assert.match(source, /amount: Number\(prior\.Amount \?\? prior\.foodSubtotal\)/);
 });

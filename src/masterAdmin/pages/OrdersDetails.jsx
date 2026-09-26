@@ -33,6 +33,11 @@ import {
   summaryCardActive,
 } from "../../utils/orderStatus";
 import { hasAssignedRider, riderLabel } from "../../utils/orderRider";
+import {
+  formatDeliveryAddressText,
+  formatDisplayOrderId,
+  formatOrderAddressesText,
+} from "../../utils/orderData";
 
 const normalizePaymentMethod = (value) =>
   String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
@@ -49,14 +54,9 @@ const isStripePayment = (value) =>
 
 const nextListAction = (order) => {
   if (order.Status === ORDER_STATUS.NEW) return { label: "Confirm", kind: "confirm" };
-  if (order.Status === ORDER_STATUS.CONFIRM) return { label: "Start preparing", toStatus: ORDER_STATUS.PREPARING };
-  if (order.Status === ORDER_STATUS.PREPARING) return { label: "Mark ready", toStatus: ORDER_STATUS.READY };
-  if (order.Status === ORDER_STATUS.READY) {
-    return hasAssignedRider(order)
-      ? { label: "Mark out", toStatus: ORDER_STATUS.OUT }
-      : { label: "Assign rider", kind: "assign" };
-  }
-  if (order.Status === ORDER_STATUS.OUT) return { label: "Mark delivered", kind: "deliver" };
+  if (order.Status === ORDER_STATUS.READY && !hasAssignedRider(order))
+    return { label: "Assign rider", kind: "assign" };
+  if (order.Status === ORDER_STATUS.OUT) return { label: "Confirm delivery", kind: "deliver" };
   return null;
 };
 
@@ -69,6 +69,7 @@ const matchesSearch = (item, query) => {
     item.Date,
     item.Status,
     item.Amount,
+    formatDeliveryAddressText(item.Receiver, item.Location),
   ]
     .filter(Boolean)
     .join(" ")
@@ -99,6 +100,8 @@ const OrdersDetails = () => {
   const [selectedRiderId, setSelectedRiderId] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [copiedAddressId, setCopiedAddressId] = useState("");
+  const [addressCopyError, setAddressCopyError] = useState("");
 
   useEffect(() => {
     document.title = "Thaiseva | Orders";
@@ -183,6 +186,28 @@ const OrdersDetails = () => {
     setPaymentConfirmed(false);
   };
 
+  const copyDeliveryAddress = async (order) => {
+    const text = formatOrderAddressesText(
+      order.Receiver,
+      order.Location,
+      order.Restaurant || { name: order.restaurantName }
+    );
+    if (!text) {
+      setAddressCopyError("No delivery address is available to copy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setAddressCopyError("");
+      setCopiedAddressId(order.OrderID);
+      window.setTimeout(() => {
+        setCopiedAddressId((current) => current === order.OrderID ? "" : current);
+      }, 1800);
+    } catch {
+      setAddressCopyError("Could not copy the address. Please allow clipboard access.");
+    }
+  };
+
   const openDialog = (kind, order) => {
     setActionError("");
     setSelectedRiderId(order.assignedRiderId || order.DeliveryPartner?.id || "");
@@ -220,7 +245,7 @@ const OrdersDetails = () => {
   const submitRiderDialog = async () => {
     const order = dialog?.order;
     if (!order || busyId) return;
-    if (dialog.kind === "assign" && !selectedRiderId) {
+    if ((dialog.kind === "assign" || dialog.kind === "confirm") && !selectedRiderId) {
       setActionError("Choose a rider before continuing.");
       return;
     }
@@ -232,7 +257,7 @@ const OrdersDetails = () => {
         await masterConfirmOrder({
           orderId: order.OrderID,
           restaurantUid: order.ownerId,
-          riderId: selectedRiderId || undefined,
+          riderId: selectedRiderId,
         });
       } else {
         await assignOrderRider({
@@ -310,7 +335,7 @@ const OrdersDetails = () => {
     dialogOrder?.foodSubtotal ??
       (Number(dialogOrder?.Amount || 0) - Number(dialogOrder?.deliveryCharge || 0))
   );
-  const fixedDeliveryCharge = dialogSubtotal < 1000 ? 100 : 0;
+  const dialogDeliveryCharge = Number(dialogOrder?.deliveryCharge || 0);
 
   return (
     <div className="px-4 py-8 md:px-6 md:py-10">
@@ -498,7 +523,7 @@ const OrdersDetails = () => {
               <Loading />
             </div>
           ) : filteredRows.length > 0 ? (
-            <table className="w-full min-w-[1080px] text-left text-sm">
+            <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="table-head text-xs uppercase tracking-wide">
               <tr>
                 <th scope="col" className="px-4 py-3.5">
@@ -511,10 +536,7 @@ const OrdersDetails = () => {
                   Customer
                 </th>
                 <th scope="col" className="px-4 py-3.5">
-                  Location
-                </th>
-                <th scope="col" className="px-4 py-3.5">
-                  Amount
+                  Address
                 </th>
                 <th scope="col" className="px-4 py-3.5">
                   Status
@@ -559,17 +581,15 @@ const OrdersDetails = () => {
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <p
-                      className="max-w-[12rem] truncate text-ink-muted"
-                      title={item.Location}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100 focus-ring"
+                      onClick={() => copyDeliveryAddress(item)}
+                      aria-label={`Copy complete delivery address for order ${formatDisplayOrderId(item.OrderID)}`}
                     >
-                      {item.Location || "N/A"}
-                    </p>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="font-semibold tabular-nums text-ink">
-                      {formatOrderAmount(item.Amount)}
-                    </span>
+                      <i className={`bi ${copiedAddressId === item.OrderID ? "bi-check-lg" : "bi-copy"}`} aria-hidden="true" />
+                      {copiedAddressId === item.OrderID ? "Copied" : "Copy full address"}
+                    </button>
                   </td>
                   <td className="px-4 py-4">
                     <StatusBadge status={item.Status} />
@@ -584,13 +604,6 @@ const OrdersDetails = () => {
                     </td>
                     <td className="px-4 py-4 text-center">
                       <div className="flex flex-wrap items-center justify-center gap-2">
-                        <Link
-                          to={`/foodAdmin/ordersDetails/ordersDetView/${item.OrderID}`}
-                          state={{ restaurantId: item.RestaurantId }}
-                          className="btn-outline whitespace-nowrap px-3 py-1.5"
-                        >
-                          View
-                        </Link>
                         {statusAction && (
                           <button
                             type="button"
@@ -601,10 +614,17 @@ const OrdersDetails = () => {
                             {isBusy ? "Updating…" : statusAction.label}
                           </button>
                         )}
+                        <Link
+                          to={`/foodAdmin/ordersDetails/ordersDetView/${item.OrderID}`}
+                          state={{ restaurantId: item.RestaurantId }}
+                          className="btn-outline whitespace-nowrap px-3 py-1.5"
+                        >
+                          View
+                        </Link>
                         {canVerifyPayment && (
                           <button
                             type="button"
-                            className="btn-success whitespace-nowrap px-3 py-1.5"
+                            className="btn-outline whitespace-nowrap px-3 py-1.5"
                             disabled={Boolean(busyId)}
                             onClick={() => openDialog("payment", item)}
                           >
@@ -664,6 +684,10 @@ const OrdersDetails = () => {
         </div>
       )}
 
+      {addressCopyError && (
+        <p role="alert" className="mt-3 text-sm font-medium text-red-700">{addressCopyError}</p>
+      )}
+
       {dialog && dialogOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div
@@ -683,7 +707,7 @@ const OrdersDetails = () => {
                         : "Verify payment"}
                   </h2>
                   <p className="mt-1 text-sm text-ink-muted">
-                    Order #{dialogOrder.OrderID} · {dialogOrder.CustomerName}
+                    Order #{formatDisplayOrderId(dialogOrder.OrderID)} · {dialogOrder.CustomerName}
                   </p>
                 </div>
                 <button
@@ -708,21 +732,18 @@ const OrdersDetails = () => {
                     </strong>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-3">
-                    <span className="text-amber-800">Fixed delivery charge</span>
+                    <span className="text-amber-800">Delivery charge</span>
                     <strong className="tabular-nums text-amber-950">
-                      {formatOrderAmount(fixedDeliveryCharge)}
+                      {formatOrderAmount(dialogDeliveryCharge)}
                     </strong>
                   </div>
-                  <p className="mt-2 text-xs text-amber-700">
-                    ฿100 is automatically added when the food subtotal is below ฿1,000.
-                  </p>
                 </div>
               )}
 
               {(dialog.kind === "confirm" || dialog.kind === "assign") && (
                 <label className="block">
                   <span className="text-sm font-semibold text-ink">
-                    {dialog.kind === "confirm" ? "Assign rider (optional)" : "Assign rider"}
+                    Assign rider (required)
                   </span>
                   <select
                     className="modern-select mt-1.5"
@@ -806,7 +827,7 @@ const OrdersDetails = () => {
                 onClick={dialog.kind === "payment" ? submitPaymentVerification : submitRiderDialog}
                 disabled={
                   Boolean(busyId) ||
-                  (dialog.kind === "assign" && !selectedRiderId) ||
+                  ((dialog.kind === "assign" || dialog.kind === "confirm") && !selectedRiderId) ||
                   (dialog.kind === "payment" && !paymentConfirmed)
                 }
               >

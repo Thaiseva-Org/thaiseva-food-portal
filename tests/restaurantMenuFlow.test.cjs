@@ -105,15 +105,18 @@ test("restaurant owns menu CRUD, including drafts and cross-tenant denials", asy
   assert.equal(f.records.get("food_items/a/items/new").deleted, true);
 });
 
-test("checkout routes to its own menu, ignores client amounts, and deduplicates per customer", async () => {
+test("checkout routes to its own menu, verifies prices, applies the delivery charge, and deduplicates per customer", async () => {
   const f = fixture();
-  const payload = { ...request(), Amount: 1, deliveryCharge: -100 };
+  const payload = { ...request(), Amount: 1, deliveryCharge: 35 };
   const results = await Promise.all([f.createFoodOrder(customer, payload), f.createFoodOrder(customer, payload)]);
   assert.equal(results[0].orderId, results[1].orderId);
+  assert.equal(results[0].amount, 280);
+  assert.equal(results[1].amount, 280);
   assert.equal(results[1].alreadyApplied, true);
   const saved = f.records.get(`orders/${results[0].orderId}`);
   assert.equal(saved.Restaurant.ownerId, "a");
-  assert.equal(saved.Amount, 180);
+  assert.equal(saved.deliveryCharge, 100);
+  assert.equal(saved.Amount, 280);
   assert.equal(saved.Items[0].menuPath, "food_items/a/items/dish");
   assert.equal(saved.currentStatus, "New Order");
   assert.equal(saved.comission, 10);
@@ -122,6 +125,14 @@ test("checkout routes to its own menu, ignores client amounts, and deduplicates 
   const other = await f.createFoodOrder({ uid: "other" }, payload);
   assert.notEqual(other.orderId, results[0].orderId);
   await assert.rejects(f.createFoodOrder(customer, { ...request(), Items: [{ ItemId: "dish", Quantity: 3 }] }), { code: "already-exists" });
+});
+
+test("checkout ignores an app-provided delivery charge", async () => {
+  const f = fixture();
+  const result = await f.createFoodOrder(customer, { ...request(), deliveryCharge: -100 });
+  const saved = f.records.get(`orders/${result.orderId}`);
+  assert.equal(saved.deliveryCharge, 100);
+  assert.equal(saved.Amount, 280);
 });
 
 test("checkout rejects shared fallback, mixed ownership, unavailable items and unverified restaurants", async () => {
@@ -142,23 +153,34 @@ test("checkout rejects shared fallback, mixed ownership, unavailable items and u
   }
 });
 
-test("only admin confirms; fixed delivery fee and frozen prices post earnings once", async () => {
+test("only admin confirms; app delivery fee and frozen prices post earnings once", async () => {
   const f = fixture();
-  const { orderId } = await f.createFoodOrder(customer, request());
+  const { orderId } = await f.createFoodOrder(customer, { ...request(), deliveryCharge: 35 });
   for (const toStatus of ["Order Confirm", "Cancelled"]) {
     await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus, reason: "Unavailable" }), { code: "permission-denied" });
   }
   await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus: "Preparing" }), { code: "failed-precondition" });
-  await assert.rejects(f.masterConfirmOrder(admin, { orderId, restaurantUid: "b" }), { code: "failed-precondition" });
+  await assert.rejects(f.masterConfirmOrder(admin, { orderId, restaurantUid: "b", riderId: "rider" }), { code: "failed-precondition" });
   assert.equal(f.assignOrderRestaurant, undefined);
-  await f.masterConfirmOrder(admin, { orderId, deliveryCharge: 35 });
-  await f.masterConfirmOrder(admin, { orderId, deliveryCharge: 999 });
+  await f.masterConfirmOrder(admin, { orderId, riderId: "rider", deliveryCharge: 35 });
+  await f.masterConfirmOrder(admin, { orderId, riderId: "rider", deliveryCharge: 999 });
   assert.equal(f.records.get(`orders/${orderId}`).foodSubtotal, 180);
   assert.equal(f.records.get(`orders/${orderId}`).deliveryCharge, 100);
   assert.equal(f.records.get(`orders/${orderId}`).Amount, 280);
-  await f.assignOrderRider(admin, { orderId, riderId: "rider" });
+  await assert.rejects(
+    f.transitionOrderStatus(admin, { orderId, toStatus: "Preparing" }),
+    { code: "permission-denied" }
+  );
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Preparing" });
+  await assert.rejects(
+    f.transitionOrderStatus(admin, { orderId, toStatus: "Ready for pickup" }),
+    { code: "permission-denied" }
+  );
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Ready for pickup" });
+  await assert.rejects(
+    f.transitionOrderStatus(admin, { orderId, toStatus: "Out for Delivery" }),
+    { code: "permission-denied" }
+  );
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Out for Delivery" });
   await assert.rejects(f.assignOrderRider(admin, { orderId, riderId: "rider" }), { code: "failed-precondition" });
   await assert.rejects(f.markOrderDelivered(owner, { orderId }), { code: "permission-denied" });
@@ -166,20 +188,21 @@ test("only admin confirms; fixed delivery fee and frozen prices post earnings on
   await Promise.all([f.markOrderDelivered(admin, { orderId }), f.markOrderDelivered(admin, { orderId })]);
   const delivered = f.records.get(`orders/${orderId}`);
   assert.equal(delivered.Amount, 280);
-  assert.equal(delivered.accounting.partnerShare, 162);
-  assert.equal(delivered.accounting.adminShare, 118);
+  assert.equal(delivered.accounting.commissionBase, 200);
+  assert.equal(delivered.accounting.partnerShare, 160);
+  assert.equal(delivered.accounting.adminShare, 120);
   assert.equal(f.records.get("restaurants/a").orderCount, 1);
   assert.equal(f.records.get("food_items/a/items/dish").count, 2);
 });
 
-test("orders at the 1000 baht threshold have no delivery charge", async () => {
+test("orders have free delivery when the subtotal is at least 1000", async () => {
   const f = fixture();
   f.records.set("food_items/a/items/dish", {
     ...f.records.get("food_items/a/items/dish"),
     price: 500,
     discount: 0,
   });
-  const { orderId } = await f.createFoodOrder(customer, request());
+  const { orderId } = await f.createFoodOrder(customer, { ...request(), deliveryCharge: 40 });
   await f.masterConfirmOrder(admin, { orderId, riderId: "rider", deliveryCharge: 100 });
   const confirmed = f.records.get(`orders/${orderId}`);
   assert.equal(confirmed.foodSubtotal, 1000);
@@ -190,9 +213,12 @@ test("orders at the 1000 baht threshold have no delivery charge", async () => {
 
 test("dispatch needs an active rider and cancellation needs an admin reason", async () => {
   const f = fixture(); const { orderId } = await f.createFoodOrder(customer, request());
-  await f.transitionOrderStatus(admin, { orderId, toStatus: "Order Confirm" });
+  await f.transitionOrderStatus(admin, { orderId, toStatus: "Order Confirm", riderId: "rider" });
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Preparing" });
   await f.transitionOrderStatus(owner, { orderId, toStatus: "Ready for pickup" });
+  const readyOrder = f.records.get(`orders/${orderId}`);
+  delete readyOrder.assignedRiderId;
+  delete readyOrder.DeliveryPartner;
   await assert.rejects(f.transitionOrderStatus(owner, { orderId, toStatus: "Out for Delivery" }), { code: "failed-precondition" });
   await f.assignOrderRider(admin, { orderId, riderId: "rider" });
   f.records.set("foodRiders/rider", { id: "rider", active: false });

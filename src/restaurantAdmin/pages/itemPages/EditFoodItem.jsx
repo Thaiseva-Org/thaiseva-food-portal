@@ -11,6 +11,15 @@ import { partnerPath } from "../../../utils/partnerRoutes";
 import { PLATFORM_OWNER_ID } from "../../../utils/platformRestaurant";
 import Template from "./Template";
 
+const normalizeItemType = (value) => {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-_]+/g, " ");
+  if (normalized === "veg" || normalized === "vegetarian") return "Veg";
+  if (normalized === "non veg" || normalized === "nonveg" || normalized === "non vegetarian") {
+    return "Non Veg";
+  }
+  return "";
+};
+
 const EditItem = () => {
   const { roleData, currentUser, resData, isMasterAdmin } = useAuth();
   const itemidParam = useParams();
@@ -58,7 +67,7 @@ const EditItem = () => {
           setPrice(data.price ?? "");
           setDiscount(data.discount ?? 0);
           setCategory(data.category || "");
-          setItemType(data.itemType || "");
+          setItemType(normalizeItemType(data.itemType));
           setDescription(data.description || "");
           setActive(Boolean(data.active));
           setImage(data.imageUrl || null);
@@ -237,6 +246,7 @@ const EditItem = () => {
       setActive={setActive}
       cuisine={cuisine}
       setCuisine={setCuisine}
+      cancelPath={kitchen.listPath || partnerPath("foodItem")}
     />
   );
 };

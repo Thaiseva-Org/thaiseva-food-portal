@@ -23,6 +23,12 @@ const PROFILE_SAFE_FIELDS = [
   "city",
   "latitude",
   "longitude",
+  "businessLicenseUrl",
+  "businessLicenseName",
+  "ownerIdDocUrl",
+  "ownerIdDocName",
+  "foodSafetyCertUrl",
+  "foodSafetyCertName",
 ];
 
 const PROFILE_FIELD_LIMITS = {
@@ -41,6 +47,12 @@ const PROFILE_FIELD_LIMITS = {
   city: 100,
   latitude: 50,
   longitude: 50,
+  businessLicenseUrl: 2048,
+  businessLicenseName: 180,
+  ownerIdDocUrl: 2048,
+  ownerIdDocName: 180,
+  foodSafetyCertUrl: 2048,
+  foodSafetyCertName: 180,
 };
 
 const SERVICE_TYPES = new Set(["Delivery", "Dine-in", "Both"]);
@@ -444,10 +456,15 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
 
   const updates = {};
   for (const key of PROFILE_SAFE_FIELDS) {
+    // Partner admins can view their contact email, but only a platform admin
+    // may change it.
+    if (key === "emailId" && caller.role === ROLES.OWNER) continue;
     if (fields[key] !== undefined && fields[key] !== null) {
       updates[key] = key === "imageUrl"
         ? cleanImageUrl(fields[key])
-        : cleanText(fields[key], key, PROFILE_FIELD_LIMITS[key]);
+        : key.endsWith("Url")
+          ? cleanDocUrl(fields[key], key)
+          : cleanText(fields[key], key, PROFILE_FIELD_LIMITS[key]);
     }
   }
   if (updates.serviceType && !SERVICE_TYPES.has(updates.serviceType)) {

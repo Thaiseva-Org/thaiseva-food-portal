@@ -40,7 +40,6 @@ These match the shared project console list. Do not remove entries when adding f
 
 | Collection | Fields (order) |
 |------------|----------------|
-| `dineInBookings` | `ownerId`, `bookingTimestamp` |
 | `car_bookings` | `driverId`, `bookingStatus` |
 | `car_bookings` | `vehicleId`, `bookingStatus` |
 | `car_bookings` | `status`, `timestamp` |
@@ -69,7 +68,6 @@ Food portal recent-order and all-time counts use:
 - `orders`: `Restaurant.ownerId` + `timestamp` (desc)
 - `orders`: `Restaurant.ownerId` + `currentStatus`
 - `orders`: `Restaurant.ownerId` + `currentStatus` + `timestamp` (desc)
-- `dineInBookings`: `ownerId` + `bookingTimestamp` (desc) for restaurant reservation listeners and history
 
 
 ---

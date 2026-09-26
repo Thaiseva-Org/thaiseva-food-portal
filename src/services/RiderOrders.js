@@ -5,9 +5,10 @@ import {
   orderBy,
   query,
   where,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
-import { riderIdFromOrder } from "../utils/orderRider";
+import { isRiderJobStatus, riderIdFromOrder } from "../utils/orderRider";
 
 export const RIDER_JOB_SCAN_LIMIT = 500;
 
@@ -47,9 +48,13 @@ export function mapRiderJob(snap) {
     data.DeliveryPartner && typeof data.DeliveryPartner === "object"
       ? data.DeliveryPartner
       : {};
+  const jobTimestamp =
+    data.currentStatus === "Delivered"
+      ? data.deliveredAt || data.assignedAt || data.createdAt || data.timestamp
+      : data.assignedAt || data.createdAt || data.timestamp;
   return {
     OrderID: id,
-    Date: formatTimestamp(data.timestamp),
+    Date: formatTimestamp(jobTimestamp),
     DeliveredAt: formatTimestamp(data.deliveredAt),
     Status: data.currentStatus || "",
     Amount: data.Amount || "0.00",
@@ -62,14 +67,18 @@ export function mapRiderJob(snap) {
     assignedRiderId: riderId,
     riderName: partner.name || "",
     riderPhone: partner.phone || "",
-    timestampMs: toMillis(data.timestamp),
+    timestampMs: toMillis(jobTimestamp),
   };
 }
 
 function inDateRange(job, bounds) {
   if (!bounds) return true;
-  if (!job.timestampMs) return true;
+  if (!job.timestampMs) return false;
   return job.timestampMs >= bounds.start.getTime() && job.timestampMs <= bounds.end.getTime();
+}
+
+function isVisibleRiderJob(row) {
+  return Boolean(row.assignedRiderId) && isRiderJobStatus(row.Status);
 }
 
 function mergeJobSnaps(snaps) {
@@ -85,17 +94,56 @@ function mergeJobSnaps(snaps) {
 export async function fetchJobsInDateRange(startDate, endDate) {
   const ordersRef = collection(db, "orders");
   const bounds = dayBounds(startDate, endDate);
-  const parts = [];
-  if (bounds) {
-    parts.push(where("timestamp", ">=", bounds.start));
-    parts.push(where("timestamp", "<=", bounds.end));
-  }
-  parts.push(orderBy("timestamp", "desc"));
-  parts.push(limit(RIDER_JOB_SCAN_LIMIT));
-  const snap = await getDocs(query(ordersRef, ...parts));
-  return snap.docs
-    .map(mapRiderJob)
-    .filter((row) => row.assignedRiderId);
+  const snapshots = await Promise.all(
+    ["assignedAt", "deliveredAt", "createdAt", "timestamp"].map((field) => {
+      const parts = [];
+      if (bounds) {
+        parts.push(where(field, ">=", bounds.start));
+        parts.push(where(field, "<=", bounds.end));
+      }
+      parts.push(orderBy(field, "desc"));
+      parts.push(limit(RIDER_JOB_SCAN_LIMIT));
+      return getDocs(query(ordersRef, ...parts));
+    })
+  );
+  return mergeJobSnaps(snapshots.flatMap((snap) => snap.docs))
+    .filter(isVisibleRiderJob)
+    .filter((row) => inDateRange(row, bounds));
+}
+
+export function subscribeJobsInDateRange(startDate, endDate, callback, onError) {
+  const ordersRef = collection(db, "orders");
+  const bounds = dayBounds(startDate, endDate);
+  const docsByField = new Map();
+  let stopped = false;
+  const unsubscribes = ["assignedAt", "deliveredAt", "createdAt", "timestamp"].map(
+    (field) => {
+      const parts = [];
+      if (bounds) {
+        parts.push(where(field, ">=", bounds.start));
+        parts.push(where(field, "<=", bounds.end));
+      }
+      parts.push(orderBy(field, "desc"));
+      parts.push(limit(RIDER_JOB_SCAN_LIMIT));
+      return onSnapshot(
+        query(ordersRef, ...parts),
+        (snap) => {
+          if (stopped) return;
+          docsByField.set(field, snap.docs);
+          callback(
+            mergeJobSnaps([...docsByField.values()].flat())
+              .filter(isVisibleRiderJob)
+              .filter((row) => inDateRange(row, bounds))
+          );
+        },
+        onError
+      );
+    }
+  );
+  return () => {
+    stopped = true;
+    unsubscribes.forEach((unsubscribe) => unsubscribe());
+  };
 }
 
 export async function fetchJobsForRider(riderId, startDate, endDate) {
@@ -108,7 +156,7 @@ export async function fetchJobsForRider(riderId, startDate, endDate) {
     getDocs(query(ordersRef, where("deliveredByRiderId", "==", id))),
   ]);
   let jobs = mergeJobSnaps([...assignedSnap.docs, ...deliveredSnap.docs]).filter(
-    (row) => row.assignedRiderId === id
+    (row) => row.assignedRiderId === id && isVisibleRiderJob(row)
   );
   if (jobs.length === 0) {
     const ranged = await fetchJobsInDateRange(startDate, endDate);

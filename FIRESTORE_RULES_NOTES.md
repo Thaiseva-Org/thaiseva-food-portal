@@ -66,7 +66,6 @@ If you need a rules change, it should land in one of these **food-related** plac
 | **`orders`** | Tenant/admin reads; create and update false | Order routing, status, rider, and money stay in Functions |
 | **`foodRestaurantChats`** | Master Admin reads all; restaurant owner reads/writes only its own document | Keeps restaurant support separate from customer support |
 | **`foodCustomerSupportChats`** | Master Admin + owning customer's read | Dedicated food-support inbox; restaurant owners have no access |
-| **`dineInBookings`** | Tenant/admin reads; create and update false | Reservation mutations use validated callable functions |
 | **`users`** | Food signup OR; lock `isMasterAdmin` / `isRestaurantAdmin` on self-update; optional `isFoodAdmin` read | Onboarding |
 | **`restaurants`** | Owner create; update with locked money/verify fields | Commission integrity |
 | **`restaurantApplications`** | Master/food-admin read; **write false** | Public apply via Functions; user created on accept |

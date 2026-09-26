@@ -48,6 +48,8 @@ import {
   shiftWeek,
   monthRange,
   shiftMonth,
+  yearRange,
+  shiftYear,
   listRecentWeeks,
 } from "../src/utils/weekRange.js";
 
@@ -58,6 +60,12 @@ import {
 
 import { extractCityFromPlace } from "../src/utils/location.js";
 import { getOwnerUid, getMenuRootId } from "../src/utils/tenant.js";
+import {
+  buildFinanceCsvReport,
+  csvText,
+  csvMoney,
+  safeCsvFilenamePart,
+} from "../src/utils/financeCsv.js";
 
 test("orderStatus: mappings, normalization, and filtering", () => {
   assert.equal(detailStatusKey("New Order"), "new");
@@ -256,6 +264,16 @@ test("weekRange: local calendar calculations and navigation", () => {
   assert.equal(shiftedMonth.startDate, "2026-10-01");
   assert.equal(shiftedMonth.endDate, "2026-10-31");
 
+  const currentYear = yearRange(new Date(2026, 0, 1));
+  assert.equal(currentYear.startDate, "2026-01-01");
+  assert.equal(currentYear.endDate, "2026-12-31");
+  assert.equal(currentYear.label, "Year 2026");
+
+  const shiftedYear = shiftYear("2026-01-01", -1);
+  assert.equal(shiftedYear.startDate, "2025-01-01");
+  assert.equal(shiftedYear.endDate, "2025-12-31");
+  assert.equal(shiftedYear.label, "Year 2025");
+
   const recentWeeks = listRecentWeeks(4);
   assert.equal(recentWeeks.length, 4);
   assert.ok(recentWeeks[0].label.includes("This week"));
@@ -273,8 +291,8 @@ test("adminIdentity: email normalization and claims verification", () => {
   // Claims check
   assert.equal(isMasterAdminIdentity({ foodRole: "masterAdmin" }, ""), true);
   assert.equal(isMasterAdminIdentity({ foodMasterAdmin: true }, ""), true);
-  assert.equal(isMasterAdminIdentity({ role: "masterAdmin" }, ""), true);
-  assert.equal(isMasterAdminIdentity({ masterAdmin: true }, ""), true);
+  assert.equal(isMasterAdminIdentity({ role: "masterAdmin" }, ""), false);
+  assert.equal(isMasterAdminIdentity({ masterAdmin: true }, ""), false);
   assert.equal(isMasterAdminIdentity({ foodRole: "restaurantOwner" }, "owner@test.com"), false);
 });
 
@@ -317,5 +335,180 @@ test("tenant: getOwnerUid and getMenuRootId resolution", () => {
 
   assert.equal(getMenuRootId({ currentUser: { uid: "user-123" } }), "user-123");
   assert.equal(getMenuRootId({}), null);
+});
+
+test("financeCsv: helper formatting functions", () => {
+  assert.equal(csvText("=SUM(A1:A10)"), "'=SUM(A1:A10)");
+  assert.equal(csvText("+cmd|' /C calc'!A0"), "'+cmd|' /C calc'!A0");
+  assert.equal(csvText("-100"), "'-100");
+  assert.equal(csvText("@test"), "'@test");
+  assert.equal(csvText("  Standard Text  "), "Standard Text");
+  assert.equal(csvText(null), "");
+  assert.equal(csvText(undefined), "");
+
+  assert.equal(csvMoney(123.456), "123.46");
+  assert.equal(csvMoney("50"), "50.00");
+  assert.equal(csvMoney(null), "0.00");
+  assert.equal(csvMoney(NaN), "0.00");
+
+  assert.equal(safeCsvFilenamePart("Bangkok Spice & Kitchen?"), "Bangkok-Spice-&-Kitchen-");
+  assert.equal(safeCsvFilenamePart(""), "restaurant");
+});
+
+test("financeCsv: buildFinanceCsvReport generates unified multi-section CSV report", () => {
+  // Empty delivered returns empty array
+  assert.deepEqual(buildFinanceCsvReport({ delivered: [] }), []);
+
+  const sampleDelivered = [
+    {
+      OrderID: "ORD-001",
+      Date: "2026-09-15 12:30:00",
+      CustomerName: "Alice",
+      paymentMethod: "PromptPay",
+      Status: "Delivered",
+    },
+    {
+      OrderID: "ORD-002",
+      Date: "2026-09-16 13:45:00",
+      CustomerName: "Bob",
+      paymentMethod: "Cash",
+      Status: "Delivered",
+    },
+  ];
+
+  const moneyMap = {
+    "ORD-001": {
+      gross: 400,
+      adminShare: 80,
+      partnerShare: 320,
+      commissionBase: 360,
+      deliveryCharge: 40,
+      rate: 15,
+      source: "locked",
+    },
+    "ORD-002": {
+      gross: 600,
+      adminShare: 120,
+      partnerShare: 480,
+      commissionBase: 550,
+      deliveryCharge: 50,
+      rate: 15,
+      source: "offer",
+    },
+  };
+
+  const periodicBreakdown = [
+    {
+      key: "2026-09-15",
+      label: "Tue, Sep 15",
+      dateRange: "2026-09-15",
+      ordersCount: 1,
+      gmv: 400,
+      foodSubtotal: 360,
+      deliveryFees: 40,
+      commissionBase: 360,
+      foodCommission: 40,
+      platform: 80,
+      payout: 320,
+    },
+    {
+      key: "2026-09-16",
+      label: "Wed, Sep 16",
+      dateRange: "2026-09-16",
+      ordersCount: 1,
+      gmv: 600,
+      foodSubtotal: 550,
+      deliveryFees: 50,
+      commissionBase: 550,
+      foodCommission: 70,
+      platform: 120,
+      payout: 480,
+    },
+  ];
+
+  const totals = {
+    gmv: 1000,
+    platform: 200,
+    payout: 800,
+    commissionBase: 910,
+    deliveryFees: 90,
+    foodCommission: 110,
+    discountedFoodSubtotal: 910,
+    rate: 15,
+  };
+
+  const report = buildFinanceCsvReport({
+    restaurant: { name: "Bangkok Bistro", id: "rest-99" },
+    ownerId: "owner-99",
+    mode: "week",
+    range: { startDate: "2026-09-14", endDate: "2026-09-20" },
+    activeOffer: false,
+    defaultRate: 15,
+    periodicBreakdown,
+    delivered: sampleDelivered,
+    moneyFor: (item) => moneyMap[item.OrderID],
+    totals,
+    generatedAt: "2026-09-22 18:00:00",
+  });
+
+  // Verify structure is 2D array
+  assert.equal(Array.isArray(report), true);
+  assert.equal(report.every(Array.isArray), true);
+
+  // Header section
+  assert.deepEqual(report[0], ["THAISEVA RESTAURANT FINANCE REPORT"]);
+  assert.deepEqual(report[1], ["Restaurant Name", "Bangkok Bistro"]);
+  assert.deepEqual(report[2], ["Restaurant ID", "rest-99"]);
+  assert.deepEqual(report[3], ["Period Mode", "WEEK"]);
+  assert.deepEqual(report[4], ["Date Range", "2026-09-14 to 2026-09-20"]);
+  assert.deepEqual(report[5], ["Report Generated", "2026-09-22 18:00:00"]);
+  assert.deepEqual(report[6], ["Commission Setup", "Standard / Recorded (15%)"]);
+
+  // Section 1: Periodic breakdown
+  const section1Index = report.findIndex((row) => row[0] === "=== 1. PERIOD SUMMARY BREAKDOWN ===");
+  assert.ok(section1Index > 0);
+  assert.equal(report[section1Index + 1][0], "Period");
+  assert.equal(report[section1Index + 1][3], "Customer Total (THB)");
+  assert.equal(report[section1Index + 2][0], "Tue, Sep 15");
+  assert.equal(report[section1Index + 2][2], 1); // 1 order
+  assert.equal(report[section1Index + 2][3], "400.00"); // Gross
+
+  // Subtotal for Section 1
+  const subtotalRow = report.find((row) => row[0] === "Period Breakdown Total");
+  assert.ok(subtotalRow);
+  assert.equal(subtotalRow[2], 2); // 2 orders
+  assert.equal(subtotalRow[3], "1000.00"); // Gross
+
+  // Section 2: All Delivered Orders
+  const section2Index = report.findIndex((row) => row[0] === "=== 2. ALL DELIVERED ORDERS ===");
+  assert.ok(section2Index > 0);
+  assert.equal(report[section2Index + 1][0], "Order ID");
+  assert.equal(report[section2Index + 1][6], "Customer Total (THB)");
+  // Order 1 row
+  const ord1Row = report[section2Index + 2];
+  assert.equal(ord1Row[0], "#ORD-001");
+  assert.equal(ord1Row[3], "Alice");
+  assert.equal(ord1Row[6], "400.00"); // Customer Total
+  assert.equal(ord1Row[7], "360.00"); // Discounted Food Subtotal
+  assert.equal(ord1Row[9], "40.00"); // Delivery Charge
+  assert.equal(ord1Row[11], "40.00"); // Food Commission
+  assert.equal(ord1Row[12], "80.00"); // Platform Total
+  assert.equal(ord1Row[13], "320.00"); // Restaurant Payout
+  assert.equal(ord1Row[14], "Recorded"); // Accounting
+
+  // Section 3: Grand Total Summary
+  const section3Index = report.findIndex((row) => row[0] === "=== 3. GRAND TOTAL SUMMARY ===");
+  assert.ok(section3Index > 0);
+  assert.deepEqual(report[section3Index + 1], ["Metric", "Value"]);
+  assert.deepEqual(report[section3Index + 2], ["Total Delivered Orders", 2]);
+  assert.deepEqual(report[section3Index + 3], ["Total Customer Gross Sales (THB)", "1000.00"]);
+  assert.deepEqual(report[section3Index + 4], ["Total Discounted Food Subtotal (THB)", "910.00"]);
+  assert.deepEqual(report[section3Index + 5], ["Total Delivery Charges (THB)", "90.00"]);
+  assert.deepEqual(report[section3Index + 6], ["Total Original Commission Base (THB)", "910.00"]);
+  assert.deepEqual(report[section3Index + 7], ["Effective Commission Rate (%)", "15%"]);
+  assert.deepEqual(report[section3Index + 8], ["Total Food Commission (THB)", "110.00"]);
+  assert.deepEqual(report[section3Index + 9], ["Total Platform Share (THB)", "200.00"]);
+  assert.deepEqual(report[section3Index + 10], ["Total Restaurant Payout (THB)", "800.00"]);
+  assert.deepEqual(report[section3Index + 11], ["Commission Pricing Applied", "Standard / Recorded (15%)"]);
 });
 

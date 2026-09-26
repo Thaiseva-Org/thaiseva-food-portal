@@ -48,6 +48,7 @@ const Template = ({
   itemId,
   cuisine = "",
   setCuisine,
+  cancelPath = partnerPath("foodItem"),
 }) => {
   const modalRef = useRef(null);
   const fileInputId = useId();
@@ -146,13 +147,35 @@ const Template = ({
   }
 
   return (
-    <div className="page-shell px-4 py-5 sm:px-5 lg:px-6 pb-24 sm:pb-6">
+    <div
+      className={
+        isEdit
+          ? "fixed inset-0 z-50 overflow-y-auto bg-brand-950/60 p-0 backdrop-blur-[2px] sm:p-5"
+          : "page-shell px-4 py-5 sm:px-5 lg:px-6 pb-24 sm:pb-6"
+      }
+    >
+      <div
+        className={
+          isEdit
+            ? "relative mx-auto min-h-full w-full max-w-5xl bg-page-gradient px-4 py-5 shadow-2xl sm:min-h-0 sm:rounded-3xl sm:px-5 lg:px-6"
+            : ""
+        }
+      >
+      {isEdit && (
+        <Link
+          to={cancelPath}
+          className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white text-ink shadow-sm transition hover:rotate-90 hover:bg-neutral-50 focus-ring"
+          aria-label="Close edit item"
+        >
+          <i className="bi bi-x-lg" aria-hidden="true" />
+        </Link>
+      )}
       {/* Header */}
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <nav className="flex flex-wrap items-center gap-1.5 text-sm">
             <Link
-              to={partnerPath("foodItem")}
+              to={cancelPath}
               className="inline-flex items-center gap-1 font-semibold text-brand-600 hover:text-brand-700 focus-ring rounded"
             >
               <i className="bi bi-arrow-left text-xs" aria-hidden="true" />
@@ -437,15 +460,19 @@ const Template = ({
                     max={100}
                     value={discount}
                     onWheel={(e) => e.target.blur()}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={() => {
+                      if (discount === "") setDiscount(0);
+                    }}
                     onChange={(e) => {
-                      const inputValue = e.target.value;
+                      const inputValue = e.target.value.replace(/^0+(?=\d)/, "");
                       if (
                         inputValue === "" ||
                         (/^\d{0,3}$/.test(inputValue) &&
                           Number(inputValue) >= 0 &&
                           Number(inputValue) <= 100)
                       ) {
-                        setDiscount(inputValue === "" ? 0 : inputValue);
+                        setDiscount(inputValue);
                       }
                     }}
                     className={fieldClass(fieldErrors.discount)}
@@ -659,7 +686,7 @@ const Template = ({
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 p-3 backdrop-blur sm:hidden">
           <div className="mx-auto flex max-w-lg gap-2">
             <Link
-              to={partnerPath("foodItem")}
+              to={cancelPath}
               className="btn-outline flex-1 !min-h-11 text-center"
             >
               Cancel
@@ -674,6 +701,7 @@ const Template = ({
           </div>
         </div>
       </form>
+      </div>
 
       {dropdownOpen && (
         <div

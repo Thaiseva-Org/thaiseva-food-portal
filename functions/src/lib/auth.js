@@ -25,17 +25,13 @@ function getRoleFromToken(token) {
   if (
     MASTER_ADMIN_EMAILS.has(email) ||
     token.foodRole === ROLES.MASTER ||
-    token.foodMasterAdmin === true ||
-    token.role === ROLES.MASTER ||
-    token.masterAdmin === true
+    token.foodMasterAdmin === true
   ) {
     return ROLES.MASTER;
   }
   if (
     token.foodRole === ROLES.OWNER ||
-    token.foodRestaurantOwner === true ||
-    token.role === ROLES.OWNER ||
-    token.restaurantOwner === true
+    token.foodRestaurantOwner === true
   ) {
     return ROLES.OWNER;
   }

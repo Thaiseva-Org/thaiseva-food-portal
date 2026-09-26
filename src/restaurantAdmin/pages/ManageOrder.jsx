@@ -42,12 +42,15 @@ const matchesSearch = (item, query) => {
   return haystack.includes(query);
 };
 
-const nextStatusFor = (status, { canDeliver = false, hasRider = false } = {}) => {
-  if (status === ORDER_STATUS.NEW && canDeliver) return ORDER_STATUS.CONFIRM;
-  if (status === ORDER_STATUS.CONFIRM) return ORDER_STATUS.PREPARING;
-  if (status === ORDER_STATUS.PREPARING) return ORDER_STATUS.READY;
-  if (status === ORDER_STATUS.READY && hasRider && canDeliver) return ORDER_STATUS.OUT;
-  if (canDeliver && status === ORDER_STATUS.OUT) return ORDER_STATUS.DELIVERED;
+const nextStatusFor = (
+  status,
+  { canConfirmDelivery = false, canManageKitchen = false, hasRider = false } = {}
+) => {
+  if (status === ORDER_STATUS.NEW && canConfirmDelivery) return ORDER_STATUS.CONFIRM;
+  if (status === ORDER_STATUS.CONFIRM && canManageKitchen) return ORDER_STATUS.PREPARING;
+  if (status === ORDER_STATUS.PREPARING && canManageKitchen) return ORDER_STATUS.READY;
+  if (status === ORDER_STATUS.READY && hasRider && canManageKitchen) return ORDER_STATUS.OUT;
+  if (status === ORDER_STATUS.OUT && canConfirmDelivery) return ORDER_STATUS.DELIVERED;
   return null;
 };
 
@@ -426,10 +429,17 @@ const ManageOrder = () => {
                           View
                         </Link>
                         {(() => {
-                          const canDeliver = kitchen.isPlatformKitchen && kitchen.isMasterAdmin;
+                          const canConfirmDelivery = kitchen.isMasterAdmin;
+                          const canManageKitchen =
+                            isRestaurantAdmin || kitchen.isPlatformKitchen;
                           const hasRider = Boolean(item.assignedRiderId || item.DeliveryPartner?.id);
-                          const nextStatus = nextStatusFor(item.Status, { canDeliver, hasRider });
-                          const nextLabel = nextActionLabel(item.Status, { canDeliver, hasRider });
+                          const actionOptions = {
+                            canConfirmDelivery,
+                            canManageKitchen,
+                            hasRider,
+                          };
+                          const nextStatus = nextStatusFor(item.Status, actionOptions);
+                          const nextLabel = nextActionLabel(item.Status, actionOptions);
                           if (!nextStatus || !nextLabel) return null;
                           const isLoading = actionLoadingId === item.OrderID;
                           return (

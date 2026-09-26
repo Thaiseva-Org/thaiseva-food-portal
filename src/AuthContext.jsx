@@ -40,8 +40,6 @@ function deriveRolesFromClaimsAndProfile(claims, roleData, resData, uid, email) 
     !isMasterAdmin &&
     (claims?.foodRole === "restaurantOwner" ||
       claims?.foodRestaurantOwner === true ||
-      claims?.role === "restaurantOwner" ||
-      claims?.restaurantOwner === true ||
       (roleData?.isRestaurantAdmin === true &&
         resData?.status === "Verified" &&
         resData?.ownerId === uid));

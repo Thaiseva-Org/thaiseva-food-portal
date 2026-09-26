@@ -127,7 +127,7 @@ graph TD
 ---
 
 ## 7. Applications & Domain Modules
-Detailed module specifications are provided in [docs/ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md). The main modules are Application Manager, Single Centralized Menu Catalog, Kitchen Order Board, Courier Dispatch, Official Platform Kitchen, Dine-In Booking Engine, and Support Chat.
+Detailed module specifications are provided in [docs/ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md). The main modules are Application Manager, Decentralized Partner Menu Catalogs, Kitchen Order Board, Courier Dispatch, Official Platform Kitchen, Dine-In Booking Engine, and Support Chat.
 
 ---
 
@@ -390,12 +390,15 @@ Client Browser -> React 19 SPA -> Auth & Claims -> Cloud Functions Callables -> 
 | Business Logic | Complete | Workflows & Formulas in BUSINESS_LOGIC.md |
 | Integrations | Complete | Storage, Maps, App Check documented |
 | Monitoring | Complete | Audit logging & pre-flight checks documented |
+| Client Overview | Complete | Non-technical guide in Thaiseva_Client_Guide.md |
+| Customer App | Complete | Integration details in CUSTOMER_APP_INTEGRATION.md |
+| Backup & Recovery | Complete | Policies documented in BACKUP_AND_RECOVERY.md |
+| Payment Gateways | Complete | Integrations in PAYMENT_GATEWAYS.md |
 
 ---
 
 ## 55. Information Missing From Repository
-* **Automated Cloud Backup Schedules**: GCS automated export bucket policy is **Not confirmed from current repository**.
-* **Production Payment Gateway Credentials**: Third-party bank payment gateway credentials are managed outside version control (**Not confirmed from current repository**).
+* *All previously missing information regarding Cloud Backup Schedules and Payment Gateways has now been documented in `docs/BACKUP_AND_RECOVERY.md` and `docs/PAYMENT_GATEWAYS.md` respectively.*
 
 
 ---

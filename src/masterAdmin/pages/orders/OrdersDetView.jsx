@@ -1,5 +1,5 @@
 import OrderPayment from "../../../components/OrderPayment";
-import { normalizeOrder } from "../../../utils/orderData";
+import { normalizeOrder, formatDisplayOrderId } from "../../../utils/orderData";
 import { collection, doc, getDoc, getDocs, orderBy, query, Timestamp } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -13,6 +13,7 @@ import {
 } from "../../../api";
 import { ORDER_STATUS } from "../../../utils/orderStatus";
 import { hasAssignedRider, riderLabel } from "../../../utils/orderRider";
+import { openInvoiceWindow } from "../../../utils/invoiceHtml";
 
 const getStatusBadgeStyle = (status) => {
   switch (status) {
@@ -37,16 +38,24 @@ const getStatusBadgeStyle = (status) => {
 
 const getNextStatus = (current) => {
   if (current === ORDER_STATUS.NEW) return ORDER_STATUS.CONFIRM;
-  if (current === ORDER_STATUS.READY) return ORDER_STATUS.OUT;
   if (current === ORDER_STATUS.OUT) return ORDER_STATUS.DELIVERED;
   return null;
 };
 
 const getNextStatusLabel = (current) => {
   if (current === ORDER_STATUS.NEW) return "Confirm Order";
-  if (current === ORDER_STATUS.READY) return "Mark Out for Delivery";
   if (current === ORDER_STATUS.OUT) return "Confirm Delivery";
   return null;
+};
+
+const mapsUrlFor = (customer = {}) => {
+  if (customer.googleMapUrl) return customer.googleMapUrl;
+  const point = customer.location || {};
+  const lat = point.lat ?? point.latitude;
+  const lng = point.lng ?? point.longitude;
+  return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`
+    : "";
 };
 
 const OrdersDetView = () => {
@@ -122,6 +131,9 @@ const OrdersDetView = () => {
         resId: orderData.Restaurant?.id,
         ownerId: orderData.Restaurant?.ownerId,
         restaurantName: orderData.Restaurant?.name,
+        restaurantImageUrl: orderData.Restaurant?.imageUrl || "",
+        restaurantLocation: orderData.Restaurant?.location || "",
+        foodSubtotal: orderData.foodSubtotal ?? null,
         accounting: orderData.accounting || null,
       });
       setOrderDetails(orderData.Items || []);
@@ -226,13 +238,17 @@ const OrdersDetView = () => {
 
   const handleMasterConfirm = async () => {
     if (actionLoading) return;
+    if (!selectedRiderId) {
+      setActionError("Choose an active rider before confirming the order.");
+      return;
+    }
     setActionError(null);
     try {
       setActionLoading(true);
       await masterConfirmOrder({
         orderId: id,
         restaurantUid: completeOrderDetails.ownerId,
-        riderId: selectedRiderId || undefined,
+        riderId: selectedRiderId,
       });
       await fetchOrders();
     } catch (err) {
@@ -318,12 +334,51 @@ const OrdersDetView = () => {
     const itemTotal = price * (1 - discount / 100) * qty;
     return sum + itemTotal;
   }, 0);
+  const originalFoodSubtotal = orderDetails.reduce((sum, item) => {
+    const qty = Number(item.Quantity || item.quantity || 1);
+    const price = Number(item.Price || item.price || 0);
+    return sum + (price * qty);
+  }, 0);
 
   const deliveryFee = Number(completeOrderDetails.deliveryCharge || 0);
   const totalAmount = Number(completeOrderDetails.Amount || (foodSubtotal + deliveryFee));
   const commissionPct = Number(completeOrderDetails.comission || 12);
-  const adminShare = Math.round((foodSubtotal * commissionPct) / 100 * 100) / 100;
+  const adminShare = Math.round((originalFoodSubtotal * commissionPct) / 100 * 100) / 100;
   const partnerShare = Math.round((foodSubtotal - adminShare) * 100) / 100;
+
+  const handlePrintInvoice = () => {
+    const customer = completeOrderDetails.CustomerDetails || {};
+    openInvoiceWindow({
+      invoiceNumber: id,
+      title: "Customer Invoice",
+      invoiceDate: new Date().toLocaleDateString(),
+      orderDate: completeOrderDetails.Date,
+      status: currentStatus,
+      billedTo: {
+        name: customer.name,
+        address: customer.address || completeOrderDetails.Location,
+        phone: customer.phone || customer.phoneNumber,
+        email: customer.email,
+      },
+      suppliedBy: {
+        name: completeOrderDetails.restaurantName || restaurantDetails?.name,
+        address:
+          completeOrderDetails.restaurantLocation ||
+          restaurantDetails?.location ||
+          restaurantDetails?.address,
+        phone: restaurantDetails?.phone || restaurantDetails?.contact,
+        email: restaurantDetails?.email,
+      },
+      items: orderDetails,
+      subtotal: foodSubtotal,
+      deliveryFee,
+      total: totalAmount,
+      contactInfo: {
+        email: "thaiseva@gmail.com",
+        phone: "01723646378",
+      },
+    });
+  };
 
   return (
     <div className="px-4 lg:px-8 py-8 max-w-7xl mx-auto space-y-8">
@@ -340,11 +395,12 @@ const OrdersDetView = () => {
           </Link>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                Order #{id}
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight" title={`Full Order ID: ${id}`}>
+                Order #{formatDisplayOrderId(id)}
               </h1>
               <button
                 onClick={copyOrderId}
+                title={`Copy Order ID: ${id}`}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
               >
                 <i className={`bi ${copied ? "bi-check2 text-emerald-600" : "bi-copy"}`}></i>
@@ -359,7 +415,7 @@ const OrdersDetView = () => {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => window.print()}
+            onClick={handlePrintInvoice}
             className="hidden sm:inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
           >
             <i className="bi bi-printer"></i> Print Invoice
@@ -488,7 +544,7 @@ const OrdersDetView = () => {
               <button type="button" className="btn-danger mb-4" disabled={actionLoading} onClick={handleCancel}>Cancel order</button>
             )}
             {currentStatus === "New Order" ? (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div>
                   <p className="text-xs font-bold text-slate-700">Restaurant</p>
                   <p className="text-sm mt-2">{completeOrderDetails.restaurantName}</p>
@@ -522,24 +578,13 @@ const OrdersDetView = () => {
                   </select>
                 </div>
 
-                {/* Delivery Fee Input */}
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
-                    Delivery charge
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-amber-900">
-                    {Number(completeOrderDetails.Amount) < 1000 ? "฿100" : "฿0"}
-                  </p>
-                  <p className="text-xs text-amber-700">Automatically applied for food subtotals below ฿1,000.</p>
-                </div>
-
                 {/* Action Button */}
                 <div>
                   <button
                     className="w-full py-2.5 px-4 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
                     type="button"
                     disabled={
-                      actionLoading
+                      actionLoading || !selectedRiderId
                     }
                     onClick={handleMasterConfirm}
                   >
@@ -650,7 +695,7 @@ const OrdersDetView = () => {
               <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
                 <i className="bi bi-shop"></i> Restaurant Details
               </span>
-              {completeOrderDetails.ownerId && currentStatus !== "New Order" && (
+              {completeOrderDetails.ownerId && (
                 <Link
                   to={`/foodAdmin/restaurantStats/${completeOrderDetails.ownerId}`}
                   className="text-xs font-semibold bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg transition"
@@ -660,25 +705,19 @@ const OrdersDetView = () => {
               )}
             </div>
             <div className="p-5 space-y-4">
-              {currentStatus === "New Order" ? (
-                <div className="space-y-2">
+              {currentStatus === "New Order" && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-amber-500 animate-ping"></span>
-                    <h3 className="font-bold text-amber-700 text-base">
-                      Awaiting confirmation
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                    <h3 className="font-bold text-amber-800 text-sm">
+                      Awaiting Admin Confirmation
                     </h3>
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed">
                     This order has been routed to the restaurant and is awaiting admin confirmation.
                   </p>
-                  {completeOrderDetails.restaurantName && (
-                    <p className="text-[11px] text-slate-400 italic pt-1">
-                      Restaurant: {completeOrderDetails.restaurantName}
-                    </p>
-                  )}
                 </div>
-              ) : (
-                <>
+              )}
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-slate-900 text-base">
@@ -686,13 +725,16 @@ const OrdersDetView = () => {
                       </h3>
                       <p className="text-xs text-slate-500 mt-1 flex items-start gap-1.5">
                         <i className="bi bi-geo-alt-fill text-sky-500 shrink-0 mt-0.5"></i>
-                        {restaurantDetails?.location || "Address unavailable"}
+                        {restaurantDetails?.location || restaurantDetails?.address || completeOrderDetails.restaurantLocation || "Address unavailable"}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        ID: #{completeOrderDetails.resId || "N/A"}
                       </p>
                     </div>
-                    {restaurantDetails?.imageUrl && (
+                    {(restaurantDetails?.imageUrl || restaurantDetails?.photo || completeOrderDetails.restaurantImageUrl) && (
                       <img
-                        src={restaurantDetails.imageUrl}
-                        alt={restaurantDetails.name}
+                        src={restaurantDetails?.imageUrl || restaurantDetails?.photo || completeOrderDetails.restaurantImageUrl}
+                        alt={restaurantDetails?.name || completeOrderDetails.restaurantName || "Restaurant"}
                         className="w-14 h-14 object-cover rounded-xl border border-slate-100 shadow-xs"
                       />
                     )}
@@ -719,8 +761,6 @@ const OrdersDetView = () => {
                       </span>
                     </div>
                   </div>
-                </>
-              )}
             </div>
           </div>
 
@@ -750,6 +790,56 @@ const OrdersDetView = () => {
                   <i className="bi bi-pin-map text-rose-500 mr-1.5"></i>
                   {completeOrderDetails.Location}
                 </p>
+              </div>
+              {(completeOrderDetails.CustomerDetails?.saveAddressAs || completeOrderDetails.CustomerDetails?.locationType) && (
+                <span className="inline-flex px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 font-semibold">
+                  {completeOrderDetails.CustomerDetails.saveAddressAs || completeOrderDetails.CustomerDetails.locationType}
+                </span>
+              )}
+              {completeOrderDetails.CustomerDetails?.street && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-400">Street / House no.:</span>
+                  <span className="font-medium text-right">{completeOrderDetails.CustomerDetails.street}</span>
+                </div>
+              )}
+              {completeOrderDetails.CustomerDetails?.buildingFloor && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-400">Building / Floor:</span>
+                  <span className="font-medium text-right">{completeOrderDetails.CustomerDetails.buildingFloor}</span>
+                </div>
+              )}
+              {completeOrderDetails.CustomerDetails?.landmark && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-400">Landmark:</span>
+                  <span className="font-medium text-right">{completeOrderDetails.CustomerDetails.landmark}</span>
+                </div>
+              )}
+              {completeOrderDetails.CustomerDetails?.deliveryInstructions && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                  <p className="font-bold mb-1"><i className="bi bi-chat-left-text mr-1.5"></i>Delivery Instructions</p>
+                  <p>{completeOrderDetails.CustomerDetails.deliveryInstructions}</p>
+                </div>
+              )}
+              {mapsUrlFor(completeOrderDetails.CustomerDetails) && (
+                <a href={mapsUrlFor(completeOrderDetails.CustomerDetails)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-sky-700 hover:underline">
+                  <i className="bi bi-map"></i> Open in Google Maps
+                </a>
+              )}
+              {completeOrderDetails.CustomerDetails?.locationPhotos?.length > 0 && (
+                <div>
+                  <span className="text-slate-400 block mb-2">Location Photos:</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {completeOrderDetails.CustomerDetails.locationPhotos.map((photo, index) => (
+                      <a key={`${photo}-${index}`} href={photo} target="_blank" rel="noreferrer">
+                        <img src={photo} alt={`Delivery location ${index + 1}`} className="w-full aspect-square object-cover rounded-lg border border-slate-200" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400">Customer UID:</span>
+                <span className="font-mono text-[11px] break-all text-right">{completeOrderDetails.CustomerDetails?.id || "N/A"}</span>
               </div>
               <div className="flex items-center justify-between pt-1">
                 <span className="text-slate-400">Phone Contact:</span>
@@ -862,6 +952,11 @@ const OrdersDetView = () => {
                                       {item.Label || item.category}
                                     </span>
                                   )}
+                                  {(item.ItemId || item.itemId || item.id) && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                      #{String(item.ItemId || item.itemId || item.id).replace(/^#/, "")}
+                                    </span>
+                                  )}
                                   {discount > 0 && (
                                     <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-100">
                                       -{discount}% OFF
@@ -899,6 +994,11 @@ const OrdersDetView = () => {
               <div className="flex items-center justify-between text-sm text-slate-600">
                 <span>Food Items Subtotal:</span>
                 <span className="font-semibold text-slate-800">฿{foodSubtotal.toFixed(2)}</span>
+              </div>
+
+              <div className="flex items-center justify-between text-sm text-slate-600">
+                <span>Original-price commission base:</span>
+                <span className="font-semibold text-slate-800">฿{originalFoodSubtotal.toFixed(2)}</span>
               </div>
 
               <div className="flex items-center justify-between text-sm text-slate-600">

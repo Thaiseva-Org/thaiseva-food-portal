@@ -4,11 +4,13 @@ import {
   collection,
   query,
   where,
-  getCountFromServer,
   startAfter,
   limit,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
+
+import { isPlatformOwnerId } from "../utils/platformRestaurant";
 
 const PAGE_SIZE = 10;
 
@@ -22,46 +24,115 @@ function dayBounds(startDate, endDate) {
 }
 
 /**
- * Records queries stay on existing indexes:
- * - restaurant: Restaurant.ownerId + timestamp desc
- * - platform: timestamp range + orderBy timestamp (single-field)
- * Do not filter currentStatus in Firestore — that needs a composite
- * index (currentStatus + timestamp) that is not in production.
+ * Records queries stay on existing deployed indexes:
+ * - restaurant: Restaurant.ownerId + createdAt desc
+ * - platform: createdAt range + orderBy createdAt (single-field)
+ * We do not filter currentStatus in Firestore query to avoid index failures.
  */
-function recordsQuery({ restaurantId, start, end, pageSize, cursor }) {
+export function recordsQuery({
+  restaurantId,
+  start,
+  end,
+  pageSize,
+  cursor,
+  dateField = "createdAt",
+}) {
   const ordersRef = collection(db, "orders");
   const parts = [];
   if (restaurantId) {
     parts.push(where("Restaurant.ownerId", "==", restaurantId));
   }
   if (start && end) {
-    parts.push(where("timestamp", ">=", start));
-    parts.push(where("timestamp", "<=", end));
+    parts.push(where(dateField, ">=", start));
+    parts.push(where(dateField, "<=", end));
   }
-  parts.push(orderBy("timestamp", "desc"));
+  parts.push(orderBy(dateField, "desc"));
   if (cursor) parts.push(startAfter(cursor));
   if (pageSize) parts.push(limit(pageSize));
   return query(ordersRef, ...parts);
 }
 
+function recordTime(snap) {
+  const data = snap.data() || {};
+  const value = data.createdAt || data.timestamp;
+  if (value?.toMillis) return value.toMillis();
+  if (value?.toDate) return value.toDate().getTime();
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mergeRecordDocs(groups) {
+  const byId = new Map();
+  for (const docs of groups) {
+    for (const snap of docs) byId.set(snap.id, snap);
+  }
+  return [...byId.values()].sort((a, b) => recordTime(b) - recordTime(a));
+}
+
+async function fetchCompatibleRecordDocs({ restaurantId, start, end }) {
+  const groups = await Promise.all(
+    ["createdAt", "timestamp"].map(async (dateField) => {
+      const snapshot = await getDocs(
+        recordsQuery({ restaurantId, start, end, dateField })
+      );
+      // Documents carrying both fields belong to the createdAt group. This
+      // avoids duplicate rows while retaining timestamp-only legacy orders.
+      return snapshot.docs.filter(
+        (snap) => dateField === "createdAt" || snap.data()?.createdAt == null
+      );
+    })
+  );
+  return mergeRecordDocs(groups);
+}
+
+export async function fetchVerifiedRestaurantsList() {
+  try {
+    const q = query(
+      collection(db, "restaurants"),
+      where("status", "==", "Verified")
+    );
+    const snap = await getDocs(q);
+    const list = snap.docs
+      .map((docSnap) => {
+        const data = docSnap.data() || {};
+        return {
+          id: docSnap.id,
+          ownerId: data.ownerId || docSnap.id,
+          name: data.name || "Unnamed Restaurant",
+          location: data.location || data.address || "",
+          active: data.active ?? true,
+        };
+      })
+      .filter((r) => !isPlatformOwnerId(r.ownerId))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    return list;
+  } catch (error) {
+    console.error("Error fetching verified restaurants list:", error);
+    throw error;
+  }
+}
+
 function mapRecordDoc(snap) {
   const orderData = snap.data() || {};
-  const date = orderData.timestamp
-    ? orderData.timestamp.toDate().toLocaleString()
+  const recordedAt = orderData.createdAt || orderData.timestamp;
+  const date = recordedAt?.toDate
+    ? recordedAt.toDate().toLocaleString()
     : "Unknown";
   return {
     OrderID: snap.id || "-",
     Date: date || "-",
     CustomerName: orderData.Receiver?.name || "-",
-    CustomerContact: orderData.Receiver?.phone || "-",
+    CustomerContact:
+      orderData.Receiver?.phoneNumber || orderData.Receiver?.phone || "-",
     CustomerEmail: orderData.Receiver?.email || "-",
-    Location: orderData.Location || "-",
+    Location: orderData.Receiver?.address || orderData.Location || "-",
     Amount: orderData.Amount || "0.00",
     Status: orderData.currentStatus || "-",
     restaurantName: orderData?.Restaurant?.name || "-",
     restaurantID: orderData?.RestaurantId || orderData?.Restaurant?.id || "-",
     ownerId: orderData?.Restaurant?.ownerId || "",
-    comission: orderData?.comission || 0,
+    comission:
+      orderData?.accounting?.commissionPct ?? orderData?.comission ?? 0,
     accounting: orderData?.accounting || null,
     isClear: orderData?.isPaymentClear || false,
   };
@@ -74,13 +145,12 @@ export const fetchOrderRecordsTotalPages = async (
   restaurantId = null
 ) => {
   const bounds = dayBounds(startDate, endDate);
-  const q = recordsQuery({
+  const docs = await fetchCompatibleRecordDocs({
     restaurantId,
     start: bounds?.start,
     end: bounds?.end,
   });
-  const pages = await getCountFromServer(q);
-  setTotalPages(Math.ceil(pages.data().count / PAGE_SIZE));
+  setTotalPages(Math.ceil(docs.length / PAGE_SIZE));
 };
 
 export const fetchOrderRecords = async (
@@ -95,30 +165,27 @@ export const fetchOrderRecords = async (
 ) => {
   setLoading(true);
   const bounds = dayBounds(startDate, endDate);
-  const cursor = page > 0 ? lastDocs[page - 1] : null;
-  const q = recordsQuery({
-    restaurantId,
-    start: bounds?.start,
-    end: bounds?.end,
-    pageSize: PAGE_SIZE,
-    cursor,
-  });
 
   try {
-    const result = await getDocs(q);
-    const list = result.docs.map(mapRecordDoc);
-    const lastDoc =
-      result.docs.length > 0 ? result.docs[result.docs.length - 1] : null;
+    const allDocs = await fetchCompatibleRecordDocs({
+      restaurantId,
+      start: bounds?.start,
+      end: bounds?.end,
+    });
+    const pageIndex = Math.max(0, (Number(page) || 1) - 1);
+    const pageDocs = allDocs.slice(
+      pageIndex * PAGE_SIZE,
+      (pageIndex + 1) * PAGE_SIZE
+    );
+    const list = pageDocs.map(mapRecordDoc);
+    const lastDoc = pageDocs.at(-1) || null;
     setLastDocs((prev) => {
       const updated = [...prev];
-      updated[page] = lastDoc;
+      updated[pageIndex] = lastDoc;
       return updated;
     });
-    const delivered = restaurantId
-      ? list
-      : list.filter((item) => item.Status === "Delivered");
-    setData(delivered);
-    return delivered;
+    setData(list);
+    return list;
   } catch (error) {
     console.error("Error fetching order records:", error);
     setData([]);
@@ -126,4 +193,57 @@ export const fetchOrderRecords = async (
   } finally {
     setLoading(false);
   }
+};
+
+export const subscribeOrderRecords = (
+  setData,
+  setLoading,
+  startDate,
+  endDate,
+  page,
+  lastDocs,
+  setLastDocs,
+  restaurantId = null
+) => {
+  setLoading(true);
+  const bounds = dayBounds(startDate, endDate);
+  const groups = [[], []];
+  const ready = new Set();
+  const pageIndex = Math.max(0, (Number(page) || 1) - 1);
+  const unsubscribers = ["createdAt", "timestamp"].map((dateField, index) =>
+    onSnapshot(
+      recordsQuery({
+        restaurantId,
+        start: bounds?.start,
+        end: bounds?.end,
+        dateField,
+      }),
+      (result) => {
+        groups[index] = result.docs.filter(
+          (snap) => dateField === "createdAt" || snap.data()?.createdAt == null
+        );
+        ready.add(index);
+        if (ready.size < 2) return;
+        const pageDocs = mergeRecordDocs(groups).slice(
+          pageIndex * PAGE_SIZE,
+          (pageIndex + 1) * PAGE_SIZE
+        );
+        const list = pageDocs.map(mapRecordDoc);
+        const lastDoc = pageDocs.at(-1) || null;
+      setLastDocs((prev) => {
+        const updated = [...prev];
+          updated[pageIndex] = lastDoc;
+        return updated;
+      });
+      setData(list);
+      setLoading(false);
+      },
+      (error) => {
+        console.error("Error subscribing to order records:", error);
+        setData([]);
+        setLoading(false);
+      }
+    )
+  );
+  return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 };

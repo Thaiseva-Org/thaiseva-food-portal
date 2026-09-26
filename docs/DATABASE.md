@@ -215,24 +215,6 @@ Directory of food delivery couriers.
 
 ---
 
-### 3.7 `dineInBookings/{bookingId}`
-Table reservation booking collection.
-
-| Field Name | Type | Nullable | Key | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `bookingId` | String | No | PK | Reservation ID string |
-| `restaurantUid` | String | No | FK | Target restaurant owner UID |
-| `customerUid` | String | No | FK | Customer user UID |
-| `guestName` | String | No | - | Name for reservation |
-| `contactPhone` | String | No | - | Contact phone number |
-| `guestCount` | Number | No | - | Number of guests (`1` to `20`) |
-| `bookingDate` | String | No | - | Date of reservation (`"YYYY-MM-DD"`) |
-| `bookingTime` | String | No | - | Time slot string (`"HH:MM"`) |
-| `specialRequest` | String | Yes | - | Customer note (max 500 chars) |
-| `status` | String | No | - | Status (`"Pending"`, `"Confirmed"`, `"Rejected"`, `"Cancelled"`) |
-
----
-
 ## 4. Production Composite Indexes (`firestore.indexes.json`)
 
 To enable high-performance querying without table scans, the database relies on predefined composite indexes:
@@ -254,14 +236,6 @@ To enable high-performance querying without table scans, the database relies on 
       "fields": [
         { "fieldPath": "Restaurant.ownerId", "order": "ASCENDING" },
         { "fieldPath": "currentStatus", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "dineInBookings",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "restaurantUid", "order": "ASCENDING" },
-        { "fieldPath": "bookingDate", "order": "ASCENDING" }
       ]
     }
   ]

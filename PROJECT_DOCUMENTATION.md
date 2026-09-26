@@ -77,7 +77,7 @@ The **Thaiseva Food Portal** is an enterprise-grade administration, partner oper
   - **Master Admins**: Oversee entire network operations, verify partner applications, set commission rates, manage riders, and clear payouts.
   - **Restaurant Admins**: Manage kitchen order board (`New Order` -> `Preparing` -> `Ready for pickup`), toggle dish availability, view daily/monthly revenue.
   - **Onboarding Applicants**: Submit public partner applications with business license and ID documents.
-  - **Customers**: Submit food orders ("take booking") and dine-in table reservations via client APIs.
+  - **Customers**: Submit food orders ("take booking") via client APIs.
   - **Riders**: Deliver orders assigned by Master Admins.
 
 ---
@@ -127,7 +127,7 @@ graph TD
 ---
 
 ## 7. Applications & Domain Modules
-Detailed module specifications are provided in [docs/ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md). The main modules are Application Manager, Single Centralized Menu Catalog, Kitchen Order Board, Courier Dispatch, Official Platform Kitchen, Dine-In Booking Engine, and Support Chat.
+Detailed module specifications are provided in [docs/ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md). The main modules are Application Manager, Decentralized Partner Menu Catalogs, Kitchen Order Board, Courier Dispatch, Official Platform Kitchen, and Support Chat.
 
 ---
 
@@ -152,7 +152,7 @@ Cloud Firestore NoSQL database. Full collection structures and indexes are docum
 ---
 
 ## 12. Data Dictionary
-Tables for `users`, `restaurants`, `restaurantApplications`, `food_items/thaiseva-platform/items`, `orders`, `riders`, `dineInBookings`, and `chats` are defined in [docs/DATABASE.md](file:///d:/projects/food-portal-Rishav/docs/DATABASE.md).
+Tables for `users`, `restaurants`, `restaurantApplications`, `food_items/thaiseva-platform/items`, `orders`, `riders`, and `chats` are defined in [docs/DATABASE.md](file:///d:/projects/food-portal-Rishav/docs/DATABASE.md).
 
 ---
 
@@ -181,7 +181,7 @@ Roles (`masterAdmin`, `restaurantAdmin`, `onboarding`, `customer`) are enforced 
 ---
 
 ## 17. Major Workflows
-Detailed sequence diagrams for Partner Onboarding, Order State Transitions, and Table Reservations are in [docs/BUSINESS_LOGIC.md](file:///d:/projects/food-portal-Rishav/docs/BUSINESS_LOGIC.md).
+Detailed sequence diagrams for Partner Onboarding and Order State Transitions are in [docs/BUSINESS_LOGIC.md](file:///d:/projects/food-portal-Rishav/docs/BUSINESS_LOGIC.md).
 
 ---
 
@@ -390,9 +390,16 @@ Client Browser -> React 19 SPA -> Auth & Claims -> Cloud Functions Callables -> 
 | Business Logic | Complete | Workflows & Formulas in BUSINESS_LOGIC.md |
 | Integrations | Complete | Storage, Maps, App Check documented |
 | Monitoring | Complete | Audit logging & pre-flight checks documented |
+| Client Overview | Complete | Non-technical guide in Thaiseva_Client_Guide.md |
+| Partner Guide | Complete | Operations guide in Thaiseva_Partner_Guide.md |
+| Customer App | Complete | Integration details in CUSTOMER_APP_INTEGRATION.md |
+| Backup & Recovery | Complete | Policies documented in BACKUP_AND_RECOVERY.md |
+| Payment Gateways | Complete | Integrations in PAYMENT_GATEWAYS.md |
 
 ---
 
 ## 55. Information Missing From Repository
-* **Automated Cloud Backup Schedules**: GCS automated export bucket policy is **Not confirmed from current repository**.
-* **Production Payment Gateway Credentials**: Third-party bank payment gateway credentials are managed outside version control (**Not confirmed from current repository**).
+* *All previously missing information regarding Cloud Backup Schedules and Payment Gateways has now been documented in `docs/BACKUP_AND_RECOVERY.md` and `docs/PAYMENT_GATEWAYS.md` respectively.*
+
+---
+*Documentation created by Omnifex Agency*

@@ -12,8 +12,7 @@ import {
 } from "../../../utils/publicApplyUpload";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
-import PhoneInput from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+
 import { extractCityFromPlace } from "../../../utils/location";
 
 const FOOD_TYPES = [
@@ -296,7 +295,7 @@ const PublicApply = () => {
                 <input className="modern-input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
               </Field>
               <Field label="Phone">
-                <PhoneInput defaultCountry="TH" className="modern-input" limitMaxLength={true} value={phoneNumber?.replace(/\s+/g, "") || ""} onChange={setPhoneNumber} />
+                <input type="tel" className="modern-input" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
               </Field>
               <Field label="Email">
                 <input className="modern-input" type="email" value={emailId} onChange={(e) => setEmailId(e.target.value)} />

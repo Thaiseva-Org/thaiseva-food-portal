@@ -38,7 +38,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `transitionOrderStatus` | Protected | Yes | Owner / Master | Standard | Advances order state machine |
 | `markOrderDelivered` | Protected | Yes | Master Admin | Standard | Marks order delivered & updates financial ledger |
 | `assignOrderRider` | Protected | Yes | Master Admin | Standard | Binds courier to order ticket |
-| `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Confirms an order, optionally assigns a rider, and applies the server-owned fixed delivery fee |
+| `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Confirms an order only with an active rider assignment and applies the server-owned fixed delivery fee |
 | `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies COD/Thai QR settlement after order confirmation; Stripe stays webhook-controlled |
 | `clearOrderPayment` | Protected | Yes | Master Admin | Standard | Marks partner payout as cleared |
 | `createFoodItem` | Protected | Yes | Owner / Master | Standard | Adds dish to master catalog |
@@ -48,12 +48,6 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `createFoodRider` | Protected | Yes | Master Admin | Standard | Registers new courier in directory |
 | `updateFoodRider` | Protected | Yes | Master Admin | Standard | Modifies courier details |
 | `setFoodRiderActive` | Protected | Yes | Master Admin | Standard | Toggles courier active status |
-| `createDineInBooking` | Protected | Yes | Customer / User | 10 / min | Submits table reservation |
-| `listMyDineInBookings` | Protected | Yes | Customer / User | Standard | Lists customer reservations |
-| `getDineInBooking` | Protected | Yes | Customer / Owner | Standard | Retrieves reservation details |
-| `updateDineInBooking` | Protected | Yes | Customer / User | 20 / min | Modifies reservation details |
-| `cancelDineInBooking` | Protected | Yes | Customer / User | Standard | Cancels pending reservation |
-| `setDineInBookingStatus` | Protected | Yes | Owner / Master | Standard | Partner accepts/rejects table booking |
 
 ---
 

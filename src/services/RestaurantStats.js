@@ -22,10 +22,10 @@ const AGGREGATE_PAGE_SIZE = 10;
 const AGGREGATE_MAX_PAGES = 20;
 
 export function toDayBounds(startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+  const [sY, sM, sD] = String(startDate || "").split(/[-T /]/).map(Number);
+  const start = new Date(sY, (sM || 1) - 1, sD || 1, 0, 0, 0, 0);
+  const [eY, eM, eD] = String(endDate || "").split(/[-T /]/).map(Number);
+  const end = new Date(eY, (eM || 1) - 1, eD || 1, 23, 59, 59, 999);
   return { start, end };
 }
 
@@ -150,53 +150,26 @@ export async function aggregateDeliveredAccounting({
   restaurantRate,
   maxPages = AGGREGATE_MAX_PAGES,
 }) {
-  const { start, end } = toDayBounds(startDate, endDate);
-  const ordersRef = collection(db, "orders");
-  let last = null;
-  let pages = 0;
-  let scanned = 0;
+  const result = await fetchRestaurantOrdersInRange({
+    ownerId,
+    startDate,
+    endDate,
+    pageSize: AGGREGATE_PAGE_SIZE,
+    maxPages,
+  });
+  const scanned = result.rows.length;
   let delivered = 0;
   let gmv = 0;
   let platform = 0;
   let payout = 0;
-  let partial = false;
 
-  while (pages < maxPages) {
-    const q = last
-      ? query(
-          ordersRef,
-          where("Restaurant.ownerId", "==", ownerId),
-          where("timestamp", ">=", start),
-          where("timestamp", "<=", end),
-          orderBy("timestamp", "desc"),
-          startAfter(last),
-          limit(AGGREGATE_PAGE_SIZE)
-        )
-      : query(
-          ordersRef,
-          where("Restaurant.ownerId", "==", ownerId),
-          where("timestamp", ">=", start),
-          where("timestamp", "<=", end),
-          orderBy("timestamp", "desc"),
-          limit(AGGREGATE_PAGE_SIZE)
-        );
-
-    const snap = await getDocs(q);
-    if (snap.empty) break;
-    scanned += snap.docs.length;
-    for (const orderSnap of snap.docs) {
-      const order = mapOrderDoc(orderSnap);
-      if (order.Status !== "Delivered") continue;
-      const money = resolveOrderAccounting(order, restaurantRate);
-      delivered += 1;
-      gmv += money.gross;
-      platform += money.adminShare;
-      payout += money.partnerShare;
-    }
-    last = snap.docs[snap.docs.length - 1];
-    pages += 1;
-    if (snap.docs.length < AGGREGATE_PAGE_SIZE) break;
-    if (pages === maxPages) partial = true;
+  for (const order of result.rows) {
+    if (order.Status !== "Delivered") continue;
+    const money = resolveOrderAccounting(order, restaurantRate);
+    delivered += 1;
+    gmv += money.gross;
+    platform += money.adminShare;
+    payout += money.partnerShare;
   }
 
   const avg = delivered > 0 ? Math.round((gmv / delivered) * 100) / 100 : 0;
@@ -207,52 +180,65 @@ export async function aggregateDeliveredAccounting({
     platform: Math.round(platform * 100) / 100,
     payout: Math.round(payout * 100) / 100,
     avgOrderValue: avg,
-    partial,
+    partial: result.partial,
   };
 }
 
-/** Load this restaurant's orders in a date range (paged; week-sized ranges). */
+/** Load this restaurant's orders in a date range. Supports week, month, and year ranges. */
 export async function fetchRestaurantOrdersInRange({
   ownerId,
   startDate,
   endDate,
-  maxPages = 20,
+  pageSize = 100,
+  maxPages = 50,
 }) {
   const { start, end } = toDayBounds(startDate, endDate);
   const ordersRef = collection(db, "orders");
-  const rows = [];
-  let last = null;
-  let pages = 0;
+  const dateFields = ["timestamp", "createdAt"];
   let partial = false;
 
-  while (pages < maxPages) {
-    const snap = await getDocs(
-      last
-        ? query(
-            ordersRef,
-            where("Restaurant.ownerId", "==", ownerId),
-            where("timestamp", ">=", start),
-            where("timestamp", "<=", end),
-            orderBy("timestamp", "desc"),
-            startAfter(last),
-            limit(25)
-          )
-        : query(
-            ordersRef,
-            where("Restaurant.ownerId", "==", ownerId),
-            where("timestamp", ">=", start),
-            where("timestamp", "<=", end),
-            orderBy("timestamp", "desc"),
-            limit(25)
-          )
-    );
-    if (snap.empty) break;
-    rows.push(...snap.docs.map(mapOrderDoc));
-    last = snap.docs[snap.docs.length - 1];
-    pages += 1;
-    if (snap.docs.length < 25) break;
-    if (pages === maxPages) partial = true;
-  }
+  const fieldDocs = await Promise.all(
+    dateFields.map(async (dateField) => {
+      const docs = [];
+      let last = null;
+      let pages = 0;
+
+      while (pages < maxPages) {
+        const q = last
+          ? query(
+              ordersRef,
+              where("Restaurant.ownerId", "==", ownerId),
+              where(dateField, ">=", start),
+              where(dateField, "<=", end),
+              orderBy(dateField, "desc"),
+              startAfter(last),
+              limit(pageSize)
+            )
+          : query(
+              ordersRef,
+              where("Restaurant.ownerId", "==", ownerId),
+              where(dateField, ">=", start),
+              where(dateField, "<=", end),
+              orderBy(dateField, "desc"),
+              limit(pageSize)
+            );
+
+        const snap = await getDocs(q);
+        if (snap.empty) break;
+        docs.push(...snap.docs);
+        last = snap.docs[snap.docs.length - 1];
+        pages += 1;
+        if (snap.docs.length < pageSize) break;
+        if (pages === maxPages) {
+          partial = true;
+        }
+      }
+      return docs;
+    })
+  );
+
+  const merged = mergeOrderDocs(fieldDocs);
+  const rows = merged.map(mapOrderDoc);
 
   return { rows, partial };
 }

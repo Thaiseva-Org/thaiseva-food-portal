@@ -10,6 +10,7 @@ import TwoWheelerRoundedIcon from "@mui/icons-material/TwoWheelerRounded";
 import RestaurantMenuRoundedIcon from "@mui/icons-material/RestaurantMenuRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
+import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import NavBadge from "../../components/NavBadge";
 import { useOrders } from "../../context/OrdersProvider";
 import { usePendingRequestCount } from "../../hooks/usePendingRequestCount";
@@ -17,7 +18,7 @@ import { ORDER_STATUS } from "../../utils/orderStatus";
 import { hasAssignedRider } from "../../utils/orderRider";
 import { useRestaurantChatCount } from "../../hooks/useRestaurantChatCount";
 import { useBookings } from "../../context/BookingsProvider";
-import { normalizeBookingStatus } from "../../utils/bookingStatus";
+import { normalizeBookingStatus, SHOW_TABLE_RESERVATIONS } from "../../utils/bookingStatus";
 
 const MasterSidebar = ({ show, toggle }) => {
   const { orders } = useOrders() || {};
@@ -73,14 +74,18 @@ const MasterSidebar = ({ show, toggle }) => {
       badge: pendingOrders,
       badgeTone: "danger",
     },
-    {
-      icon: <TableRestaurantRoundedIcon fontSize="small" />,
-      label: "Table Reservations",
-      to: "tableReservation",
-      path: "/foodAdmin/tableReservation",
-      badge: pendingBookings,
-      badgeTone: "warning",
-    },
+    ...(SHOW_TABLE_RESERVATIONS
+      ? [
+          {
+            icon: <TableRestaurantRoundedIcon fontSize="small" />,
+            label: "Table Reservations",
+            to: "tableReservation",
+            path: "/foodAdmin/tableReservation",
+            badge: pendingBookings,
+            badgeTone: "warning",
+          },
+        ]
+      : []),
     {
       icon: <TwoWheelerRoundedIcon fontSize="small" />,
       label: "Riders",
@@ -100,6 +105,12 @@ const MasterSidebar = ({ show, toggle }) => {
       path: "/foodAdmin/restaurantChat",
       badge: restaurantChatCount,
       badgeTone: "danger",
+    },
+    {
+      icon: <SettingsRoundedIcon fontSize="small" />,
+      label: "Settings",
+      to: "settings",
+      path: "/foodAdmin/settings",
     },
     {
       icon: <ExitToAppRoundedIcon fontSize="small" />,

@@ -5,13 +5,28 @@ import {
   where,
   getCountFromServer,
   limit,
-  getDocs,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../../../firebaseConfig";
 import { Link } from "react-router";
 import { useAuth } from "../../AuthContext";
 import Loading from "../../components/Loading";
 import { Pagination } from "@mui/material";
+import { useResolvedApplicationFileUrl } from "../../utils/applicationFiles";
+
+const RestaurantImage = ({ src, name }) => {
+  const resolved = useResolvedApplicationFileUrl(src);
+
+  return (
+    <img
+      src={resolved || "/favicon.png"}
+      loading="lazy"
+      decoding="async"
+      className="w-[25%] rounded-md aspect-square object-cover"
+      alt={name ? `${name} restaurant` : "Restaurant"}
+    />
+  );
+};
 
 // Helper function to format Firestore timestamp
 const formatDate = (timestamp) => {
@@ -29,7 +44,7 @@ const RestRequests = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [, setLastDocs] = useState([]);
+
 
   useEffect(() => {
     document.title = "Thaiseva | Food Admin - Requested Restaurants";
@@ -50,54 +65,68 @@ const RestRequests = () => {
     setTotalPages(Math.max(1, Math.ceil((apps.data().count + legacy.data().count) / 10)));
   };
 
-  const fetchRestaurants = async () => {
+  useEffect(() => {
+    if (!isMasterAdmin) return;
+    
+    fetchTotalPages();
+    
     const status = toggle ? "Pending" : "Rejected";
-    try {
-      const [appsSnap, restSnap] = await Promise.all([
-        getDocs(
-          query(
-            collection(db, "restaurantApplications"),
-            where("status", "==", status),
-            limit(20)
-          )
-        ),
-        getDocs(
-          query(restaurantCollection, where("status", "==", status), limit(20))
-        ),
-      ]);
-      const apps = appsSnap.docs
-        .filter((d) => d.data()?.status === status)
-        .map((d) => ({
+    let appsData = [];
+    let legacyData = [];
+    
+    setLoading(true);
+
+    const updateRestaurants = () => {
+      setRestaurants([...appsData, ...legacyData]);
+      setLoading(false);
+    };
+
+    const unsubApps = onSnapshot(
+      query(collection(db, "restaurantApplications"), where("status", "==", status), limit(20)),
+      (snap) => {
+        appsData = snap.docs
+          .filter((d) => d.data()?.status === status)
+          .map((d) => ({
+            ...d.data(),
+            id: d.id,
+            applicationId: d.id,
+            ownerId: d.data().ownerUid || d.id,
+            requestKind: "application",
+          }));
+        updateRestaurants();
+      },
+      (error) => {
+        console.error("Error fetching restaurant applications:", error);
+        setLoading(false);
+      }
+    );
+
+    const unsubLegacy = onSnapshot(
+      query(restaurantCollection, where("status", "==", status), limit(20)),
+      (snap) => {
+        legacyData = snap.docs.map((d) => ({
           ...d.data(),
           id: d.id,
-          applicationId: d.id,
-          ownerId: d.data().ownerUid || d.id,
-          requestKind: "application",
+          ownerId: d.data().ownerId || d.id,
+          requestKind: "restaurant",
         }));
-      const legacy = restSnap.docs.map((d) => ({
-        ...d.data(),
-        id: d.id,
-        ownerId: d.data().ownerId || d.id,
-        requestKind: "restaurant",
-      }));
-      setRestaurants([...apps, ...legacy]);
-      setLastDocs([]);
-    } catch (error) {
-      console.error("Error fetching restaurants:", error);
-      setRestaurants([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+        updateRestaurants();
+      },
+      (error) => {
+        console.error("Error fetching restaurants:", error);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubApps();
+      unsubLegacy();
+    };
+  }, [isMasterAdmin, page, toggle]); // eslint-disable-line react-hooks/exhaustive-deps -- fetch helpers intentionally follow these pagination controls
 
   const handleChangePage = (_, newPage) => {
     setPage(newPage);
   };
-
-  useEffect(() => {
-    isMasterAdmin && fetchTotalPages();
-    isMasterAdmin && fetchRestaurants();
-  }, [isMasterAdmin, page, toggle]); // eslint-disable-line react-hooks/exhaustive-deps -- fetch helpers intentionally follow these pagination controls
 
   if (loading)
     return (
@@ -145,12 +174,9 @@ const RestRequests = () => {
               >
                 <div className="lg:col-span-4 md:col-span-6 col-span-8">
                   <div className="flex items-center gap-4 w-full">
-                    <img
+                    <RestaurantImage
                       src={item.imageUrl || item.photo}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-[25%] rounded-md aspect-square object-cover"
-                      alt="Restaurant Image"
+                      name={item.name}
                     />
                     <div className="w-[75%]">
                       <p className="text-xl  mb-1 w-[85%] truncate text-slate-700">

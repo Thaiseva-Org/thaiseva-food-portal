@@ -20,20 +20,24 @@ const ORDERS_PAGE_SIZE = 10;
 
 export function mapOrderDoc(snap) {
   const orderData = normalizeOrder(snap.data());
-  const date = orderTime(orderData) ? new Date(orderTime(orderData)).toLocaleString() : "Unknown";
+  const rawTime = orderTime(orderData);
+  const date = rawTime ? new Date(rawTime).toLocaleString() : "Unknown";
 
   return {
     OrderID: snap.id || "N/A",
     orderId: orderData.orderId || snap.id,
+    timestamp: rawTime || null,
     Date: date || "N/A",
     CustomerName: orderData.Receiver?.name || "N/A",
     CustomerId: orderData.Receiver?.id || "N/A",
+    Receiver: orderData.Receiver || {},
     Location: orderData.Location || "N/A",
     Amount: orderData.Amount ?? 0,
     foodSubtotal: orderData.foodSubtotal ?? null,
     deliveryCharge: orderData.deliveryCharge ?? 0,
     Status: orderData.currentStatus || "N/A",
     restaurantName: orderData?.Restaurant?.name || "N/A",
+    Restaurant: orderData.Restaurant || null,
     RestaurantId: orderData?.RestaurantId || orderData?.Restaurant?.id || "N/A",
     ownerId: orderData?.Restaurant?.ownerId || "",
     DeliveryPartner: orderData.DeliveryPartner || null,

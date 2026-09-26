@@ -208,11 +208,8 @@ service cloud.firestore {
     function isFoodAdmin() {
       return isAuthenticated() && (
         request.auth.token.email in ["admin@gmail.com"] ||
-        request.auth.token.get('admin', false) == true ||
         request.auth.token.get('foodRole', '') == 'masterAdmin' ||
-        request.auth.token.get('foodMasterAdmin', false) == true ||
-        request.auth.token.get('role', '') == 'masterAdmin' ||
-        request.auth.token.get('masterAdmin', false) == true
+        request.auth.token.get('foodMasterAdmin', false) == true
       );
     }
 

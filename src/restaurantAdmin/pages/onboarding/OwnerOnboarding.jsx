@@ -18,8 +18,7 @@ import { submitRestaurantApplication } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
-import PhoneInput from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+
 import { extractCityFromPlace } from "../../../utils/location";
 const FOOD_TYPES = [
   "Thai",
@@ -544,14 +543,13 @@ const OwnerOnboarding = () => {
                 />
               </Field>
               <Field label="Phone number" htmlFor="restaurant-phone">
-                <PhoneInput
+                <input
+                  type="tel"
                   id="restaurant-phone"
-                  defaultCountry="TH"
                   className="modern-input"
-                  limitMaxLength={true}
-                  value={phoneNumber?.replace(/\s+/g, "") || ""}
-                  onChange={setPhoneNumber}
-                  placeholder="XXX XXX XXXX"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="Phone number"
                 />
               </Field>
               <Field label="Business email" htmlFor="restaurant-email">

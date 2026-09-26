@@ -91,7 +91,7 @@ This gate enforces:
 ## 👥 Core Platform Modules
 
 * **Master Admin Panel (`/foodAdmin`)**: Network revenue monitoring, partner onboarding reviews, courier directory management, order dispatch monitoring, and support chats.
-* **Restaurant Partner Panel (`/partner`)**: Real-time kitchen order board, single catalog dish availability toggles, store operating hours, table reservations, and payout records.
+* **Restaurant Partner Panel (`/partner`)**: Real-time kitchen order board, single catalog dish availability toggles, store operating hours, and payout records.
 * **Public Partner Application (`/apply`)**: Secure public onboarding intake form with direct Google Cloud Storage signed document uploads.
 
 ---

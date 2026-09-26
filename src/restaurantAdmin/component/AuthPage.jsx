@@ -4,11 +4,8 @@ import { auth } from "../../../firebaseConfig";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
 } from "firebase/auth";
 import {
-  FaGoogle,
   FaEnvelope,
   FaLock,
   FaUserAlt,
@@ -248,28 +245,6 @@ const AuthPageAdmin = () => {
         console.error(err);
         setError(err.message || "An unexpected error occurred. Please try again.");
       }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleGoogleAuth = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    try {
-      setError("");
-      setSubmitting(true);
-      assertNotLockedOut();
-      await applyAuthPersistence(rememberMe);
-      const result = await signInWithPopup(auth, provider);
-      // CRITICAL: create-if-missing only — never wipe existing roles
-      await ensureProfileSafe(result.user, result.user.displayName);
-      await finishLogin(result.user);
-    } catch (err) {
-      if (err.code !== "auth/popup-closed-by-user") {
-        recordLoginFailure();
-      }
-      setError(err.message || "Google sign-in failed.");
     } finally {
       setSubmitting(false);
     }
@@ -519,24 +494,6 @@ const AuthPageAdmin = () => {
               </button>
             </form>
 
-            <div className="relative my-5">
-              <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                <div className="w-full border-t border-neutral-200" />
-              </div>
-              <p className="relative mx-auto w-fit bg-white px-3 text-xs font-medium uppercase tracking-wide text-ink-subtle">
-                or
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleGoogleAuth}
-              disabled={submitting}
-              className="btn-outline w-full py-3"
-            >
-              <FaGoogle className="text-danger-500" />
-              Continue with Google
-            </button>
           </div>
 
           <div className="mt-6 rounded-2xl border border-neutral-100 bg-white/80 px-5 py-4 text-center shadow-sm backdrop-blur-sm">

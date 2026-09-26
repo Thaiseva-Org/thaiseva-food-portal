@@ -1,4 +1,6 @@
 /** Canonical booking statuses for table reservations UI. */
+export const SHOW_TABLE_RESERVATIONS = false;
+
 export const BOOKING_STATUS = {
   PENDING: "Pending",
   ACCEPTED: "Accepted",
