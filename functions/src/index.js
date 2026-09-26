@@ -1,6 +1,7 @@
 const { verifyOrderPayment } = require("./lib/orderPayments");
 const { initializeApp } = require("firebase-admin/app");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
 const {
@@ -54,6 +55,11 @@ const {
   setFoodRiderActive,
 } = require("./lib/riders");
 const { sendFoodCustomerMessage } = require("./lib/customerChats");
+const {
+  registerPartnerDevice,
+  unregisterPartnerDevice,
+  pushRestaurantNotification,
+} = require("./lib/partnerPush");
 const {
   createFoodOrderHttpHandler,
   listOrderableRestaurantsHttpHandler,
@@ -294,3 +300,27 @@ exports.setFoodRiderActive = wrap(async (caller, data) => {
   requireMaster(caller);
   return setFoodRiderActive(caller, data);
 });
+
+// ─── Partner app push ─────────────────────────────────────
+exports.registerPartnerDevice = wrap(async (caller, data) => {
+  return registerPartnerDevice(caller, data);
+});
+
+exports.unregisterPartnerDevice = wrap(async (caller, data) => {
+  return unregisterPartnerDevice(caller, data);
+});
+
+// Every partner alert is already written to notifications/restaurants/{ownerId};
+// mirror each new one to the owner's phones so it arrives when the app is closed.
+// Firestore (default) lives in asia-east2, and v2 triggers must share its region.
+exports.pushRestaurantNotification = onDocumentCreated(
+  { document: "notifications/restaurants/{ownerId}/{notificationId}", region: "asia-east2" },
+  async (event) => {
+    const { ownerId, notificationId } = event.params;
+    try {
+      await pushRestaurantNotification(ownerId, notificationId, event.data?.data());
+    } catch (err) {
+      console.error("pushRestaurantNotification failed", err);
+    }
+  }
+);
