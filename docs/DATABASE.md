@@ -126,8 +126,8 @@ Stores verified restaurant profiles and financial ledger counters.
 | `id` | String | No | - | Public hex ID (e.g. `"e4f8"`) |
 | `name` | String | No | - | Public display name of restaurant (max 120 chars) |
 | `phoneNumber` | String | No | - | Contact phone number |
-| `emailId` | String | No | - | Official contact email |
-| `foodType` | String | Yes | - | Cuisine categories (max 100 chars) |
+| `emailId` | String | No | - | Official contact and sign-in email; editable only by Master Admin |
+| `foodType` | String | Yes | - | Comma-separated cuisines selected from `settings/cuisines` (max 1000 chars) |
 | `location` | String | No | - | Physical street address |
 | `description` | String | Yes | - | Store summary text (max 2000 chars) |
 | `imageUrl` | String | Yes | - | Storage HTTPS URL for cover image |
@@ -149,7 +149,7 @@ Stores pending and processed restaurant partner onboarding applications.
 | `name` | String | No | - | Applicant business name |
 | `emailId` | String | No | - | Applicant contact email |
 | `phoneNumber` | String | No | - | Applicant contact phone |
-| `foodType` | String | Yes | - | Proposed cuisine type |
+| `foodType` | String | Yes | - | Proposed comma-separated cuisine selections (max 1000 chars) |
 | `location` | String | No | - | Store physical address |
 | `status` | String | No | - | Status (`"Draft"`, `"Pending"`, `"Verified"`, `"Rejected"`) |
 | `businessLicensePath` | String | Yes | - | Cloud Storage path for business license PDF/Image |
@@ -168,6 +168,7 @@ Single Centralized Master Menu Catalog collection. All dishes across all stores 
 | `price` | Number | No | - | Base unit price in Thai Baht (THB ฿) |
 | `discount` | Number | No | - | Percentage discount (`0` to `100`) |
 | `category` | String | No | - | Dish category (e.g., `"Noodles"`, `"Beverages"`) |
+| `cuisine` | String | Yes | - | Comma-separated cuisines selected from `settings/cuisines` (max 1000 chars) |
 | `itemType` | String | No | - | Dietary classification (`"Veg"`, `"Non-Veg"`, `"Vegan"`) |
 | `imageUrl` | String | Yes | - | Dish photo HTTPS URL |
 | `active` | Boolean | No | - | Global master active toggle |

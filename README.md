@@ -11,7 +11,7 @@ The complete technical documentation for this repository is organized into dedic
 | Documentation Module | Primary Focus & Coverage | Target Audience |
 | :--- | :--- | :--- |
 | **[ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md)** | Full System Architecture, Serverless Pattern, Domain Modules, React Contexts, Mermaid Diagrams | Architects, Senior Engineers |
-| **[API.md](file:///d:/projects/food-portal-Rishav/docs/API.md)** | Complete Catalog of all 24 HTTPS Callable Endpoints, Customer Booking API, Payloads & Error Codes | Backend & Frontend Engineers |
+| **[API.md](file:///d:/projects/food-portal-Rishav/docs/API.md)** | Complete HTTPS Callable and HTTP Endpoint Catalog, Customer Booking API, Payloads & Error Codes | Backend & Frontend Engineers |
 | **[DATABASE.md](file:///d:/projects/food-portal-Rishav/docs/DATABASE.md)** | Cloud Firestore Collections, Data Dictionary, Composite Indexes & Mermaid ER Diagram | Database Engineers, Security |
 | **[BUSINESS_LOGIC.md](file:///d:/projects/food-portal-Rishav/docs/BUSINESS_LOGIC.md)** | Single Menu Catalog Architecture, Pricing Formulas, Verified Accounting & Order State Machine | Business Analysts, QA, Engineers |
 | **[DEPLOYMENT.md](file:///d:/projects/food-portal-Rishav/docs/DEPLOYMENT.md)** | Cloud Infrastructure, Environment Variables Matrix, Pre-deploy Security & CI/CD Pipelines | DevOps & Cloud Engineers |

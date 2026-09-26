@@ -32,6 +32,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `updateRestaurantProfile` | Protected | Yes | Owner / Master | Standard | Updates restaurant profile details |
 | `setRestaurantOpenState` | Protected | Yes | Owner / Master | Standard | Toggles store open/closed status |
 | `adminUpdateCommission` | Protected | Yes | Master Admin | Standard | Updates partner commission percentage |
+| `permanentlyDeleteRestaurant` | Protected | Yes | Master Admin | Standard, 540s timeout | Permanently removes a partner restaurant and its owner-scoped operational data |
 | `ensurePlatformRestaurant` | Protected | Yes | Master Admin | Standard | Provisions official kitchen document |
 | `listOrderableRestaurantsHttp` | Public HTTP | No | Guest | 100 results/request | Lists verified, active restaurants using public fields only |
 | `createFoodOrderHttp` | Protected HTTP | Yes, Bearer ID token | Customer / User | 30 / min | The customer food-order endpoint; no App Check required |
@@ -130,7 +131,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
   "name": "Bangkok Spice Kitchen",
   "emailId": "owner@bangkokspice.com",
   "phoneNumber": "+66812345678",
-  "foodType": "Thai / Asian Fusion",
+  "foodType": "Thai, Asian Fusion",
   "location": "Sukhumvit Rd, Bangkok",
   "description": "Authentic Thai food and street delicacies.",
   "businessLicensePath": "raw-applications/a1b2c3d4e5f6/license.pdf",
@@ -172,6 +173,42 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 }
 ```
 * **Error Codes**: `permission-denied` if caller is not Master Admin; `not-found` if application ID does not exist.
+
+#### `updateRestaurantProfile`
+* **Method**: HTTPS Callable (`wrap`)
+* **Auth**: Required
+* **Role**: Restaurant Owner or Master Admin
+* **Request Body**:
+```json
+{
+  "ownerUid": "RESTAURANT_OWNER_UID",
+  "fields": {
+    "name": "Bangkok Spice Kitchen",
+    "foodType": "Thai, Indian",
+    "emailId": "new-owner@example.com"
+  }
+}
+```
+* Restaurant owners may update safe profile fields, including the restaurant and owner names, but cannot change `emailId`.
+* Master Admin may update `emailId`; the callable updates both the restaurant profile and the Firebase Authentication sign-in email.
+* `foodType` stores the comma-separated values selected from `settings/cuisines` and supports multiple cuisines.
+
+#### `permanentlyDeleteRestaurant`
+* **Method**: HTTPS Callable (`wrap`, 540-second timeout)
+* **Auth**: Required
+* **Role**: `masterAdmin`
+* **Request Body**:
+```json
+{
+  "ownerUid": "RESTAURANT_OWNER_UID",
+  "confirmationName": "Bangkok Spice Kitchen"
+}
+```
+* The confirmation name must exactly match the stored restaurant name.
+* Deletion is blocked while the restaurant has an open order or a pending/accepted reservation.
+* Deletes the restaurant profile, owner user profile and Auth account, menu, restaurant chat, restaurant notifications, and files under `restaurants/{ownerUid}/`.
+* Preserves historical orders, reservations, finance records, and the audit record for reporting.
+* The platform-owned ThaiSeva kitchen cannot be deleted.
 
 ---
 

@@ -18,10 +18,15 @@ The frontend is a **React 19** Single Page Application bundled with **Vite**. It
 - **Network Partners (`/foodAdmin/restaurants`)**: Displays a searchable list of all active/inactive restaurants. Shows GMV and order stats.
 - **Riders (`/foodAdmin/riders`)**: Full CRUD interface for managing delivery personnel.
 - **Live Orders (`/foodAdmin/ourOrders`)**: Global overview of every active order in the system across all restaurants.
+- **Cuisine Categories (`/foodAdmin/cuisineCategories`)**: Maintains the shared cuisine options used by partner onboarding, restaurant profiles, and menu items.
+- **Restaurant deletion**: The restaurant settings screen provides a permanent delete action with exact-name confirmation. The action remains disabled until the name matches and the backend blocks restaurants with open orders or reservations.
 
 ### C. Restaurant Admin Dashboard (`/restaurantAdmin`)
 - **Earnings & Payouts**: Real-time charts utilizing `Chart.js` / `ApexCharts` to display gross sales vs. net payouts (subtracting commission).
 - **Kitchen Flow**: A dedicated UI designed for kitchen staff to accept incoming orders and mark them as ready for pickup.
+- **Restaurant Profile**: Restaurant and owner names are edited here. The email is read-only for partners and can be changed only by Master Admin.
+- **Cuisine selection**: Partner applications, onboarding, restaurant profiles, and food items use the reusable multi-select `CuisineSelect` component backed by `settings/cuisines`.
+- **Account Security**: Settings provides current-password reauthentication and password change. The duplicate account name/email form and reset-email action are not shown.
 
 ## 4. Reusable UI Components
 - **`DashSection`**: A wrapper component for standardizing the look of dashboard cards (Title, Action Button, Children).

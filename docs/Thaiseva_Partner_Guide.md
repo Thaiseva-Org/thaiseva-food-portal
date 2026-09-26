@@ -8,7 +8,7 @@ Welcome to the Thaiseva Food Portal! This guide is designed specifically for **P
 
 Joining the Thaiseva platform is simple. Here is how your onboarding works:
 
-1. **Submit Application:** Go to the public signup portal and fill out the onboarding application. You will need to provide your business details, contact information, and upload necessary legal documents (like your Business License or ID).
+1. **Submit Application:** Go to the public signup portal and fill out the onboarding application. Select every cuisine your restaurant serves from the cuisine dropdown, provide your business and contact details, and upload the required legal documents (such as your Business License or ID).
 2. **Pending Approval:** Once submitted, your application enters a "Pending" state. During this time, the Master Admin team is reviewing your details to ensure everything is correct.
 3. **Approval & Account Creation:** Once the Master Admin verifies your application, your account is officially activated. The platform automatically sets your agreed-upon commission rate, and you can now log in to the Partner Dashboard using your credentials.
 
@@ -20,12 +20,17 @@ Thaiseva gives you complete control over your own menu. You are not forced to pi
 
 ### Adding New Dishes
 - Navigate to the **Food Items** section of your dashboard.
-- You can create a new dish by entering the title, description, category (e.g., Appetizer, Main Course), uploading a high-quality photo, and setting your base price.
+- You can create a new dish by entering the title, description, category (e.g., Appetizer, Main Course), selecting one or more cuisines, uploading a high-quality photo, and setting your base price.
 - If you want to offer a promotion, you can apply a discount percentage directly to the item.
 
 ### Toggling Availability
 - **Sold Out for the Day?** You don't need to delete an item if you run out of ingredients. Simply toggle the dish's status to **"Off"** or "Hidden." It will instantly disappear from the customer app.
 - Once you have the ingredients back in stock, toggle it **"On"** and customers can order it again immediately.
+
+### Restaurant Profile and Account
+- Update the restaurant name and owner name from **Restaurant Profile → Edit restaurant info**.
+- Your account email is read-only. Contact the Master Admin if the restaurant sign-in email must be changed.
+- The Account Settings section is used for changing your current password.
 
 ---
 

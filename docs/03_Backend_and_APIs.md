@@ -42,7 +42,7 @@ Defined in: `functions/src/lib/restaurants.js`
 #### 3. `updateRestaurantProfile`
 - **Purpose:** Allows the Restaurant Owner or Master Admin to update safe profile fields.
 - **Payload:** `{ "ownerUid": "user_123", "fields": { "description": "New description", "openingHours": "10 AM - 10 PM" } }`
-- **Business Logic:** Updates specific fields while enforcing character limits.
+- **Business Logic:** Updates specific fields while enforcing character limits. Multiple cuisines are stored in `foodType` as a comma-separated string. Restaurant owners cannot change the contact/sign-in email; a Master Admin email change updates Firestore and Firebase Authentication together.
 
 #### 4. `setRestaurantOpenState`
 - **Purpose:** Toggles the `active` status (Open/Closed) of the restaurant.
@@ -57,6 +57,11 @@ Defined in: `functions/src/lib/restaurants.js`
 #### 6. `ensurePlatformRestaurant`
 - **Purpose:** Initializes the official "ThaiSeva Kitchen" platform restaurant.
 - **Business Logic:** Master admin only. Creates a guaranteed platform-owned restaurant used for centralized operations.
+
+#### 7. `permanentlyDeleteRestaurant`
+- **Purpose:** Permanently removes a partner restaurant after the Master Admin types its exact name.
+- **Payload:** `{ "ownerUid": "user_123", "confirmationName": "Restaurant Name" }`
+- **Business Logic:** Master Admin only. Rejects the platform kitchen and restaurants with open orders or reservations. Removes the owner account, restaurant profile, menu, chat, notifications, and restaurant uploads while retaining historical order, reservation, finance, and audit records.
 
 ### C. Public Application APIs
 Defined in: `functions/src/lib/applications.js`
@@ -74,7 +79,7 @@ Defined in: `functions/src/lib/menu.js`
 
 #### 1. `createFoodItem`
 - **Purpose:** Adds a new item to the restaurant's menu.
-- **Payload:** Requires `itemName`, `price`, `discount`, `category`, `itemType`, `description`, and optionally `imageUrl`.
+- **Payload:** Requires `itemName`, `price`, `discount`, `category`, `itemType`, `description`, and optionally `imageUrl` and comma-separated `cuisine` values.
 - **Business Logic:** Accessible by the Restaurant Owner or Master Admin. Validates numerical values and creates a subcollection document: `food_items/{ownerUid}/items/{itemId}`.
 
 #### 2. `updateFoodItem`
