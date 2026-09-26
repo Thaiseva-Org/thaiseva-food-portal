@@ -65,6 +65,12 @@ const MasterSidebar = ({ show, toggle }) => {
       to: "ourKitchen",
       path: "/foodAdmin/ourKitchen",
     },
+    {
+      icon: <RestaurantMenuRoundedIcon fontSize="small" />,
+      label: "Cuisine Categories",
+      to: "cuisineCategories",
+      path: "/foodAdmin/cuisineCategories",
+    },
 
     {
       icon: <ListAltRoundedIcon fontSize="small" />,

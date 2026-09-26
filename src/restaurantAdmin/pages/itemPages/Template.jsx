@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../../../firebaseConfig";
 import CategorySelect from "../../components/CategorySelect";
+import CuisineSelect from "../../../components/CuisineSelect";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import { partnerPath } from "../../../utils/partnerRoutes";
@@ -96,6 +97,7 @@ const Template = ({
     };
     fetchCategories();
   }, []);
+
 
   useEffect(() => {
     if (!dropdownOpen) return undefined;
@@ -563,14 +565,7 @@ const Template = ({
                   <span className="mb-1.5 block text-sm font-semibold text-ink">
                     Cuisine
                   </span>
-                  <input
-                    type="text"
-                    value={cuisine}
-                    onChange={(e) => setCuisine(e.target.value)}
-                    className={fieldClass(fieldErrors.cuisine)}
-                    placeholder="e.g. Thai, Indian, Italian"
-                    maxLength={100}
-                  />
+                  <CuisineSelect value={cuisine} onChange={setCuisine} label="" />
                   {fieldErrors.cuisine && (
                     <p className="mt-1 text-xs font-medium text-danger-600">
                       {fieldErrors.cuisine}

@@ -16,6 +16,8 @@ function fixture() {
   const authUsers = new Map();
   const claimsLog = [];
   const auditLogs = [];
+  const deletedUsers = [];
+  const deletedStoragePrefixes = [];
 
   const snap = (p) => ({
     exists: records.has(p),
@@ -38,7 +40,7 @@ function fixture() {
           if (key.startsWith(`${collectionName}/`)) {
             let pass = true;
             for (const f of filters) {
-              if (f.op === "==" && val[f.field] !== f.val) pass = false;
+              if (f.op === "==" && f.field.split(".").reduce((value, part) => value?.[part], val) !== f.val) pass = false;
             }
             if (pass) {
               matched.push(snap(key));
@@ -82,6 +84,11 @@ function fixture() {
   };
 
   const db = {
+    recursiveDelete: async (target) => {
+      for (const key of [...records.keys()]) {
+        if (key === target.path || key.startsWith(`${target.path}/`)) records.delete(key);
+      }
+    },
     collection: (name) => {
       const r = ref(name);
       return {
@@ -126,7 +133,7 @@ function fixture() {
       return user;
     },
     deleteUser: async (uid) => {
-      // mock delete
+      deletedUsers.push(uid);
     },
     setCustomUserClaims: async (uid, claims) => {
       claimsLog.push({ uid, claims });
@@ -154,6 +161,7 @@ function fixture() {
       getStorage: () => {
         const bucket = {
           name: "gothai-bucket",
+          deleteFiles: async ({ prefix }) => deletedStoragePrefixes.push(prefix),
           file: (f) => ({
             name: f,
             getSignedUrl: async () => [`https://storage.signed.url/${f}`],
@@ -215,6 +223,7 @@ function fixture() {
   };
 
   return {
+    restaurantsLib: load("restaurants"),
     ridersLib: load("riders"),
     appsLib: load("applications"),
     chatsLib: load("customerChats"),
@@ -222,12 +231,38 @@ function fixture() {
     authUsers,
     claimsLog,
     auditLogs,
+    deletedUsers,
+    deletedStoragePrefixes,
   };
 }
 
 const master = { uid: "master-1", role: "masterAdmin" };
 const owner = { uid: "owner-1", role: "restaurantOwner" };
 const customer = { uid: "cust-1", role: "customer" };
+
+test("permanent restaurant deletion is master-only, confirmed, and preserves order records", async () => {
+  const f = fixture();
+  f.records.set("restaurants/owner-1", { name: "Aroy", emailId: "aroy@example.com" });
+  f.records.set("users/owner-1", { role: "restaurantOwner" });
+  f.records.set("food_items/owner-1/items/dish-1", { itemName: "Dish" });
+  f.records.set("orders/order-1", { currentStatus: "Delivered", Restaurant: { ownerId: "owner-1" } });
+
+  await assert.rejects(f.restaurantsLib.permanentlyDeleteRestaurant(owner, { ownerUid: "owner-1", confirmationName: "Aroy" }), { code: "permission-denied" });
+  await assert.rejects(f.restaurantsLib.permanentlyDeleteRestaurant(master, { ownerUid: "thaiseva-platform", confirmationName: "Aroy" }), { code: "invalid-argument" });
+  await assert.rejects(f.restaurantsLib.permanentlyDeleteRestaurant(master, { ownerUid: "owner-1", confirmationName: "Wrong" }), { code: "invalid-argument" });
+  f.records.set("orders/order-2", { currentStatus: "Preparing", Restaurant: { ownerId: "owner-1" } });
+  await assert.rejects(f.restaurantsLib.permanentlyDeleteRestaurant(master, { ownerUid: "owner-1", confirmationName: "Aroy" }), { code: "failed-precondition" });
+  f.records.delete("orders/order-2");
+
+  const result = await f.restaurantsLib.permanentlyDeleteRestaurant(master, { ownerUid: "owner-1", confirmationName: "Aroy" });
+  assert.equal(result.deleted, true);
+  assert.equal(f.records.has("restaurants/owner-1"), false);
+  assert.equal(f.records.has("food_items/owner-1/items/dish-1"), false);
+  assert.equal(f.records.has("users/owner-1"), false);
+  assert.equal(f.records.has("orders/order-1"), true);
+  assert.deepEqual(f.deletedUsers, ["owner-1"]);
+  assert.deepEqual(f.deletedStoragePrefixes, ["restaurants/owner-1/"]);
+});
 
 test("riders: creation, updating, and active status toggling", async () => {
   const f = fixture();

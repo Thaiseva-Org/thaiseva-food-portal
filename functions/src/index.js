@@ -16,6 +16,7 @@ const {
   updateRestaurantProfile,
   setRestaurantOpenState,
   adminUpdateCommission,
+  permanentlyDeleteRestaurant,
   ensurePlatformRestaurant,
 } = require("./lib/restaurants");
 const {
@@ -61,11 +62,11 @@ const {
 initializeApp();
 setGlobalOptions({ region: "asia-southeast1", maxInstances: 20 });
 
-function wrap(handler, { roles } = {}) {
+function wrap(handler, { roles, timeoutSeconds } = {}) {
   const enforceAppCheck =
     process.env.FUNCTIONS_EMULATOR !== "true" &&
     process.env.ENFORCE_APP_CHECK !== "false";
-  return onCall({ cors: true, enforceAppCheck }, async (request) => {
+  return onCall({ cors: true, enforceAppCheck, ...(timeoutSeconds ? { timeoutSeconds } : {}) }, async (request) => {
     try {
       const caller = await resolveCaller(request);
       await enforceRateLimit(caller, request.rawRequest?.path || "callable");
@@ -216,6 +217,11 @@ exports.clearOrderPayment = wrap(async (caller, data) => {
   requireMaster(caller);
   return clearOrderPayment(caller, data);
 });
+
+exports.permanentlyDeleteRestaurant = wrap(async (caller, data) => {
+  requireMaster(caller);
+  return permanentlyDeleteRestaurant(caller, data);
+}, { timeoutSeconds: 540 });
 
 // Customer / app dine-in bookings
 exports.createDineInBooking = wrap(async (caller, data) => {

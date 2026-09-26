@@ -388,7 +388,7 @@ const Restaurant = () => {
           <h2 className="text-xl sm:text-2xl font-bold text-ink">Account Settings</h2>
           <p className="text-sm text-ink-muted">Manage your account security.</p>
         </div>
-        <AccountSettings roleLabel="Restaurant Partner" embedded securityOnly />
+        <AccountSettings roleLabel="Restaurant Partner" embedded />
       </section>
     </div>
   );

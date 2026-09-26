@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { collection, getDocs } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import axios from "axios";
@@ -6,11 +7,14 @@ import { FaImages, FaRegImage } from "react-icons/fa";
 import { MdFileUpload, MdLocationOn } from "react-icons/md";
 import { db, storage } from "../../../../firebaseConfig";
 import AddressAutocomplete from "../../../components/AddressAutoComplete";
+import CuisineSelect from "../../../components/CuisineSelect";
 import ViewFoodItem from "../../component/ViewItem";
 import {
   setRestaurantOpenState,
   updateRestaurantProfile,
+  permanentlyDeleteRestaurant,
 } from "../../../api";
+import { isPlatformOwnerId } from "../../../utils/platformRestaurant";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import ConfirmDialog from "./components/ConfirmDialog";
 import MonitorModal from "./components/MonitorModal";
@@ -18,6 +22,7 @@ import { useRestaurantStats } from "./components/RestaurantContext";
 
 
 const RestaurantStatsManage = () => {
+  const navigate = useNavigate();
   const { ownerId, restaurant, refreshRestaurant } = useRestaurantStats();
   const [restaurantName, setRestaurantName] = useState(restaurant.name || "");
   const [phoneNumber, setPhoneNumber] = useState(restaurant.phoneNumber || "");
@@ -33,6 +38,9 @@ const RestaurantStatsManage = () => {
   const [error, setError] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [items, setItems] = useState([]);
   const [showMenu, setShowMenu] = useState(false);
   const GOOGLE_API_KEY = getGoogleMapsApiKey();
@@ -149,6 +157,21 @@ const RestaurantStatsManage = () => {
     }
   };
 
+  const deleteRestaurant = async () => {
+    if (deleteText !== restaurant.name || deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await permanentlyDeleteRestaurant({ ownerUid: ownerId, confirmationName: deleteText });
+      navigate("/foodAdmin", { replace: true });
+    } catch (err) {
+      setError(err.message || "Failed to delete restaurant.");
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const fetchFoodItem = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, `food_items/${ownerId}/items`));
@@ -180,6 +203,9 @@ const RestaurantStatsManage = () => {
             <i className="bi bi-card-list" aria-hidden="true" />
             View menu
           </button>
+          {!isPlatformOwnerId(ownerId) && <button type="button" className="btn-danger" onClick={() => { setDeleteText(""); setDeleteOpen(true); }}>
+            Permanently delete restaurant
+          </button>}
         </div>
       </div>
 
@@ -193,6 +219,22 @@ const RestaurantStatsManage = () => {
           {error}
         </p>
       )}
+
+      <MonitorModal
+        open={deleteOpen}
+        title="Permanently delete restaurant"
+        onClose={deleting ? undefined : () => setDeleteOpen(false)}
+        footer={<>
+          <button type="button" className="btn-ghost" disabled={deleting} onClick={() => setDeleteOpen(false)}>Cancel</button>
+          <button type="button" className="btn-danger" disabled={deleting || deleteText !== restaurant.name} onClick={deleteRestaurant}>
+            {deleting ? "Deleting…" : "Delete permanently"}
+          </button>
+        </>}
+      >
+        <p className="text-sm text-ink">This removes the restaurant, owner login, menu, notifications, chat, and uploaded restaurant files. Historical orders and finance records are retained. Open orders and reservations must be resolved first.</p>
+        <label className="mt-4 block text-sm font-semibold text-ink" htmlFor="delete-restaurant-name">Type {restaurant.name} to confirm</label>
+        <input id="delete-restaurant-name" className="modern-input mt-2" value={deleteText} onChange={(event) => setDeleteText(event.target.value)} autoComplete="off" />
+      </MonitorModal>
 
       <form className="panel grid grid-cols-1 gap-8 lg:grid-cols-12" onSubmit={handleSubmit}>
         <div className="lg:col-span-4">
@@ -244,13 +286,9 @@ const RestaurantStatsManage = () => {
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              Food type
+              Cuisines
             </span>
-            <input
-              className="modern-input"
-              value={foodType}
-              onChange={(e) => setFoodType(e.target.value)}
-            />
+            <CuisineSelect value={foodType} onChange={setFoodType} label="" />
           </label>
           <div>
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted">

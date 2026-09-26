@@ -19,6 +19,14 @@ import {
   DEFAULT_FILTERS,
 } from "../src/restaurantAdmin/pages/menu/menuUtils.js";
 
+test("multi-cuisine items can be found and filtered by either cuisine", () => {
+  const items = [{ itemName: "Fusion bowl", cuisine: "Thai, Indian", category: "Mains", itemType: "Veg", active: true }];
+  assert.deepEqual(collectCuisineOptions(items), ["Indian", "Thai"]);
+  assert.equal(filterMenuItems(items, { ...DEFAULT_FILTERS, cuisine: "Indian" }).length, 1);
+  assert.equal(filterMenuItems(items, { ...DEFAULT_FILTERS, cuisine: "Thai" }).length, 1);
+  assert.equal(filterMenuItems(items, { ...DEFAULT_FILTERS, cuisine: "Italian" }).length, 0);
+});
+
 test("menuUtils: pricing, discount calculations and key extraction", () => {
   assert.equal(getItemKey({ id: "item-1" }), "item-1");
   assert.equal(getItemKey({ itemId: "#hash-item" }), "hash-item");
@@ -225,4 +233,3 @@ test("menuUtils: sorting, category grouping, stats and options", () => {
   assert.equal(filtersAreActive({ ...DEFAULT_FILTERS, searchQuery: "cake" }), true);
   assert.equal(filtersAreActive({ ...DEFAULT_FILTERS, status: "active" }), true);
 });
-

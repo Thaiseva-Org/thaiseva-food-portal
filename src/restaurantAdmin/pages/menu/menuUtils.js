@@ -127,7 +127,7 @@ export function filterMenuItems(items, filters) {
     if (filters.cuisine && filters.cuisine !== "all") {
       const itemCuisine = String(item.cuisine || "").trim().toLowerCase();
       const filterCuisine = String(filters.cuisine || "").trim().toLowerCase();
-      if (itemCuisine !== filterCuisine) return false;
+      if (!itemCuisine.split(",").some((value) => value.trim() === filterCuisine)) return false;
     }
     if (filters.restaurantId && filters.restaurantId !== "all") {
       const assigned = Array.isArray(item.assignedRestaurants) ? item.assignedRestaurants : [];
@@ -238,8 +238,10 @@ export function collectCategoryOptions(settingsCategories, items) {
 export function collectCuisineOptions(items) {
   const set = new Set();
   (items || []).forEach((i) => {
-    const v = String(i.cuisine || "").trim();
-    if (v) set.add(v);
+    String(i.cuisine || "").split(",").forEach((value) => {
+      const v = value.trim();
+      if (v) set.add(v);
+    });
   });
   return [...set].sort((a, b) =>
     a.localeCompare(b, undefined, { sensitivity: "base" })

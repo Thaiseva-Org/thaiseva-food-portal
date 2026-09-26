@@ -2,13 +2,9 @@ import { useEffect, useState } from "react";
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
-  sendPasswordResetEmail,
   updatePassword,
-  updateProfile,
 } from "firebase/auth";
-import { auth } from "../../firebaseConfig";
 import { useAuth } from "../AuthContext";
-import { ensureUserProfile } from "../api";
 
 const passwordError = (code) => {
   if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
@@ -22,13 +18,9 @@ const passwordError = (code) => {
 };
 
 const AccountSettings = ({ roleLabel, embedded }) => {
-  const { currentUser, roleData, refreshAuthProfile } = useAuth();
-  const [name, setName] = useState(roleData?.name || currentUser?.displayName || "");
-  const [profileStatus, setProfileStatus] = useState({ type: "", text: "" });
+  const { currentUser } = useAuth();
   const [securityStatus, setSecurityStatus] = useState({ type: "", text: "" });
-  const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
-  const [sendingReset, setSendingReset] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -39,39 +31,6 @@ const AccountSettings = ({ roleLabel, embedded }) => {
   useEffect(() => {
     if (!embedded) document.title = `Thaiseva | ${roleLabel} Settings`;
   }, [roleLabel, embedded]);
-
-  useEffect(() => {
-    setName(roleData?.name || currentUser?.displayName || "");
-  }, [roleData?.name, currentUser?.displayName]);
-
-  const saveProfile = async (event) => {
-    event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setProfileStatus({ type: "error", text: "Name is required." });
-      return;
-    }
-    setSavingProfile(true);
-    setProfileStatus({ type: "", text: "" });
-    try {
-      await ensureUserProfile({ name: trimmedName });
-      try {
-        await updateProfile(currentUser, { displayName: trimmedName });
-      } catch (authError) {
-        // The Firestore profile is canonical for this portal. Keep the saved
-        // change even if Firebase Auth display-name synchronization fails.
-        console.warn("Auth display name sync failed:", authError);
-      }
-      await refreshAuthProfile({ forceRefresh: false });
-      setName(trimmedName);
-      setProfileStatus({ type: "success", text: "Account information updated." });
-    } catch (error) {
-      console.error("Profile update failed:", error);
-      setProfileStatus({ type: "error", text: "Unable to update account information." });
-    } finally {
-      setSavingProfile(false);
-    }
-  };
 
   const changePassword = async (event) => {
     event.preventDefault();
@@ -110,23 +69,6 @@ const AccountSettings = ({ roleLabel, embedded }) => {
     }
   };
 
-  const sendReset = async () => {
-    setSendingReset(true);
-    setSecurityStatus({ type: "", text: "" });
-    try {
-      await sendPasswordResetEmail(auth, currentUser.email);
-      setSecurityStatus({
-        type: "success",
-        text: `Password reset email sent to ${currentUser.email}.`,
-      });
-    } catch (error) {
-      console.error("Password reset failed:", error);
-      setSecurityStatus({ type: "error", text: "Unable to send the reset email." });
-    } finally {
-      setSendingReset(false);
-    }
-  };
-
   const noticeClass = (type) =>
     type === "success"
       ? "border-success-200 bg-success-50 text-success-700"
@@ -139,40 +81,15 @@ const AccountSettings = ({ roleLabel, embedded }) => {
           <p className="eyebrow">Account</p>
           <h1 className="page-header">Settings</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Manage your account information and password.
+            Manage your password.
           </p>
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="panel">
-          <h2 className="section-title">Account information</h2>
-          <p className="mt-1 text-sm text-ink-muted">Your portal identity.</p>
-          {profileStatus.text && (
-            <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${noticeClass(profileStatus.type)}`} role="status">
-              {profileStatus.text}
-            </div>
-          )}
-          <form onSubmit={saveProfile} className="mt-5 space-y-4">
-            <div>
-              <label htmlFor="settings-name" className="mb-1.5 block text-sm font-semibold text-ink">Name</label>
-              <input id="settings-name" className="modern-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required />
-            </div>
-            <div>
-              <label htmlFor="settings-email" className="mb-1.5 block text-sm font-semibold text-ink">Email</label>
-              <input id="settings-email" className="modern-input bg-neutral-100" value={currentUser?.email || ""} readOnly />
-              <p className="mt-1 text-xs text-ink-subtle">Email changes are managed by an administrator.</p>
-            </div>
-
-            <button type="submit" className="add-new-btn w-full sm:w-auto" disabled={savingProfile}>
-              {savingProfile ? "Saving…" : "Save changes"}
-            </button>
-          </form>
-        </section>
-
+      <div className="max-w-2xl">
         <section className="panel">
           <h2 className="section-title">Security</h2>
-          <p className="mt-1 text-sm text-ink-muted">Change your password or request a reset email.</p>
+          <p className="mt-1 text-sm text-ink-muted">Change your password.</p>
           {securityStatus.text && (
             <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${noticeClass(securityStatus.type)}`} role="status">
               {securityStatus.text}
@@ -197,12 +114,6 @@ const AccountSettings = ({ roleLabel, embedded }) => {
               {savingPassword ? "Changing…" : "Change password"}
             </button>
           </form>
-          <div className="mt-6 border-t border-neutral-200 pt-5">
-            <p className="text-sm text-ink-muted">Forgot your current password?</p>
-            <button type="button" className="btn-outline mt-3 w-full sm:w-auto" onClick={sendReset} disabled={sendingReset}>
-              {sendingReset ? "Sending…" : "Send password reset email"}
-            </button>
-          </div>
           </>
           ) : (
             <p className="mt-5 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-ink-muted">

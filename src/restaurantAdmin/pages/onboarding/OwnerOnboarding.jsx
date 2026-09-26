@@ -18,21 +18,9 @@ import { submitRestaurantApplication } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
+import CuisineSelect from "../../../components/CuisineSelect";
 
 import { extractCityFromPlace } from "../../../utils/location";
-const FOOD_TYPES = [
-  "Thai",
-  "Chinese",
-  "Japanese",
-  "Indian",
-  "Italian",
-  "Korean",
-  "Street Food",
-  "Cafe & Bakery",
-  "Seafood",
-  "Other",
-];
-
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -566,22 +554,7 @@ const OwnerOnboarding = () => {
                 <span className="block text-sm font-semibold text-ink mb-1.5">
                   Cuisine / food type
                 </span>
-                <div className="flex flex-wrap gap-2">
-                  {FOOD_TYPES.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setFoodType(t)}
-                      className={`rounded-full px-3 py-1.5 text-sm font-semibold border transition-all duration-fast ${
-                        foodType === t
-                          ? "bg-brand-500 text-white border-brand-500 shadow-sm"
-                          : "bg-white text-ink-muted border-neutral-200 hover:border-brand-300 hover:text-brand-700"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
+                <CuisineSelect value={foodType} onChange={setFoodType} required />
               </div>
             </div>
           )}

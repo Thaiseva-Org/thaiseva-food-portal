@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { AuthProvider } from "./AuthContext";
 import Loading from "./components/Loading";
+const CuisineCategories = lazy(() => import("./masterAdmin/pages/CuisineCategories"));
 import AccountSettings from "./components/AccountSettings";
 import { MasterStat } from "./masterAdmin/component";
 import {
@@ -311,6 +312,7 @@ const App = () => {
                         }
                       />
                     </Route>
+                    <Route path="cuisineCategories" element={<CuisineCategories />} />
                     <Route path="ourOrders" element={<OurOrdersLayout />}>
                       <Route index element={<OurKitchenOrders />} />
                       <Route path=":orderId" element={<OrderView />} />

@@ -101,7 +101,7 @@ function cleanApplicationPayload(payload) {
     name: cleanText(payload?.name, "name", 120),
     phoneNumber: cleanText(payload?.phoneNumber, "phoneNumber", 30),
     emailId,
-    foodType: cleanText(payload?.foodType, "foodType", 100),
+    foodType: cleanText(payload?.foodType, "foodType", 1000),
     location: cleanText(payload?.location, "location", 500),
     description: cleanText(payload?.description, "description", 2000),
     imageUrl: isApplicationStoragePath(payload?.imageUrl)

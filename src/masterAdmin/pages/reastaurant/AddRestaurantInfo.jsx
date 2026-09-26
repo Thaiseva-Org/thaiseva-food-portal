@@ -7,6 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { MdLocationOn } from "react-icons/md";
 import axios from "axios";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
+import CuisineSelect from "../../../components/CuisineSelect";
 
 const AddRestaInfo = () => {
   const [restaurantName, setRestaurantName] = useState("");
@@ -231,16 +232,9 @@ const AddRestaInfo = () => {
                       className="block text-gray-700 text-sm font-bold mb-2"
                       htmlFor="food-type"
                     >
-                      Food Type
+                      Cuisines
                     </label>
-                    <input
-                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                      id="food-type"
-                      type="text"
-                      placeholder="Food Type"
-                      value={foodType}
-                      onChange={(e) => setFoodType(e.target.value)}
-                    />
+                    <CuisineSelect id="food-type" value={foodType} onChange={setFoodType} label="" />
                   </div>
 
                   <div className="mb-4 relative">

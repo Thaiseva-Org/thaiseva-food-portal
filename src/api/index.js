@@ -24,6 +24,8 @@ export const setRestaurantOpenState = (data) =>
   callApi("setRestaurantOpenState", data);
 export const adminUpdateCommission = (data) =>
   callApi("adminUpdateCommission", data);
+export const permanentlyDeleteRestaurant = (data) =>
+  callApi("permanentlyDeleteRestaurant", data);
 export const ensurePlatformRestaurant = (data) =>
   callApi("ensurePlatformRestaurant", data);
 

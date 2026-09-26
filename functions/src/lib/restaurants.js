@@ -35,7 +35,7 @@ const PROFILE_FIELD_LIMITS = {
   name: 120,
   phoneNumber: 30,
   emailId: 254,
-  foodType: 100,
+  foodType: 1000,
   location: 500,
   description: 2000,
   ownerName: 120,
@@ -179,7 +179,7 @@ async function submitRestaurantApplication(caller, payload) {
       }
       return email;
     })(),
-    foodType: cleanText(payload?.foodType, "foodType", 100),
+    foodType: cleanText(payload?.foodType, "foodType", 1000),
     location: cleanText(payload?.location, "location", 500),
     description: cleanText(payload?.description, "description", 2000),
     imageUrl: cleanImageUrl(payload?.imageUrl),
@@ -460,7 +460,9 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
     // may change it.
     if (key === "emailId" && caller.role === ROLES.OWNER) continue;
     if (fields[key] !== undefined && fields[key] !== null) {
-      updates[key] = key === "imageUrl"
+      updates[key] = key === "emailId"
+        ? String(fields[key]).trim().toLowerCase()
+        : key === "imageUrl"
         ? cleanImageUrl(fields[key])
         : key.endsWith("Url")
           ? cleanDocUrl(fields[key], key)
@@ -473,6 +475,9 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
       "serviceType must be Delivery, Dine-in, or Both."
     );
   }
+  if (updates.emailId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.emailId)) {
+    throw new HttpsError("invalid-argument", "A valid email address is required.");
+  }
   if (!Object.keys(updates).length) {
     throw new HttpsError("invalid-argument", "No updatable fields provided.");
   }
@@ -484,7 +489,25 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Restaurant not found.");
 
-  await ref.update(updates);
+  const emailChanged = updates.emailId && updates.emailId !== snap.data().emailId;
+  if (emailChanged) {
+    // The restaurant email is also its sign-in email. Keep both in sync.
+    const { getAuth } = require("firebase-admin/auth");
+    try {
+      await getAuth().updateUser(target, { email: updates.emailId });
+    } catch (error) {
+      throw new HttpsError("failed-precondition", `Could not change the sign-in email: ${error.message}`);
+    }
+  }
+  try {
+    await ref.update(updates);
+  } catch (error) {
+    if (emailChanged) {
+      const { getAuth } = require("firebase-admin/auth");
+      await getAuth().updateUser(target, { email: snap.data().emailId }).catch(() => {});
+    }
+    throw error;
+  }
   await writeAuditLog({
     actorUid: caller.uid,
     actorRole: caller.role,
@@ -572,6 +595,67 @@ async function adminUpdateCommission(caller, { ownerUid, commission }) {
   return { ownerUid, commission: pct };
 }
 
+async function permanentlyDeleteRestaurant(caller, { ownerUid, confirmationName }) {
+  if (caller.role !== ROLES.MASTER) {
+    throw new HttpsError("permission-denied", "Only master admin can delete restaurants.");
+  }
+  if (!ownerUid || typeof ownerUid !== "string" || ownerUid === PLATFORM_OWNER_ID || ownerUid === caller.uid) {
+    throw new HttpsError("invalid-argument", "A partner restaurant ID is required.");
+  }
+
+  const db = getFirestore();
+  const restaurantRef = db.collection("restaurants").doc(ownerUid);
+  const snapshot = await restaurantRef.get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Restaurant not found.");
+  if (snapshot.data().isPlatformOwned) {
+    throw new HttpsError("permission-denied", "The platform kitchen cannot be deleted.");
+  }
+  if (confirmationName !== snapshot.data().name) {
+    throw new HttpsError("invalid-argument", "Type the restaurant name to confirm deletion.");
+  }
+
+  const [orders, bookings] = await Promise.all([
+    db.collection("orders").where("Restaurant.ownerId", "==", ownerUid).get(),
+    db.collection("dineInBookings").where("ownerId", "==", ownerUid).get(),
+  ]);
+  if (orders.docs.some((order) => !["Delivered", "Cancelled"].includes(order.data().currentStatus))) {
+    throw new HttpsError("failed-precondition", "Complete or cancel this restaurant's open orders first.");
+  }
+  if (bookings.docs.some((booking) => ["Pending", "Accepted"].includes(booking.data().status))) {
+    throw new HttpsError("failed-precondition", "Resolve this restaurant's open reservations first.");
+  }
+
+  // Remove owner-scoped content before removing the restaurant record so a
+  // failed cleanup remains visible and can be retried by master admin.
+  await db.recursiveDelete(db.collection("food_items").doc(ownerUid));
+  const notes = db.collection("notifications").doc("restaurants").collection(ownerUid);
+  await db.recursiveDelete(notes);
+  await db.recursiveDelete(db.collection("foodRestaurantChats").doc(ownerUid));
+
+  const { getStorage } = require("firebase-admin/storage");
+  await getStorage().bucket().deleteFiles({ prefix: `restaurants/${ownerUid}/` });
+
+  const { getAuth } = require("firebase-admin/auth");
+  try {
+    await getAuth().deleteUser(ownerUid);
+  } catch (error) {
+    if (error.code !== "auth/user-not-found") throw error;
+  }
+
+  await db.recursiveDelete(db.collection("users").doc(ownerUid));
+  await writeAuditLog({
+    actorUid: caller.uid,
+    actorRole: caller.role,
+    action: "restaurant.permanent_delete",
+    targetType: "restaurant",
+    targetId: ownerUid,
+    tenantId: ownerUid,
+    before: { name: snapshot.data().name, emailId: snapshot.data().emailId },
+  });
+  await db.recursiveDelete(restaurantRef);
+  return { ownerUid, deleted: true };
+}
+
 async function ensurePlatformRestaurant(caller, payload = {}) {
   if (caller.role !== ROLES.MASTER) {
     throw new HttpsError(
@@ -654,6 +738,7 @@ module.exports = {
   updateRestaurantProfile,
   setRestaurantOpenState,
   adminUpdateCommission,
+  permanentlyDeleteRestaurant,
   ensurePlatformRestaurant,
   PLATFORM_OWNER_ID,
   PROFILE_SAFE_FIELDS,

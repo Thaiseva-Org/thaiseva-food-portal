@@ -273,7 +273,7 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read: if true;
       // categories is food portal only; all other settings keep production isAdmin
-      allow write: if isAdmin() || (docId == 'categories' && isFoodAdmin());
+      allow write: if isAdmin() || (docId in ['categories', 'cuisines'] && isFoodAdmin());
     }
 
     match /FaqDB/{faqId} {

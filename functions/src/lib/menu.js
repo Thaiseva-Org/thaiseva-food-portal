@@ -98,7 +98,7 @@ async function createFoodItem(caller, payload) {
     price: numPrice,
     discount: numDiscount,
     category: cleanItemText(category, "category", 100),
-    cuisine: cuisine ? cleanItemText(cuisine, "cuisine", 100) : "",
+    cuisine: cuisine ? cleanItemText(cuisine, "cuisine", 1000) : "",
     itemType: cleanItemText(itemType, "itemType", 50),
     description: cleanItemText(description, "description", 2000),
     imageUrl: cleanOptionalImageUrl(imageUrl),
@@ -153,7 +153,7 @@ async function updateFoodItem(caller, payload) {
   const updates = {};
   if (payload.itemName != null) updates.itemName = cleanItemText(payload.itemName, "itemName", 120);
   if (payload.category != null) updates.category = cleanItemText(payload.category, "category", 100);
-  if (payload.cuisine != null) updates.cuisine = payload.cuisine ? cleanItemText(payload.cuisine, "cuisine", 100) : "";
+  if (payload.cuisine != null) updates.cuisine = payload.cuisine ? cleanItemText(payload.cuisine, "cuisine", 1000) : "";
   if (payload.itemType != null) updates.itemType = cleanItemText(payload.itemType, "itemType", 50);
   if (payload.description != null)
     updates.description = cleanItemText(payload.description, "description", 2000);

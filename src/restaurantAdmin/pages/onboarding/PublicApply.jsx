@@ -12,21 +12,10 @@ import {
 } from "../../../utils/publicApplyUpload";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
+import CuisineSelect from "../../../components/CuisineSelect";
 
 import { extractCityFromPlace } from "../../../utils/location";
 
-const FOOD_TYPES = [
-  "Thai",
-  "Chinese",
-  "Japanese",
-  "Indian",
-  "Italian",
-  "Korean",
-  "Street Food",
-  "Cafe & Bakery",
-  "Seafood",
-  "Other",
-];
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STEPS = [
@@ -300,13 +289,7 @@ const PublicApply = () => {
               <Field label="Email">
                 <input className="modern-input" type="email" value={emailId} onChange={(e) => setEmailId(e.target.value)} />
               </Field>
-              <div className="flex flex-wrap gap-2">
-                {FOOD_TYPES.map((t) => (
-                  <button key={t} type="button" onClick={() => setFoodType(t)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${foodType === t ? "border-brand-500 bg-brand-500 text-white" : "border-neutral-200"}`}>
-                    {t}
-                  </button>
-                ))}
-              </div>
+              <CuisineSelect value={foodType} onChange={setFoodType} required />
             </div>
           )}
 
