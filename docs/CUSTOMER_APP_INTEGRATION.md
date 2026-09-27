@@ -160,13 +160,29 @@ idempotent retry returns HTTP `200`:
 }
 ```
 
-`amount` is always the verified food subtotal at checkout, including on an idempotent retry after the order has progressed. `restaurant` confirms exactly where the server routed the order. On Master Admin confirmation, the server applies a fixed ฿100 delivery charge when the food subtotal is below ฿1,000; otherwise the charge is ฿0. `orders/{orderId}.Amount` then becomes the subtotal plus that fixed charge.
+`amount` is the order total the customer pays: the verified food subtotal plus a fixed ฿100 delivery charge when that subtotal is below ฿1,000 (otherwise ฿0). It equals `orders/{orderId}.Amount`, and an idempotent retry returns the same value. `restaurant` confirms exactly where the server routed the order.
 
 ## Payment verification fields
 
 - `paymentMethod: "Cash on Delivery"`: Master Admin gets a **Verify cash received** button. Successful verification sets `isPaymentDone: true`.
 - `paymentMethod: "Thai QR"` (including PromptPay/legacy ThaiSeva aliases): Master Admin gets a **Verify Thai QR payment** button and may enter the transfer reference. Successful verification sets `isPaymentDone: true`.
-- `paymentMethod: "Stripe"`: there is no manual verification button. When an order request is submitted, `createFoodOrder` initializes `verified: false`. Once the Stripe payment process completes successfully (e.g. via Stripe Webhook `checkout.session.completed` / `payment_intent.succeeded`), the backend updates the order field `verified: true` (and `isPaymentDone: true`); the portal displays that field as **Stripe verified**. Customer-supplied `verified` values in request payloads are untrusted and ignored.
+- `paymentMethod: "Stripe"`: there is no manual verification button. `createFoodOrder` initializes `verified: false`. The app then:
+  1. charges exactly the returned `amount` in THB with a PaymentIntent whose `metadata.orderId` is the order ID (and `metadata.userId` the customer UID), and
+  2. after the PaymentIntent succeeds, calls `verifyFoodOrderPaymentHttp`.
+
+  The server retrieves the PaymentIntent from Stripe and sets `verified: true`, `isPaymentDone: true`, `paymentStatus: "verified"`, `stripePaymentIntentId` and `paymentVerification` only when the PaymentIntent succeeded, belongs to that order and customer, and `amount_received` equals `Amount` in satang. The portal then shows **Stripe verified**. Customer-supplied `verified` values in order payloads are ignored.
+
+```text
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/verifyFoodOrderPaymentHttp
+Authorization: Bearer <Firebase ID token>
+Content-Type: application/json
+
+{ "orderId": "ORD-...", "paymentIntentId": "pi_..." }
+```
+
+A success returns `{ "ok": true, "data": { "orderId": "...", "verified": true, "alreadyApplied": false } }`. Calling it again is safe and returns `alreadyApplied: true`. `failed-precondition` means the payment has not succeeded or does not match the order; `unavailable` means Stripe could not be reached (retry).
+
+The function reads `STRIPE_SECRET_KEY` from `functions/.env` (not committed; see `functions/.env.example`). It must be the secret key of the same Stripe account that creates the app's PaymentIntents.
 
 ## Idempotency
 

@@ -3,6 +3,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resolveCaller, enforceRateLimit } = require("./auth");
 const { createFoodOrder } = require("./orders");
+const { verifyStripeOrderPayment } = require("./orderPayments");
 
 const HTTP_STATUS_BY_CODE = {
   "invalid-argument": 400,
@@ -103,6 +104,29 @@ async function createFoodOrderHttpHandler(req, res) {
   }
 }
 
+async function verifyFoodOrderPaymentHttpHandler(req, res) {
+  res.set("Cache-Control", "no-store");
+  if (req.method !== "POST") {
+    res.set("Allow", "POST");
+    return res.status(405).json({
+      ok: false,
+      error: { code: "method-not-allowed", message: "Use POST." },
+    });
+  }
+
+  try {
+    const caller = await authenticateHttpRequest(req);
+    await enforceRateLimit(caller, "verifyFoodOrderPaymentHttp", 30);
+    const payload = req.body?.data && typeof req.body.data === "object"
+      ? req.body.data
+      : req.body || {};
+    const result = await verifyStripeOrderPayment(caller, payload);
+    return res.status(200).json({ ok: true, data: result });
+  } catch (err) {
+    return sendApiError(res, err);
+  }
+}
+
 async function listOrderableRestaurantsHttpHandler(req, res) {
   res.set("Cache-Control", "public, max-age=60");
   if (req.method !== "GET") {
@@ -152,5 +176,6 @@ module.exports = {
   publicRestaurant,
   sendApiError,
   createFoodOrderHttpHandler,
+  verifyFoodOrderPaymentHttpHandler,
   listOrderableRestaurantsHttpHandler,
 };
