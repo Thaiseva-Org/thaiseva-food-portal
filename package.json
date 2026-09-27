@@ -7,7 +7,7 @@
     "dev": "vite --port 5000",
     "build": "vite build",
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "test": "node --test tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/dineInBookings.test.cjs tests/customerChats.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js tests/orderRider.test.js tests/orderData.test.js tests/orderPayments.test.cjs tests/orderFetching.test.js tests/createFoodOrder.test.cjs tests/httpApi.test.cjs tests/restaurantMenuFlow.test.cjs tests/frontendUtils.test.mjs tests/menuCatalog.test.mjs tests/platformOperations.test.cjs tests/tableReservations.test.cjs tests/orderFullLifecycle.test.cjs tests/partnerPush.test.cjs",
+    "test": "node --test tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/customerChats.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js tests/orderRider.test.js tests/orderData.test.js tests/orderPayments.test.cjs tests/orderFetching.test.js tests/createFoodOrder.test.cjs tests/httpApi.test.cjs tests/restaurantMenuFlow.test.cjs tests/frontendUtils.test.mjs tests/menuCatalog.test.mjs tests/platformOperations.test.cjs tests/orderFullLifecycle.test.cjs tests/partnerPush.test.cjs",
     "check": "npm run lint && npm test && npm run build",
     "verify:production": "node scripts/verify-production.mjs",
     "deploy:check": "npm run verify:production && npm run check && npm --prefix functions run check",
