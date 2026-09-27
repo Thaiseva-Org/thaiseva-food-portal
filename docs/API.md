@@ -50,6 +50,10 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `updateFoodRider` | Protected | Yes | Master Admin | Standard | Modifies courier details |
 | `setFoodRiderActive` | Protected | Yes | Master Admin | Standard | Toggles courier active status |
 
+| `sendFoodCustomerMessage` | Protected | Yes | Customer | 30 / min | Sends a message to food support chat |
+| `registerPartnerDevice` | Protected | Yes | Owner / Master | Standard | Registers device for push notifications |
+| `unregisterPartnerDevice` | Protected | Yes | Owner / Master | Standard | Unregisters device from push notifications |
+
 ---
 
 ## 3. Detailed Endpoint Reference

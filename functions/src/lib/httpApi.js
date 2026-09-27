@@ -114,6 +114,17 @@ async function listOrderableRestaurantsHttpHandler(req, res) {
   }
 
   try {
+    const ip = String(req.ip || req.headers?.["x-forwarded-for"] || "anon")
+      .split(",")[0]
+      .trim()
+      .replace(/[^A-Za-z0-9._:-]/g, "_")
+      .slice(0, 80);
+    await enforceRateLimit(
+      { uid: `anon_${ip || "unknown"}` },
+      "listOrderableRestaurantsHttp",
+      60
+    );
+
     const requestedLimit = Number(req.query?.limit || 100);
     const limit = Number.isInteger(requestedLimit)
       ? Math.min(Math.max(requestedLimit, 1), 100)

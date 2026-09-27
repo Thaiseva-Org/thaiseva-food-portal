@@ -184,28 +184,17 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
   - **Manual Offline Payments (Thai QR, Cash on Delivery):** Master Admin calls `verifyOrderPayment` to record the payment reference and mark `isPaymentDone: true` / `paymentStatus: "verified"`.
   - **Stripe Payments (`paymentMethod: "Stripe"`):** Manual verification via `verifyOrderPayment` is rejected with `failed-precondition`. Initial order creation sets `verified: false`. Once the Stripe payment process completes successfully (e.g. via Stripe Webhook `checkout.session.completed` / `payment_intent.succeeded`), the backend updates the order record to `verified: true` (and `isPaymentDone: true`), causing the portal UI to reflect status **Stripe verified**.
 
-Defined in: `functions/src/lib/bookings.js`
 
-- **Payload:** Requires guest details, party size, notes (e.g. occasions), and schedule.
-  - **Example Payload:**
-    ```json
-    {
-      "ownerId": "restaurant_uid_123",
-      "customerName": "Alice Smith",
-      "phoneNumber": "+66 812345678",
-      "adults": 2,
-      "children": 1,
-      "scheduledAt": "2024-12-25T19:00:00.000Z",
-      "notes": "Window seat, Anniversary celebration"
-    }
-    ```
-
-- The full customer-app contract is documented in `APP_BOOKING_API.md`.
-
-### H. Food Customer Chat API
+### G. Food Customer Chat API
 Defined in: `functions/src/lib/customerChats.js`
 
 - `sendFoodCustomerMessage` accepts an authenticated food customer's message and appends it to `foodCustomerSupportChats/{customerUid}`. This is a standalone food-support channel. Customers may read their own thread; only Master Admin can write directly to the collection.
+
+### H. Partner App Push Notifications
+Defined in: `functions/src/lib/partnerPush.js`
+
+- **`registerPartnerDevice`**: Registers a device FCM token for a logged-in partner to receive push notifications.
+- **`unregisterPartnerDevice`**: Removes a device FCM token when the partner logs out or disables notifications.
 
 #### Client Integration Guide (Customer App)
 

@@ -41,14 +41,7 @@ const {
   setFoodItemActive,
   deleteFoodItem,
 } = require("./lib/menu");
-const {
-  createDineInBooking,
-  listMyDineInBookings,
-  getDineInBooking,
-  updateDineInBooking,
-  cancelDineInBooking,
-  setDineInBookingStatus,
-} = require("./lib/bookings");
+
 const {
   createFoodRider,
   updateFoodRider,
@@ -229,28 +222,7 @@ exports.permanentlyDeleteRestaurant = wrap(async (caller, data) => {
   return permanentlyDeleteRestaurant(caller, data);
 }, { timeoutSeconds: 540 });
 
-// Customer / app dine-in bookings
-exports.createDineInBooking = wrap(async (caller, data) => {
-  await enforceRateLimit(caller, "createDineInBooking", 10);
-  return createDineInBooking(caller, data);
-});
 
-exports.listMyDineInBookings = wrap(async (caller, data) => {
-  return listMyDineInBookings(caller, data);
-});
-
-exports.getDineInBooking = wrap(async (caller, data) => {
-  return getDineInBooking(caller, data);
-});
-
-exports.updateDineInBooking = wrap(async (caller, data) => {
-  await enforceRateLimit(caller, "updateDineInBooking", 20);
-  return updateDineInBooking(caller, data);
-});
-
-exports.cancelDineInBooking = wrap(async (caller, data) => {
-  return cancelDineInBooking(caller, data);
-});
 
 // Dedicated food-customer support channel. This never reads or writes the
 // shared legacy `chats` collection.
@@ -259,10 +231,7 @@ exports.sendFoodCustomerMessage = wrap(async (caller, data) => {
   return sendFoodCustomerMessage(caller, data);
 });
 
-exports.setDineInBookingStatus = wrap(async (caller, data) => {
-  requireOwnerOrMaster(caller);
-  return setDineInBookingStatus(caller, data);
-});
+
 
 // ─── Menu ─────────────────────────────────────────────────
 exports.createFoodItem = wrap(async (caller, data) => {
