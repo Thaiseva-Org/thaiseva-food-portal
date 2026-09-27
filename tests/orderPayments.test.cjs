@@ -23,8 +23,9 @@ function fixture(order) {
     },
     "./auth": { ROLES: { MASTER: "masterAdmin" } },
     "./audit": { writeAuditLogTx: (tx, db, entry) => audits.push(entry) },
+    "node:crypto": require("node:crypto"),
   };
-  const context = { module: { exports: {} }, require: (name) => dependencies[name] };
+  const context = { module: { exports: {} }, require: (name) => dependencies[name], Buffer };
   vm.runInNewContext(readFileSync(join(__dirname, "../functions/src/lib/orderPayments.js"), "utf8"), context);
   return { ...context.module.exports, writes, audits };
 }
@@ -167,4 +168,64 @@ test("manual verification still refuses Stripe orders", () => {
   const f = fixture(null);
   assert.equal(f.isStripePaymentMethod("Stripe card"), true);
   assert.equal(f.manualPaymentMethod("Stripe"), null);
+});
+
+const webhookEvent = (intent, type = "payment_intent.succeeded") => ({
+  id: "evt_1", type, data: { object: { object: "payment_intent", ...intent } },
+});
+const foodIntent = { ...paidIntent, metadata: { ...paidIntent.metadata, orderType: "food" } };
+
+test("Stripe webhook marks a paid food order verified once", async () => {
+  const f = fixture(stripeOrder);
+  const result = { ...await f.handleStripeFoodWebhookEvent(webhookEvent(foodIntent)) };
+  assert.deepEqual(result, { handled: true, orderId: "ORD-1", verified: true, alreadyApplied: false });
+  assert.equal(f.writes[0].verified, true);
+  assert.equal(f.writes[0].isPaymentDone, true);
+  assert.equal(f.writes[0].paymentVerification.verifiedBy, "stripe-webhook");
+  assert.equal(f.audits[0].actorUid, "stripe-webhook");
+  assert.equal((await f.handleStripeFoodWebhookEvent(webhookEvent(foodIntent))).alreadyApplied, true);
+  assert.equal(f.writes.length, 1);
+});
+
+test("Stripe webhook ignores other events, other products and mismatched payments", async () => {
+  for (const event of [
+    webhookEvent(foodIntent, "payment_intent.payment_failed"),
+    webhookEvent(paidIntent),
+    webhookEvent({ ...foodIntent, metadata: { orderType: "food" } }),
+    webhookEvent({ ...foodIntent, amount_received: 100 }),
+    webhookEvent({ ...foodIntent, currency: "usd" }),
+    webhookEvent({ ...foodIntent, metadata: { ...foodIntent.metadata, userId: "someone-else" } }),
+    webhookEvent({ ...foodIntent, status: "processing" }),
+  ]) {
+    const f = fixture(stripeOrder);
+    assert.equal((await f.handleStripeFoodWebhookEvent(event)).handled, false);
+    assert.equal(f.writes.length, 0);
+  }
+  const cash = fixture({ ...stripeOrder, paymentMethod: "Cash on Delivery" });
+  assert.equal((await cash.handleStripeFoodWebhookEvent(webhookEvent(foodIntent))).handled, false);
+  assert.equal(cash.writes.length, 0);
+  await assert.rejects(fixture(null).handleStripeFoodWebhookEvent(webhookEvent(foodIntent)), { code: "not-found" });
+});
+
+test("Stripe webhook signature must match the raw body, secret and a recent timestamp", () => {
+  const { createHmac } = require("node:crypto");
+  const f = fixture(null);
+  const secret = "whsec_test";
+  const body = Buffer.from(JSON.stringify(webhookEvent(foodIntent)));
+  const now = 1_800_000_000_000;
+  const t = now / 1000;
+  const sign = (payload, key = secret, ts = t) =>
+    `t=${ts},v1=${createHmac("sha256", key).update(`${ts}.`).update(payload).digest("hex")}`;
+  f.verifyStripeSignature(body, sign(body), secret, { now });
+  f.verifyStripeSignature(body, `t=${t},v1=00,${sign(body).split(",")[1]}`, secret, { now });
+  for (const [payload, header] of [
+    [Buffer.from(body.toString().replace("21650", "1")), sign(body)],
+    [body, sign(body, "whsec_other")],
+    [body, sign(body, secret, t - 301)],
+    [body, "garbage"],
+    [body, undefined],
+  ]) {
+    assert.throws(() => f.verifyStripeSignature(payload, header, secret, { now }), { code: "permission-denied" });
+  }
+  assert.throws(() => f.verifyStripeSignature(body, sign(body), "", { now }), { code: "unavailable" });
 });
