@@ -62,6 +62,7 @@ const {
 } = require("./lib/partnerPush");
 const {
   createFoodOrderHttpHandler,
+  verifyFoodOrderPaymentHttpHandler,
   listOrderableRestaurantsHttpHandler,
 } = require("./lib/httpApi");
 
@@ -187,6 +188,13 @@ exports.ensurePlatformRestaurant = wrap(async (caller, data) => {
 exports.createFoodOrderHttp = onRequest(
   { cors: true, invoker: "public" },
   createFoodOrderHttpHandler
+);
+
+// Customer app calls this after its Stripe PaymentSheet succeeds; reads
+// STRIPE_SECRET_KEY from functions/.env (see docs/CUSTOMER_APP_INTEGRATION.md).
+exports.verifyFoodOrderPaymentHttp = onRequest(
+  { cors: true, invoker: "public" },
+  verifyFoodOrderPaymentHttpHandler
 );
 
 exports.listOrderableRestaurantsHttp = onRequest(

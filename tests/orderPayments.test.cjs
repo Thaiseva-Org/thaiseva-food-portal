@@ -19,7 +19,7 @@ function fixture(order) {
     "firebase-functions/v2/https": { HttpsError },
     "firebase-admin/firestore": {
       FieldValue: { serverTimestamp: () => "server-time" },
-      getFirestore: () => ({ collection: () => ({ doc: (id) => id }), runTransaction: (run) => run(tx) }),
+      getFirestore: () => ({ collection: () => ({ doc: (id) => ({ id, get: () => tx.get() }) }), runTransaction: (run) => run(tx) }),
     },
     "./auth": { ROLES: { MASTER: "masterAdmin" } },
     "./audit": { writeAuditLogTx: (tx, db, entry) => audits.push(entry) },
@@ -89,4 +89,82 @@ test("missing orders and malformed input fail without writes", async () => {
     await assert.rejects(f.verifyOrderPayment(master, { ...request, ...change }), { code: "invalid-argument" });
   }
   assert.equal(f.writes.length, 0);
+});
+
+const customer = { uid: "customer-1", role: null };
+const stripeOrder = { paymentMethod: "Stripe", Amount: 216.5, currentStatus: "New Order", Receiver: { id: "customer-1" }, Restaurant: { ownerId: "owner-1" } };
+const stripeRequest = { orderId: "ORD-1", paymentIntentId: "pi_123abc" };
+const paidIntent = { id: "pi_123abc", status: "succeeded", currency: "thb", amount_received: 21650, metadata: { orderId: "ORD-1", userId: "customer-1" } };
+const stripeReturns = (intent) => {
+  const calls = [];
+  return { calls, retrievePaymentIntent: async (id) => { calls.push(id); return intent; } };
+};
+
+test("succeeded Stripe payment for the order's exact amount marks it verified and paid; retry writes once", async () => {
+  const f = fixture(stripeOrder);
+  const stripe = stripeReturns(paidIntent);
+  assert.deepEqual({ ...await f.verifyStripeOrderPayment(customer, stripeRequest, stripe) }, { orderId: "ORD-1", verified: true, alreadyApplied: false });
+  assert.equal(f.writes[0].verified, true);
+  assert.equal(f.writes[0].isPaymentDone, true);
+  assert.equal(f.writes[0].paymentStatus, "verified");
+  assert.equal(f.writes[0].stripePaymentIntentId, "pi_123abc");
+  assert.equal(f.writes[0].paymentVerification.method, "stripe");
+  assert.equal(f.writes[0].paymentVerification.amount, 216.5);
+  assert.equal(f.writes[0].paymentVerification.verifiedAt, "server-time");
+  assert.equal(f.writes[0].isPaymentClear, undefined);
+  assert.equal(f.audits[0].action, "order.stripe_payment_verified");
+  assert.equal((await f.verifyStripeOrderPayment(customer, stripeRequest, stripe)).alreadyApplied, true);
+  assert.equal(f.writes.length, 1);
+  assert.equal(stripe.calls.length, 1);
+});
+
+test("Stripe verification rejects other customers' orders and non-card orders", async () => {
+  for (const [order, code] of [
+    [{ ...stripeOrder, Receiver: { id: "someone-else" } }, "not-found"],
+    [null, "not-found"],
+    [{ ...stripeOrder, paymentMethod: "Thai QR" }, "failed-precondition"],
+    [{ ...stripeOrder, Amount: 0 }, "failed-precondition"],
+  ]) {
+    const f = fixture(order);
+    const stripe = stripeReturns(paidIntent);
+    await assert.rejects(f.verifyStripeOrderPayment(customer, stripeRequest, stripe), { code });
+    assert.equal(f.writes.length, 0);
+    assert.equal(stripe.calls.length, 0);
+  }
+});
+
+test("Stripe verification rejects payments that are unpaid, for another order, or for another amount", async () => {
+  for (const intent of [
+    { ...paidIntent, status: "requires_payment_method" },
+    { ...paidIntent, status: "processing" },
+    { ...paidIntent, metadata: { orderId: "ORD-2", userId: "customer-1" } },
+    { ...paidIntent, metadata: { userId: "customer-1" } },
+    { ...paidIntent, metadata: { orderId: "ORD-1", userId: "someone-else" } },
+    { ...paidIntent, amount_received: 21649 },
+    { ...paidIntent, amount_received: 0 },
+    { ...paidIntent, currency: "usd" },
+    { ...paidIntent, id: "pi_other" },
+  ]) {
+    const f = fixture(stripeOrder);
+    await assert.rejects(f.verifyStripeOrderPayment(customer, stripeRequest, stripeReturns(intent)), { code: "failed-precondition" });
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.audits.length, 0);
+  }
+});
+
+test("Stripe verification validates the caller and input before calling Stripe", async () => {
+  const f = fixture(stripeOrder);
+  const stripe = stripeReturns(paidIntent);
+  await assert.rejects(f.verifyStripeOrderPayment({ uid: "" }, stripeRequest, stripe), { code: "unauthenticated" });
+  for (const change of [{ orderId: "orders/ORD-1" }, { orderId: "" }, { paymentIntentId: "cs_123" }, { paymentIntentId: "pi_1/refund" }, { paymentIntentId: 1 }]) {
+    await assert.rejects(f.verifyStripeOrderPayment(customer, { ...stripeRequest, ...change }, stripe), { code: "invalid-argument" });
+  }
+  assert.equal(stripe.calls.length, 0);
+  assert.equal(f.writes.length, 0);
+});
+
+test("manual verification still refuses Stripe orders", () => {
+  const f = fixture(null);
+  assert.equal(f.isStripePaymentMethod("Stripe card"), true);
+  assert.equal(f.manualPaymentMethod("Stripe"), null);
 });
