@@ -184,6 +184,8 @@ A success returns `{ "ok": true, "data": { "orderId": "...", "verified": true, "
 
 The function reads `STRIPE_SECRET_KEY` from `functions/.env` (not committed; see `functions/.env.example`). It must be the secret key of the same Stripe account that creates the app's PaymentIntents.
 
+**Webhook backup.** If the app's verify call never arrives (app closed, network lost), `stripeFoodWebhook` does the same checks when Stripe sends `payment_intent.succeeded` and records `paymentVerification.verifiedBy: "stripe-webhook"`. It only handles PaymentIntents with `metadata.orderType: "food"` and `metadata.orderId`, so the app must send both; other payments on the same Stripe account are ignored. Register `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/stripeFoodWebhook` in the Stripe dashboard (Developers → Webhooks) for the `payment_intent.succeeded` event and put its signing secret in `functions/.env` as `STRIPE_WEBHOOK_SECRET`. Unsigned or wrongly signed requests get `403`.
+
 ## Idempotency
 
 Create one unique key for each checkout attempt and retain it for network retries. The same user, key, and payload return the original order. Reusing the key with a changed restaurant, cart, receiver, or payment method returns `already-exists`. Keys are scoped by authenticated customer.
