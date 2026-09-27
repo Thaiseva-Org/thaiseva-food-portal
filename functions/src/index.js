@@ -63,6 +63,7 @@ const {
 const {
   createFoodOrderHttpHandler,
   verifyFoodOrderPaymentHttpHandler,
+  stripeFoodWebhookHandler,
   listOrderableRestaurantsHttpHandler,
 } = require("./lib/httpApi");
 
@@ -195,6 +196,13 @@ exports.createFoodOrderHttp = onRequest(
 exports.verifyFoodOrderPaymentHttp = onRequest(
   { cors: true, invoker: "public" },
   verifyFoodOrderPaymentHttpHandler
+);
+
+// Stripe webhook backup for the call above: marks the food order paid on
+// payment_intent.succeeded. Needs STRIPE_WEBHOOK_SECRET in functions/.env.
+exports.stripeFoodWebhook = onRequest(
+  { invoker: "public" },
+  stripeFoodWebhookHandler
 );
 
 exports.listOrderableRestaurantsHttp = onRequest(

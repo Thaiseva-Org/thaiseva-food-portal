@@ -3,7 +3,11 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resolveCaller, enforceRateLimit } = require("./auth");
 const { createFoodOrder } = require("./orders");
-const { verifyStripeOrderPayment } = require("./orderPayments");
+const {
+  verifyStripeOrderPayment,
+  verifyStripeSignature,
+  handleStripeFoodWebhookEvent,
+} = require("./orderPayments");
 
 const HTTP_STATUS_BY_CODE = {
   "invalid-argument": 400,
@@ -127,6 +131,35 @@ async function verifyFoodOrderPaymentHttpHandler(req, res) {
   }
 }
 
+// Stripe webhook (payment_intent.succeeded): backup for the app's
+// verifyFoodOrderPaymentHttp call. Signed with STRIPE_WEBHOOK_SECRET.
+async function stripeFoodWebhookHandler(req, res) {
+  res.set("Cache-Control", "no-store");
+  if (req.method !== "POST") {
+    res.set("Allow", "POST");
+    return res.status(405).json({
+      ok: false,
+      error: { code: "method-not-allowed", message: "Use POST." },
+    });
+  }
+
+  try {
+    verifyStripeSignature(
+      req.rawBody,
+      req.get?.("stripe-signature") || req.headers?.["stripe-signature"],
+      String(process.env.STRIPE_WEBHOOK_SECRET || "").trim()
+    );
+    const event = JSON.parse(req.rawBody.toString("utf8"));
+    const result = await handleStripeFoodWebhookEvent(event);
+    if (!result.handled && result.orderId) {
+      console.warn("Stripe food webhook ignored payment", { eventId: event.id, ...result });
+    }
+    return res.status(200).json({ ok: true, data: result });
+  } catch (err) {
+    return sendApiError(res, err);
+  }
+}
+
 async function listOrderableRestaurantsHttpHandler(req, res) {
   res.set("Cache-Control", "public, max-age=60");
   if (req.method !== "GET") {
@@ -166,5 +199,6 @@ module.exports = {
   sendApiError,
   createFoodOrderHttpHandler,
   verifyFoodOrderPaymentHttpHandler,
+  stripeFoodWebhookHandler,
   listOrderableRestaurantsHttpHandler,
 };
