@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../../../firebaseConfig";
 import CategorySelect from "../../components/CategorySelect";
@@ -139,16 +140,24 @@ const Template = ({
   };
 
   if (loadingItem) {
-    return (
+    const loader = (
       <div className="page-shell px-4 py-10">
         <div className="panel py-16">
           <Loading />
         </div>
       </div>
     );
+    return isEdit
+      ? createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/60 p-0 backdrop-blur-[2px]">
+            <Loading />
+          </div>,
+          document.body
+        )
+      : loader;
   }
 
-  return (
+  const content = (
     <div
       className={
         isEdit
@@ -767,6 +776,11 @@ const Template = ({
       )}
     </div>
   );
+
+  return isEdit ? createPortal(content, document.body) : content;
 };
 
 export default Template;
+
+
+
