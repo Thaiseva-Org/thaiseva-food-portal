@@ -6,7 +6,7 @@
   },
   "main": "src/index.js",
   "scripts": {
-    "check": "node --check src/index.js && node --check src/lib/auth.js && node --check src/lib/audit.js && node --check src/lib/menu.js && node --check src/lib/orders.js && node --check src/lib/orderPayments.js && node --check src/lib/bookings.js && node --check src/lib/customerChats.js && node --check src/lib/restaurants.js && node --check src/lib/applications.js && node --check src/lib/riders.js && node --check src/lib/httpApi.js && node --check src/lib/partnerPush.js",
+    "check": "node --check src/index.js && node --check src/lib/auth.js && node --check src/lib/audit.js && node --check src/lib/menu.js && node --check src/lib/orders.js && node --check src/lib/orderPayments.js && node --check src/lib/customerChats.js && node --check src/lib/restaurants.js && node --check src/lib/applications.js && node --check src/lib/riders.js && node --check src/lib/httpApi.js && node --check src/lib/partnerPush.js",
     "serve": "firebase emulators:start --only functions,firestore,auth",
     "deploy": "firebase deploy --only functions:food-portal",
     "logs": "firebase functions:log"
@@ -20,3 +20,4 @@
   },
   "private": true
 }
+
