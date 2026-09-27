@@ -61,26 +61,26 @@ thaiseva-food-portal/
 ├── tailwind.config.js                 # Tailwind CSS 3.4 theme definitions
 ├── vite.config.js                     # Vite dev server & production bundling config
 │
-├── docs/                              # Project Technical Documentation Modules
+├── docs/                              # Canonical documentation grouped by subject
 │   ├── ARCHITECTURE.md                # System Architecture & Diagrams (This Document)
 │   ├── API.md                         # HTTPS Callable API Reference & Specs
 │   ├── DATABASE.md                    # Database Schemas, Data Dictionary & ERD
-│   ├── BUSINESS_LOGIC.md             # Menu Catalog, Workflows & State Machines
+│   ├── BUSINESS_LOGIC.md              # Menu Catalog, Workflows & State Machines
 │   ├── DEPLOYMENT.md                  # Infrastructure, CI/CD & Environment Variables
 │   ├── SECURITY.md                    # App Check, Rules, Rate Limiting & RBAC
 │   ├── DEVELOPER_GUIDE.md             # Local Setup, Testing, Tasks & Troubleshooting
-│   └── Project_Documentation.md       # Master Consolidated Technical Manual
+│   └── CUSTOMER_APP_INTEGRATION.md    # Customer-facing HTTP integration contract
 │
 ├── functions/                         # Cloud Functions Backend Package
 │   ├── package.json                   # Backend Node 22 dependencies & scripts
 │   └── src/
-│       ├── index.js                   # Entry point exporting 24 HTTPS callables & 1 trigger
+│       ├── index.js                   # Cloud Functions entry point and exports
 │       └── lib/                       # Domain Isolated Service Controllers
 │           ├── applications.js        # Public & partner onboarding application processing
 │           ├── audit.js               # Administrative audit trail logger
 │           ├── auth.js                # Auth claims verification & tenant assertions
 │           ├── customerChats.js       # Real-time customer chat sync handlers
-│           ├── menu.js                # Single catalog menu mutations & store overrides
+│           ├── menu.js                # Tenant-owned menu mutations
 │           ├── orderPayments.js       # Payment clearing & accounting verification
 │           ├── orders.js              # Order state machine & verified accounting
 │           ├── restaurants.js         # Restaurant profiles & open/close state logic
@@ -92,7 +92,7 @@ thaiseva-food-portal/
 │   ├── delete-auth-user.mjs           # Utility to remove test auth accounts
 │   ├── fix-seed.mjs                   # Seed data repair script
 │   ├── merge-live-rules.mjs           # Security rules consolidation tool
-│   ├── migrate-restaurant-menus.mjs   # Legacy store menu to single catalog migrator
+│   ├── migrate-restaurant-menus.mjs   # Legacy menu to tenant-owned menu migrator
 │   ├── migrate-support-chats.mjs      # Customer chat format migrator
 │   ├── rename-auth-email.mjs          # Auth user email update script
 │   ├── reset-demo-stats.mjs           # Resets demo partner stats
@@ -142,7 +142,7 @@ thaiseva-food-portal/
 │       ├── partnerRoutes.js           # Route path constants (`/partner`)
 │       └── sessionSecurity.js         # Client session timeout & activity tracking
 │
-└── tests/                             # Automated Test Suite (15 Test Specs)
+└── tests/                             # Automated unit, integration, and isolation tests
     ├── backendValidation.test.cjs     # Payload validation and sanitization tests
     ├── commission.test.js             # Financial commission calculation tests
     ├── createFoodOrder.test.cjs       # Order creation payload tests
@@ -168,42 +168,42 @@ The application is structured into seven primary functional domain modules:
 ### 4.1 Onboarding & Application Manager
 * **Purpose**: Manages partner onboarding from public application to verification.
 * **Relevant Files**:
-  - Frontend: [PublicApply.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/onboarding/PublicApply.jsx), [OwnerOnboarding.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/onboarding/OwnerOnboarding.jsx), [RestRequests.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/RestRequests.jsx)
-  - Backend: [applications.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/applications.js), [restaurants.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/restaurants.js)
+  - Frontend: [`PublicApply.jsx`](../src/restaurantAdmin/pages/onboarding/PublicApply.jsx), [`OwnerOnboarding.jsx`](../src/restaurantAdmin/pages/onboarding/OwnerOnboarding.jsx), [`RestRequests.jsx`](../src/masterAdmin/pages/RestRequests.jsx)
+  - Backend: [`applications.js`](../functions/src/lib/applications.js), [`restaurants.js`](../functions/src/lib/restaurants.js)
 * **Processing**: Public applicants upload business licenses and owner IDs via GCS signed URLs. Master Admins review requests in `RestRequests.jsx` and call `reviewRestaurantApplication`. Verification automatically provisions a Firebase Auth account, copies uploaded files to production storage paths, sets custom claims, and creates the partner document.
 
-### 4.2 Single Centralized Menu Catalog
-* **Purpose**: Controls dish definitions, store assignments, and availability overrides.
+### 4.2 Tenant-Owned Restaurant Menus
+* **Purpose**: Gives each verified restaurant an isolated catalog and availability controls.
 * **Relevant Files**:
-  - Frontend: [FoodItem.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/FoodItem.jsx), [AddItem.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/itemPages/AddItem.jsx), [EditFoodItem.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/itemPages/EditFoodItem.jsx)
-  - Backend: [menu.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/menu.js)
-* **Processing**: Dishes are stored under `food_items/thaiseva-platform/items`. Master Admins create/update global dish parameters. Partner restaurants enable/disable availability for their store via `restaurantStatus[ownerUid].active`.
+  - Frontend: [`FoodItem.jsx`](../src/restaurantAdmin/pages/FoodItem.jsx), [`AddItem.jsx`](../src/restaurantAdmin/pages/itemPages/AddItem.jsx), [`EditFoodItem.jsx`](../src/restaurantAdmin/pages/itemPages/EditFoodItem.jsx)
+  - Backend: [`menu.js`](../functions/src/lib/menu.js)
+* **Processing**: Dishes are stored under `food_items/{ownerUid}/items/{itemId}`. Restaurant partners manage their own menu; Master Admin manages only the separate platform-kitchen menu rooted at `thaiseva-platform`.
 
 ### 4.3 Kitchen Order Board & State Machine
 * **Purpose**: Real-time kitchen ticket handling and state machine progression.
 * **Relevant Files**:
-  - Frontend: [ManageOrder.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/ManageOrder.jsx), [OrdersProvider.jsx](file:///d:/projects/food-portal-Rishav/src/context/OrdersProvider.jsx)
-  - Backend: [orders.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/orders.js)
-* **Processing**: Real-time Firestore snapshot listeners stream incoming orders. Partner admins accept orders, updating status from `New Order` to `Preparing` and `Ready for pickup`.
+  - Frontend: [`ManageOrder.jsx`](../src/restaurantAdmin/pages/ManageOrder.jsx), [`OrdersProvider.jsx`](../src/context/OrdersProvider.jsx)
+  - Backend: [`orders.js`](../functions/src/lib/orders.js)
+* **Processing**: Real-time Firestore snapshot listeners stream incoming orders. Master Admin confirms or cancels new partner orders. The restaurant then advances confirmed orders through `Preparing`, `Ready for pickup`, and `Out for Delivery`; Master Admin assigns the rider and confirms delivery.
 
 ### 4.4 Courier Dispatch & Rider Directory
 * **Purpose**: Manages delivery courier profiles, active statuses, and order assignments.
 * **Relevant Files**:
-  - Frontend: [Riders.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/Riders.jsx), [RiderOverview.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/RiderOverview.jsx)
-  - Backend: [riders.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/riders.js)
+  - Frontend: [`Riders.jsx`](../src/masterAdmin/pages/Riders.jsx), [`RiderOverview.jsx`](../src/masterAdmin/pages/RiderOverview.jsx)
+  - Backend: [`riders.js`](../functions/src/lib/riders.js)
 * **Processing**: Master Admins add/edit riders. When an order reaches `Ready for pickup`, Master Admins assign an active courier using `assignOrderRider`. Upon delivery, calling `markOrderDelivered` triggers an atomic transaction calculating revenue share.
 
 ### 4.5 Official Platform Kitchen ("Our Kitchen")
 * **Purpose**: Operates the primary brand kitchen ("Thaiseva Official Kitchen") for direct ordering.
 * **Relevant Files**:
-  - Frontend: [OurKitchenLayout.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/platform/OurKitchenLayout.jsx), [OurKitchenOrders.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/platform/OurKitchenOrders.jsx)
-  - Backend: `ensurePlatformRestaurant` in [restaurants.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/restaurants.js)
+  - Frontend: [`OurKitchenLayout.jsx`](../src/masterAdmin/pages/platform/OurKitchenLayout.jsx), [`OurKitchenOrders.jsx`](../src/masterAdmin/pages/platform/OurKitchenOrders.jsx)
+  - Backend: `ensurePlatformRestaurant` in [`restaurants.js`](../functions/src/lib/restaurants.js)
 
 ### 4.6 Support Chat & Messaging
 * **Purpose**: Real-time communication between customers, restaurant partners, and master admins.
 * **Relevant Files**:
-  - Frontend: [CustomerChat.jsx](file:///d:/projects/food-portal-Rishav/src/masterAdmin/pages/CustomerChat.jsx), [RestaurantChat.jsx](file:///d:/projects/food-portal-Rishav/src/restaurantAdmin/pages/RestaurantChat.jsx)
-  - Backend: [customerChats.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/customerChats.js)
+  - Frontend: [`CustomerChat.jsx`](../src/masterAdmin/pages/CustomerChat.jsx), [`RestaurantChat.jsx`](../src/restaurantAdmin/pages/RestaurantChat.jsx)
+  - Backend: [`customerChats.js`](../functions/src/lib/customerChats.js)
 
 ---
 
@@ -248,7 +248,7 @@ Routing is managed by `React Router 8`. All major route views are wrapped in `Re
 ## 6. Backend Architecture & Cloud Functions Wrapper Pattern
 
 ### 6.1 Serverless Execution Pipeline
-All backend functions run on Node.js 22 in `asia-southeast1`. Functions are wrapped in standard higher-order wrappers defined in [functions/src/index.js](file:///d:/projects/food-portal-Rishav/functions/src/index.js):
+All backend functions run on Node.js 22 in `asia-southeast1`. Functions are wrapped in standard higher-order wrappers defined in [`functions/src/index.js`](../functions/src/index.js):
 
 #### Authenticated Wrapper (`wrap`)
 ```js
@@ -285,10 +285,10 @@ function wrapPublic(handler, maxRequests = 20) {
 
 ## 7. Documentation Source References
 
-* Main Application Router: [src/App.jsx](file:///d:/projects/food-portal-Rishav/src/App.jsx)
-* Auth State & Claims: [src/AuthContext.jsx](file:///d:/projects/food-portal-Rishav/src/AuthContext.jsx)
-* Backend Function Exports: [functions/src/index.js](file:///d:/projects/food-portal-Rishav/functions/src/index.js)
-* Auth & Rate Limit Core: [functions/src/lib/auth.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/auth.js)
+* Main Application Router: [`src/App.jsx`](../src/App.jsx)
+* Auth State & Claims: [`src/AuthContext.jsx`](../src/AuthContext.jsx)
+* Backend Function Exports: [`functions/src/index.js`](../functions/src/index.js)
+* Auth & Rate Limit Core: [`functions/src/lib/auth.js`](../functions/src/lib/auth.js)
 
 
 ---

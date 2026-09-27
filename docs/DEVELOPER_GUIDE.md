@@ -48,7 +48,7 @@ The application will be accessible in your web browser at `http://localhost:5000
 | `npm run dev` | Root | Starts Vite development server with HMR on port 5000 |
 | `npm run build` | Root | Builds optimized production static bundle in `/dist` |
 | `npm run lint` | Root | Runs ESLint 8 check (`0-warning` max warning threshold) |
-| `npm test` | Root | Executes native Node.js test runner across all 15 test suites |
+| `npm test` | Root | Executes the native Node.js test runner using the maintained list in `package.json` |
 | `npm run check` | Root | Complete quality check: runs `lint`, `test`, and `build` |
 | `npm run verify:production` | Root | Validates environment variables & index definitions |
 | `npm run production:check` | Root | Pre-flight release check: runs verify, check, functions check & npm audit |
@@ -56,7 +56,7 @@ The application will be accessible in your web browser at `http://localhost:5000
 | `npm run seed:restaurant` | Root | Seeds demo partner restaurant account and store details |
 | `npm run seed:riders` | Root | Seeds demo courier directory records |
 | `npm run seed:all` | Root | Executes all seed scripts in sequence |
-| `npm run migrate:restaurant-menus` | Root | Migrates legacy isolated menus into Single Catalog |
+| `npm run migrate:restaurant-menus` | Root | Migrates legacy menu data into tenant-owned restaurant menus |
 | `npm run serve` | `functions/` | Starts local Firebase Emulators (Auth, Functions, Firestore) |
 | `npm run deploy` | `functions/` | Deploys Cloud Functions to region `asia-southeast1` |
 
@@ -71,30 +71,18 @@ The repository utilizes the native **Node.js Test Runner** (`node --test`). Test
 npm test
 ```
 
-### Test Suite Inventory (15 Test Specs)
-1. **`tests/backendValidation.test.cjs`**: Validates input string lengths, sanitization, and number bounds.
-2. **`tests/commission.test.js`**: Verifies exact mathematical commission split calculations.
-3. **`tests/createFoodOrder.test.cjs`**: Validates order creation payload structures.
-4. **`tests/customerChats.test.cjs`**: Tests customer chat format migration and mirroring.
-6. **`tests/firestoreIndexesIsolation.test.cjs`**: Ensures query indices match production requirements.
-7. **`tests/firestoreRulesIsolation.test.cjs`**: Verifies tenant isolation in Firestore security rules.
-8. **`tests/onboardingPhase.test.js`**: Tests partner onboarding phase state machine logic.
-9. **`tests/orderData.test.js`**: Verifies integrity of order accounting objects.
-10. **`tests/orderFetching.test.js`**: Tests query filters for historical orders.
-11. **`tests/orderPayments.test.cjs`**: Tests payment clearing state updates.
-12. **`tests/orderRider.test.js`**: Tests courier assignment state rules.
-13. **`tests/partnerRoutes.test.js`**: Tests protected route guard redirects.
-14. **`tests/restaurantMenuFlow.test.cjs`**: Tests single catalog dish creation and store active overrides.
-15. **`tests/sessionSecurity.test.js`**: Tests 15-min idle timeout and 12-hr max age calculations.
+### Test coverage
+
+The suite covers backend validation, tenant-owned menus, checkout and the full order lifecycle, payments, riders, onboarding, chats and push notifications, session security, routing, frontend utilities, and shared Firestore rules/index isolation. The `test` script in `package.json` is the authoritative test-file inventory.
 
 ---
 
 ## 5. Developer Task Recipes
 
 ### How to Add a New HTTPS Callable API Endpoint
-1. Open [functions/src/lib/](file:///d:/projects/food-portal-Rishav/functions/src/lib/) and add your business logic function in the appropriate domain file (e.g., `orders.js`).
-2. Export the function in [functions/src/index.js](file:///d:/projects/food-portal-Rishav/functions/src/index.js), wrapping it with `wrap` or `wrapPublic`.
-3. Add a client caller wrapper in [src/api/index.js](file:///d:/projects/food-portal-Rishav/src/api/index.js).
+1. Open [`functions/src/lib/`](../functions/src/lib/) and add your business logic function in the appropriate domain file (e.g., `orders.js`).
+2. Export the function in [`functions/src/index.js`](../functions/src/index.js), wrapping it with `wrap` or `wrapPublic`.
+3. Add a client caller wrapper in [`src/api/index.js`](../src/api/index.js).
 4. Write an automated test spec under `tests/`.
 
 ### How to Seed a New Demo Master Admin Account
@@ -138,7 +126,7 @@ node scripts/seed-master-admin.mjs --email="admin@thaiseva.com" --password="Secu
 | **App Check** | Firebase security service using reCAPTCHA Enterprise to verify requests originate from authorized apps. |
 | **Callable Function** | Firebase Cloud Function invoked via `httpsCallable` SDK passing JSON payloads automatically. |
 | **Custom Claims** | Security attributes attached to a user's Firebase JWT token (e.g. `foodRole = "restaurantOwner"`). |
-| **Master Catalog** | Architecture model where all dishes exist in one central collection `food_items/thaiseva-platform/items`. |
+| **Tenant Menu** | Restaurant-specific catalog stored under `food_items/{ownerUid}/items`; the platform kitchen uses owner ID `thaiseva-platform`. |
 | **THB (฿)** | Thai Baht — Official currency for all order totals, dish unit prices, and partner payouts. |
 | **RBAC** | Role-Based Access Control enforcing permissions based on user role. |
 
@@ -147,23 +135,23 @@ node scripts/seed-master-admin.mjs --email="admin@thaiseva.com" --password="Secu
 ## 9. New Developer Onboarding Checklist
 
 ### Day 1: Architecture & Local Execution
-- [ ] Read [README.md](file:///d:/projects/food-portal-Rishav/README.md) and [docs/ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md).
+- [ ] Read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 - [ ] Setup local environment file (`.env.local`).
 - [ ] Execute `npm install` and `npm run dev` to access partner and master admin panels.
 - [ ] Run seed script `npm run seed:all` to populate local test database.
 
 ### First Week: Feature Ownership
-- [ ] Study the order state machine in [docs/BUSINESS_LOGIC.md](file:///d:/projects/food-portal-Rishav/docs/BUSINESS_LOGIC.md).
-- [ ] Review Cloud Functions wrappers in [functions/src/index.js](file:///d:/projects/food-portal-Rishav/functions/src/index.js).
+- [ ] Study the order state machine in [BUSINESS_LOGIC.md](BUSINESS_LOGIC.md).
+- [ ] Review Cloud Functions wrappers in [`functions/src/index.js`](../functions/src/index.js).
 - [ ] Run test suite `npm test` and implement a minor bug fix or test assertion.
 
 ---
 
 ## 10. Documentation Source References
 
-* Main Application Router: [src/App.jsx](file:///d:/projects/food-portal-Rishav/src/App.jsx)
-* Pre-flight Check Script: [scripts/verify-production.mjs](file:///d:/projects/food-portal-Rishav/scripts/verify-production.mjs)
-* Test Suite Files: [tests/](file:///d:/projects/food-portal-Rishav/tests/)
+* Main Application Router: [`src/App.jsx`](../src/App.jsx)
+* Pre-flight Check Script: [`scripts/verify-production.mjs`](../scripts/verify-production.mjs)
+* Test Suite Files: [`tests/`](../tests/)
 
 
 ---

@@ -1,98 +1,69 @@
-# Thaiseva Food Portal — Complete Developer Reference & Operational Control Center
+# Thaiseva Food Portal
 
-Welcome to the **Thaiseva Food Portal** repository. This platform serves as the unified administrative, partner, courier dispatch, and financial clearing network for Thaiseva food delivery operations.
+Thaiseva Food Portal is the React and Firebase operations platform for restaurant onboarding, partner menus, food orders, rider dispatch, payments, and settlement.
 
----
+## Documentation
 
-## 📚 Master Documentation Directory
+Documentation is organized by subject. Each topic has one canonical file:
 
-The complete technical documentation for this repository is organized into dedicated, production-grade modules located in the [`docs/`](file:///d:/projects/food-portal-Rishav/docs/) directory:
+| Theme | Document | Purpose |
+| --- | --- | --- |
+| System design | [Architecture](docs/ARCHITECTURE.md) | Components, roles, routes, and runtime boundaries |
+| Backend contract | [API reference](docs/API.md) | Callable and HTTP endpoints |
+| Data | [Database](docs/DATABASE.md) | Firestore schema, ownership, and indexes |
+| Domain rules | [Business logic](docs/BUSINESS_LOGIC.md) | Menus, pricing, orders, and accounting |
+| Security | [Security](docs/SECURITY.md) | Authentication, authorization, rules, storage, and audit controls |
+| Operations | [Deployment](docs/DEPLOYMENT.md) | Environments, verification, deployment, and rollback |
+| Development | [Developer guide](docs/DEVELOPER_GUIDE.md) | Setup, commands, tests, and troubleshooting |
+| Customer app | [Customer integration](docs/CUSTOMER_APP_INTEGRATION.md) | Restaurant discovery, checkout, payment verification, and support chat |
+| Payments | [Payment gateways](docs/PAYMENT_GATEWAYS.md) | Provider configuration and payment flow |
+| Recovery | [Backup and recovery](docs/BACKUP_AND_RECOVERY.md) | Backup policy and disaster recovery |
+| Operations guide | [Partner guide](docs/Thaiseva_Partner_Guide.md) | Restaurant-partner workflows |
+| Product guide | [Client guide](docs/Thaiseva_Client_Guide.md) | Non-technical platform overview |
 
-| Documentation Module | Primary Focus & Coverage | Target Audience |
-| :--- | :--- | :--- |
-| **[ARCHITECTURE.md](file:///d:/projects/food-portal-Rishav/docs/ARCHITECTURE.md)** | Full System Architecture, Serverless Pattern, Domain Modules, React Contexts, Mermaid Diagrams | Architects, Senior Engineers |
-| **[API.md](file:///d:/projects/food-portal-Rishav/docs/API.md)** | Complete HTTPS Callable and HTTP Endpoint Catalog, Customer Booking API, Payloads & Error Codes | Backend & Frontend Engineers |
-| **[DATABASE.md](file:///d:/projects/food-portal-Rishav/docs/DATABASE.md)** | Cloud Firestore Collections, Data Dictionary, Composite Indexes & Mermaid ER Diagram | Database Engineers, Security |
-| **[BUSINESS_LOGIC.md](file:///d:/projects/food-portal-Rishav/docs/BUSINESS_LOGIC.md)** | Single Menu Catalog Architecture, Pricing Formulas, Verified Accounting & Order State Machine | Business Analysts, QA, Engineers |
-| **[DEPLOYMENT.md](file:///d:/projects/food-portal-Rishav/docs/DEPLOYMENT.md)** | Cloud Infrastructure, Environment Variables Matrix, Pre-deploy Security & CI/CD Pipelines | DevOps & Cloud Engineers |
-| **[SECURITY.md](file:///d:/projects/food-portal-Rishav/docs/SECURITY.md)** | App Check reCAPTCHA, Firestore/Storage Rules, Rate Limiting, RBAC Claims & Audit Trail | Security Engineers, Lead Devs |
-| **[DEVELOPER_GUIDE.md](file:///d:/projects/food-portal-Rishav/docs/DEVELOPER_GUIDE.md)** | Local Setup, Test Suites, Common How-To Recipes, Troubleshooting Runbook & Technical Risks | New & Existing Developers |
-| **[Project_Documentation.md](file:///d:/projects/food-portal-Rishav/docs/Project_Documentation.md)** | Unified Consolidated Technical Reference Manual (All-in-one Master Guide) | All Engineering Teams |
+When code and prose disagree, treat backend validation, Firebase rules, and tests as authoritative, then update the relevant canonical document in the same change.
 
----
+## Technology
 
-## ⚡ Technology Stack Summary
+- React 19 and React Router 8
+- Vite 8
+- Tailwind CSS 3 and Material UI 7
+- Firebase Authentication, App Check, Firestore, Storage, Hosting, and Cloud Functions v2
+- Node.js 22 for Cloud Functions and automated tests
 
-| Layer | Technology | Version | Primary Purpose |
-| :--- | :--- | :--- | :--- |
-| **Frontend SPA** | React | 19.2.8 | Single Page Application UI Framework |
-| **Build Tooling** | Vite | 8.2.1 | Fast HMR dev server & optimized production bundler |
-| **Routing** | React Router | 8.3.0 | Role-guarded single-page route navigation |
-| **Styling & UI** | Tailwind CSS / MUI | 3.4 / 7.0 | Utility styling, responsive layouts & data tables |
-| **Serverless API** | Firebase Cloud Functions | v2 | Trusted backend callables (Node.js 22 runtime) |
-| **Database** | Cloud Firestore | Native | NoSQL document store with real-time `onSnapshot` |
-| **Storage** | Firebase Cloud Storage | Default | Secure document & asset storage |
-| **Authentication** | Firebase Auth | Web SDK v12 | JWT Authentication & Custom Token Claims |
-| **Security Edge** | Firebase App Check | Enterprise | reCAPTCHA Enterprise API protection |
-| **Testing** | Node Native Test Runner | Node 22 | Automated unit & security rules testing |
-
----
-
-## 🏗️ Architecture Overview
-
-```mermaid
-graph TD
-    User[Client Browser] -->|React 19 SPA| Vite[Vite 8 / Firebase Hosting]
-    Vite -->|App Check & JWT| Callables[Cloud Functions v2 asia-southeast1]
-    Vite -->|Real-time Snapshot| Firestore[(Cloud Firestore Database)]
-    Callables -->|Admin SDK Write| Firestore
-    Callables -->|Signed URLs| Storage[(Cloud Storage Bucket)]
-```
-
----
-
-## 🚀 Local Development Quickstart
+## Local development
 
 ```bash
-# 1. Clone workspace & install frontend dependencies
 npm install
-
-# 2. Install backend functions dependencies
-cd functions && npm install && cd ..
-
-# 3. Configure environment variables
+npm --prefix functions install
 cp .env.example .env.local
-
-# 4. Start local development server (runs on http://localhost:5000)
 npm run dev
-
-# 5. Run test suite
-npm test
 ```
 
----
+The development server runs on `http://localhost:5000`.
 
-## 🔒 Pre-Flight Production Deployment Gate
+## Verification
 
-Before any code can be deployed to production, it must pass the zero-tolerance verification gate:
+Run the standard repository checks:
+
+```bash
+npm run check
+npm --prefix functions run check
+```
+
+Before deploying, run the full production gate:
 
 ```bash
 npm run production:check
 ```
 
-This gate enforces:
-1. **Zero ESLint Warnings** (`--max-warnings 0`).
-2. **100% Passing Automated Tests** across all 15 test suites.
-3. **Zero Known Production Dependencies Vulnerabilities** (`npm audit --omit=dev`).
-4. **Clean Production Build Verification**.
+The production gate verifies configuration, linting, tests, the frontend build, backend syntax, and production dependency audits.
 
----
+## Main application areas
 
-## 👥 Core Platform Modules
+- `/foodAdmin`: Master Admin operations, partner review, orders, riders, finance, and the platform kitchen.
+- `/partner`: Verified restaurant profile, menu, kitchen orders, earnings, and partner support.
+- `/apply`: Public restaurant-partner application.
+- `/onboarding`: Authenticated onboarding and application status.
 
-* **Master Admin Panel (`/foodAdmin`)**: Network revenue monitoring, partner onboarding reviews, courier directory management, order dispatch monitoring, and support chats.
-* **Restaurant Partner Panel (`/partner`)**: Real-time kitchen order board, single catalog dish availability toggles, store operating hours, and payout records.
-* **Public Partner Application (`/apply`)**: Secure public onboarding intake form with direct Google Cloud Storage signed document uploads.
-
----
-*Created and Maintained by Omnifex.*
+The customer ordering application is maintained separately and integrates through the HTTP contracts documented in [Customer integration](docs/CUSTOMER_APP_INTEGRATION.md).

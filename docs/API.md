@@ -44,10 +44,10 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `stripeFoodWebhook` | Public HTTP | Stripe signature | Stripe | — | Backup: marks a Stripe food order paid on `payment_intent.succeeded` |
 | `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies COD/Thai QR settlement after order confirmation; Stripe uses `verifyFoodOrderPaymentHttp` |
 | `clearOrderPayment` | Protected | Yes | Master Admin | Standard | Marks partner payout as cleared |
-| `createFoodItem` | Protected | Yes | Owner / Master | Standard | Adds dish to master catalog |
-| `updateFoodItem` | Protected | Yes | Owner / Master | Standard | Updates dish attributes in catalog |
-| `setFoodItemActive` | Protected | Yes | Owner / Master | Standard | Toggles dish active status globally/locally |
-| `deleteFoodItem` | Protected | Yes | Owner / Master | Standard | Soft-deletes dish from master catalog |
+| `createFoodItem` | Protected | Yes | Restaurant Owner / Platform Master | Standard | Adds a dish to the caller's tenant menu |
+| `updateFoodItem` | Protected | Yes | Restaurant Owner / Platform Master | Standard | Updates a dish in the caller's tenant menu |
+| `setFoodItemActive` | Protected | Yes | Restaurant Owner / Platform Master | Standard | Toggles tenant-menu availability |
+| `deleteFoodItem` | Protected | Yes | Restaurant Owner / Platform Master | Standard | Soft-deletes a tenant-menu dish |
 | `createFoodRider` | Protected | Yes | Master Admin | Standard | Registers new courier in directory |
 | `updateFoodRider` | Protected | Yes | Master Admin | Standard | Modifies courier details |
 | `setFoodRiderActive` | Protected | Yes | Master Admin | Standard | Toggles courier active status |
@@ -358,7 +358,7 @@ reject this endpoint because it performs Firebase Auth verification directly.
   1. Sets order status to `"Delivered"`.
   2. Calculates verified commission: $\text{Admin Share} = \text{Amount} \times (\text{Commission \%} / 100)$, $\text{Partner Share} = \text{Amount} - \text{Admin Share}$.
   3. Increments restaurant `orderCount` and `lifetimeEarning`.
-  4. Increments dish `count` (sell count) and `earning` in master catalog.
+  4. Increments `count` and `earning` on the tenant-menu item snapshots referenced by the order.
 * **Response Data**:
 ```json
 {
@@ -379,17 +379,21 @@ reject this endpoint because it performs Firebase Auth verification directly.
 #### `createFoodItem`
 * **Method**: HTTPS Callable (`wrap`)
 * **Auth**: Required
-* **Role**: `masterAdmin` or `restaurantAdmin`
+* **Role**: Restaurant owner for their own menu, or Master Admin for the platform-kitchen menu
 * **Request Body**:
 ```json
 {
+  "ownerUid": "REST_OWNER_UID_123",
+  "itemId": "pad-thai-goong",
   "itemName": "Pad Thai Goong",
   "price": 120.00,
   "discount": 10,
   "category": "Noodles",
-  "itemType": "Non-Veg",
-  "active": true,
-  "assignedRestaurants": ["REST_OWNER_UID_123"]
+  "cuisine": "Thai",
+  "itemType": "Non Veg",
+  "description": "Rice noodles with shrimp",
+  "imageUrl": "https://example.com/pad-thai.jpg",
+  "active": true
 }
 ```
 * **Response Data**:
@@ -397,8 +401,8 @@ reject this endpoint because it performs Firebase Auth verification directly.
 {
   "ok": true,
   "data": {
-    "itemId": "#ITEM-88219",
-    "itemName": "Pad Thai Goong"
+    "ownerUid": "REST_OWNER_UID_123",
+    "itemId": "pad-thai-goong"
   }
 }
 ```
@@ -407,11 +411,11 @@ reject this endpoint because it performs Firebase Auth verification directly.
 
 ## 4. Documentation Source References
 
-* Backend Function Exports: [functions/src/index.js](file:///d:/projects/food-portal-Rishav/functions/src/index.js)
-* Order Controllers: [functions/src/lib/orders.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/orders.js)
-* Menu Controllers: [functions/src/lib/menu.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/menu.js)
-* Restaurant Controllers: [functions/src/lib/restaurants.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/restaurants.js)
-* Customer Booking API Spec: [CUSTOMER_ORDER_BOOKING_API.md](file:///d:/projects/food-portal-Rishav/CUSTOMER_ORDER_BOOKING_API.md)
+* Backend Function Exports: [`functions/src/index.js`](../functions/src/index.js)
+* Order Controllers: [`functions/src/lib/orders.js`](../functions/src/lib/orders.js)
+* Menu Controllers: [`functions/src/lib/menu.js`](../functions/src/lib/menu.js)
+* Restaurant Controllers: [`functions/src/lib/restaurants.js`](../functions/src/lib/restaurants.js)
+* Customer application contract: [CUSTOMER_APP_INTEGRATION.md](CUSTOMER_APP_INTEGRATION.md)
 
 
 ---

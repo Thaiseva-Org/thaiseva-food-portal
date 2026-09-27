@@ -20,7 +20,7 @@ $$\text{Collection Path: } \texttt{food\_items/\{ownerUid\}/items/\{itemId\}}$$
 ### Key Architectural Rules
 1. **Partner Ownership**: Dishes exist independently for each restaurant. Partner restaurants create, update, and manage their own isolated dish tables.
 2. **Partner Control**: Restaurant Admins manage base dish parameters (title, category, type, image, base price, discount, and active state).
-3. **Master Admin Oversight**: While the creation is decentralized, Master Admins retain the ability to view, oversee, and override menu content across the platform for quality control.
+3. **Master Admin Oversight**: Master Admins can inspect partner menus but cannot mutate them. They manage only the isolated platform-kitchen menu at `food_items/thaiseva-platform/items`.
 4. **Data Isolation**: A partner restaurant can only view and mutate dishes within their own designated collection space.
 
 ---
@@ -76,11 +76,11 @@ stateDiagram-v2
 | `[None]` | `New Order` | `createFoodOrderHttp` | Customer / User | Validates items in catalog; writes order document; sets `isPaymentClear = false`. |
 | `New Order` | `Order Confirm` | `transitionOrderStatus` | Master Admin | Confirms order acceptance; notifies customer. |
 | `New Order` | `Cancelled` | `transitionOrderStatus` | Master Admin | Rejects order; marks terminal state. |
-| `Order Confirm` | `Preparing` | `transitionOrderStatus` | Partner / Master | Advances kitchen ticket display. |
-| `Preparing` | `Ready for pickup` | `transitionOrderStatus` | Partner / Master | Signals dispatch interface that order is ready for courier assignment. |
-| `Ready for pickup` | `Out for Delivery` | `transitionOrderStatus` | Partner / Master | **Pre-condition**: Must have an assigned `riderId` (`DeliveryPartner` snapshot attached). |
+| `Order Confirm` | `Preparing` | `transitionOrderStatus` | Restaurant Partner | Advances the kitchen ticket. Master Admin performs this step only for the platform kitchen. |
+| `Preparing` | `Ready for pickup` | `transitionOrderStatus` | Restaurant Partner | Signals that food preparation is complete. Master Admin performs this step only for the platform kitchen. |
+| `Ready for pickup` | `Out for Delivery` | `transitionOrderStatus` | Restaurant Partner | Requires a rider previously assigned by Master Admin. Master Admin performs this step only for the platform kitchen. |
 | `Out for Delivery` | `Delivered` | `markOrderDelivered` | Master Admin | **Atomic Transaction**: Sets status to `Delivered`; calculates admin & partner shares; increments restaurant order count & lifetime earnings; increments item sell counts. |
-| Any State | `Cancelled` | `transitionOrderStatus` | Partner / Master | Cancels order. Terminal state. |
+| Before dispatch | `Cancelled` | `transitionOrderStatus` | Master Admin | Requires a reason and creates a terminal state. |
 
 ---
 
@@ -116,11 +116,11 @@ sequenceDiagram
 
 ## 5. Documentation Source References
 
-* Menu Catalog Backend: [functions/src/lib/menu.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/menu.js)
-* Order State Machine: [functions/src/lib/orders.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/orders.js)
-* Onboarding Application Logic: [functions/src/lib/applications.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/applications.js)
-* Commission Calculation Helper: [src/utils/commission.js](file:///d:/projects/food-portal-Rishav/src/utils/commission.js)
-* State Machine Test Specs: [tests/restaurantMenuFlow.test.cjs](file:///d:/projects/food-portal-Rishav/tests/restaurantMenuFlow.test.cjs)
+* Menu Catalog Backend: [`functions/src/lib/menu.js`](../functions/src/lib/menu.js)
+* Order State Machine: [`functions/src/lib/orders.js`](../functions/src/lib/orders.js)
+* Onboarding Application Logic: [`functions/src/lib/applications.js`](../functions/src/lib/applications.js)
+* Commission Calculation Helper: [`src/utils/commission.js`](../src/utils/commission.js)
+* State Machine Test Specs: [`tests/restaurantMenuFlow.test.cjs`](../tests/restaurantMenuFlow.test.cjs)
 
 
 ---

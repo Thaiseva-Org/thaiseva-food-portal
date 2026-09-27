@@ -121,6 +121,17 @@ The database rules enforce strict tenant isolation and protect financial integri
 2. **Tenant Isolation**: Restaurant partners can only read/write documents where `resource.data.ownerId == request.auth.uid`.
 3. **Application Security**: Applicants can create draft applications, but cannot alter `status` from `Draft` to `Verified`.
 
+### Shared-project change policy
+
+The Firebase project is shared with hotel, travel, vehicle, booking, chat, and website products. Firestore and Storage rules must remain a complete multi-application policy.
+
+- Do not add food roles to the shared `isAdmin()` helper. Use food-specific helpers only on food paths.
+- Do not add duplicate `match /orders/{orderId}` blocks or broad authenticated-user writes; overlapping matches can widen access.
+- Keep authoritative writes for orders, menus, applications, riders, earnings, and audit records behind Cloud Functions.
+- Treat unrelated product paths and the final default-deny block as frozen unless a coordinated multi-application change is approved.
+- When a rules edit is necessary, start from live production with `node scripts/merge-live-rules.mjs`, review every changed line, and run `npm test` before deployment.
+- Deploy rules independently, then smoke-test Master Admin, restaurant-tenant, customer, and one non-food path.
+
 ```firestore-rules
 // Excerpt from firestore.rules
 match /orders/{orderId} {
@@ -183,12 +194,12 @@ async function logAdminAction(caller, actionType, targetId, details = {}) {
 
 ## 9. Documentation Source References
 
-* Security Rules: [firestore.rules](file:///d:/projects/food-portal-Rishav/firestore.rules)
-* Storage Rules: [storage.rules](file:///d:/projects/food-portal-Rishav/storage.rules)
-* Auth & Rate Limiter: [functions/src/lib/auth.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/auth.js)
-* Audit Logger: [functions/src/lib/audit.js](file:///d:/projects/food-portal-Rishav/functions/src/lib/audit.js)
-* Session Security Utilities: [src/utils/sessionSecurity.js](file:///d:/projects/food-portal-Rishav/src/utils/sessionSecurity.js)
-* Security Test Suite: [tests/firestoreRulesIsolation.test.cjs](file:///d:/projects/food-portal-Rishav/tests/firestoreRulesIsolation.test.cjs)
+* Security Rules: [`firestore.rules`](../firestore.rules)
+* Storage Rules: [`storage.rules`](../storage.rules)
+* Auth & Rate Limiter: [`functions/src/lib/auth.js`](../functions/src/lib/auth.js)
+* Audit Logger: [`functions/src/lib/audit.js`](../functions/src/lib/audit.js)
+* Session Security Utilities: [`src/utils/sessionSecurity.js`](../src/utils/sessionSecurity.js)
+* Security Test Suite: [`tests/firestoreRulesIsolation.test.cjs`](../tests/firestoreRulesIsolation.test.cjs)
 
 
 ---

@@ -92,7 +92,7 @@ This command executes four strict validation gates:
 1. **`npm run verify:production`**: Verifies that environment variables and index files are valid.
 2. **`npm run check`**:
    - Runs `eslint src --ext js,jsx --max-warnings 0` (Fails on any warning).
-   - Runs `node --test tests/*.test.js` (Executes all 15 test suites).
+   - Runs the maintained Node.js test list from the `test` script in `package.json`.
    - Runs `vite build` (Compiles React application to `/dist`).
 3. **`npm --prefix functions run check`**: Validates syntax of backend modules (`node --check src/index.js`).
 4. **`npm audit --omit=dev` & Functions Audit**: Ensures 0 production dependencies have known vulnerabilities.
@@ -106,7 +106,7 @@ graph TD
     A[Developer Push / PR] --> B[npm run production:check]
     B --> C{ESLint 0 Warnings?}
     C -->|No| F1[Fail Build]
-    C -->|Yes| D{All 15 Tests Pass?}
+    C -->|Yes| D{All Maintained Tests Pass?}
     D -->|No| F2[Fail Build]
     D -->|Yes| E{npm audit Clean?}
     E -->|No| F3[Fail Build]
@@ -149,12 +149,29 @@ If a production deployment exhibits unexpected behavior:
 
 ---
 
-## 7. Documentation Source References
+## 7. Shared Firebase Project Guardrails
 
-* Pre-flight Check Script: [scripts/verify-production.mjs](file:///d:/projects/food-portal-Rishav/scripts/verify-production.mjs)
-* Deployment Pre-deploy Security Protocol: [DEPLOY_SECURITY.md](file:///d:/projects/food-portal-Rishav/DEPLOY_SECURITY.md)
-* Firebase Config: [firebase.json](file:///d:/projects/food-portal-Rishav/firebase.json)
-* Package Build Pipelines: [package.json](file:///d:/projects/food-portal-Rishav/package.json)
+The `gothai-ffea1` project also serves non-food products. A food-portal deployment must not replace shared rules or indexes with a food-only subset.
+
+Before deploying:
+
+1. Run `node scripts/merge-live-rules.mjs` when a rules change is required, and review the resulting diff.
+2. Keep the shared `isAdmin()` helper and all hotel, travel, vehicle, booking, chat, and website rules unchanged unless their owners approve the same change.
+3. Treat `firestore.indexes.json` as a complete production manifest. Index deployment can delete live indexes omitted from the file.
+4. Run `npm run production:check`; it includes the Firestore rules and index isolation tests.
+5. Deploy rules first when a backend release depends on new access, then Functions, then Hosting. Deploy indexes separately and wait for them to finish building before enabling dependent queries.
+6. Smoke-test Master Admin access, one verified restaurant tenant, customer checkout, and at least one shared non-food flow after a rules or index deployment.
+
+Prefer privileged writes through Cloud Functions instead of widening direct client-write rules.
+
+---
+
+## 8. Documentation Source References
+
+* Pre-flight Check Script: [`scripts/verify-production.mjs`](../scripts/verify-production.mjs)
+* Security policy: [SECURITY.md](SECURITY.md)
+* Firebase Config: [`firebase.json`](../firebase.json)
+* Package Build Pipelines: [`package.json`](../package.json)
 
 
 ---
