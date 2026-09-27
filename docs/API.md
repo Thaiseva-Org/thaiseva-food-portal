@@ -39,8 +39,9 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `transitionOrderStatus` | Protected | Yes | Owner / Master | Standard | Advances order state machine |
 | `markOrderDelivered` | Protected | Yes | Master Admin | Standard | Marks order delivered & updates financial ledger |
 | `assignOrderRider` | Protected | Yes | Master Admin | Standard | Binds courier to order ticket |
-| `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Confirms an order only with an active rider assignment and applies the server-owned fixed delivery fee |
-| `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies COD/Thai QR settlement after order confirmation; Stripe stays webhook-controlled |
+| `verifyFoodOrderPaymentHttp` | Protected HTTP | Yes, Bearer ID token | Order's customer | 30 / min | Marks the customer's own Stripe order paid after Stripe confirms the PaymentIntent |
+| `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Confirms an order only with an active rider assignment; keeps the delivery fee set at checkout |
+| `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies COD/Thai QR settlement after order confirmation; Stripe uses `verifyFoodOrderPaymentHttp` |
 | `clearOrderPayment` | Protected | Yes | Master Admin | Standard | Marks partner payout as cleared |
 | `createFoodItem` | Protected | Yes | Owner / Master | Standard | Adds dish to master catalog |
 | `updateFoodItem` | Protected | Yes | Owner / Master | Standard | Updates dish attributes in catalog |
@@ -247,7 +248,17 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 * **Backend Processing**: Calls the internal `createFoodOrder` domain service. It
   re-queries restaurant-owned menu prices, validates the
   restaurant and cart inside a transaction, and writes the order with status
-  `"New Order"`. For `paymentMethod: "Stripe"`, `verified` is set to `false` at checkout; once Stripe payment completes successfully, the backend updates `verified: true` to confirm payment.
+  `"New Order"`. It adds a ฿100 delivery charge when the food subtotal is
+  under ฿1000; `amount` in the response is the full total (`Amount`).
+  `paymentMethod` is `"Cash on Delivery"`, `"Thai QR"` or `"Stripe"`. Every
+  order starts with `isPaymentDone: false` and `verified: false`:
+  - Cash on Delivery / Thai QR: master admin confirms the order, then calls
+    `verifyOrderPayment` (sets `isPaymentDone: true`).
+  - Stripe: the app creates the order first, charges exactly `amount` THB with
+    PaymentIntent `metadata.orderId`, then calls `verifyFoodOrderPaymentHttp`,
+    which sets `verified: true` and `isPaymentDone: true`.
+  Reusing an `idempotencyKey` with the same payload returns the same order
+  (`alreadyApplied: true`); with a changed payload it returns `already-exists`.
 * **Response Data**:
 ```json
 {
@@ -267,6 +278,19 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 HTTP `401` means the `Authorization` header is missing, expired, malformed, or
 belongs to another Firebase project. A missing Android App Check provider cannot
 reject this endpoint because it performs Firebase Auth verification directly.
+
+#### `verifyFoodOrderPaymentHttp` (Flutter Stripe payment)
+* **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/verifyFoodOrderPaymentHttp`
+* **Method**: `POST`
+* **Auth**: Firebase ID token in `Authorization: Bearer <token>`; the order's `Receiver.id` must be the caller
+* **Request Body**: `{ "orderId": "ORD-…", "paymentIntentId": "pi_…" }`
+* **Backend Processing**: Retrieves the PaymentIntent from Stripe with
+  `STRIPE_SECRET_KEY` (`functions/.env`) and requires `status: "succeeded"`,
+  `metadata.orderId` equal to the order, currency `thb` and `amount_received`
+  equal to `round(Amount × 100)`. Then sets `verified: true`,
+  `isPaymentDone: true`, `paymentStatus: "verified"`, `stripePaymentIntentId`
+  and `paymentVerification`. Calling it again returns `alreadyApplied: true`.
+* **Response Data**: `{ "ok": true, "data": { "orderId": "ORD-…", "verified": true, "alreadyApplied": false } }`
 
 #### `listOrderableRestaurantsHttp`
 * **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/listOrderableRestaurantsHttp`

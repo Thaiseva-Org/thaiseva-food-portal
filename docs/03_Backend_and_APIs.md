@@ -182,7 +182,7 @@ Defined in: `functions/src/lib/orders.js` and `functions/src/lib/orderPayments.j
 - **Purpose:** Verification of customer order payments after checkout.
 - **Business Logic:**
   - **Manual Offline Payments (Thai QR, Cash on Delivery):** Master Admin calls `verifyOrderPayment` to record the payment reference and mark `isPaymentDone: true` / `paymentStatus: "verified"`.
-  - **Stripe Payments (`paymentMethod: "Stripe"`):** Manual verification via `verifyOrderPayment` is rejected with `failed-precondition`. Initial order creation sets `verified: false`. Once the Stripe payment process completes successfully (e.g. via Stripe Webhook `checkout.session.completed` / `payment_intent.succeeded`), the backend updates the order record to `verified: true` (and `isPaymentDone: true`), causing the portal UI to reflect status **Stripe verified**.
+  - **Stripe Payments (`paymentMethod: "Stripe"`):** Manual verification via `verifyOrderPayment` is rejected with `failed-precondition`. Initial order creation sets `verified: false`. After the app's Stripe PaymentSheet succeeds, the app calls `verifyFoodOrderPaymentHttp` with `{ orderId, paymentIntentId }`; the backend checks the PaymentIntent with Stripe (succeeded, `metadata.orderId`, THB amount equal to `Amount`) and updates the order record to `verified: true` (and `isPaymentDone: true`), causing the portal UI to reflect status **Stripe verified**.
 
 
 ### G. Food Customer Chat API
