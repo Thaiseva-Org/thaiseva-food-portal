@@ -166,7 +166,7 @@ idempotent retry returns HTTP `200`:
 }
 ```
 
-`amount` is the order total the customer pays: the verified food subtotal plus the distance-based delivery fee (`deliveryCharge`, ฿20–฿120, charged on every order). It equals `orders/{orderId}.Amount`, and an idempotent retry returns the same values. `restaurant` confirms exactly where the server routed the order.
+`amount` is the order total the customer pays: the verified food subtotal plus the delivery fee (`deliveryCharge`): ฿20–฿120 by distance, or a flat ฿20 when the food subtotal is above ฿1,000. It equals `orders/{orderId}.Amount`, and an idempotent retry returns the same values. `restaurant` confirms exactly where the server routed the order.
 
 ## Delivery fee
 
@@ -183,7 +183,9 @@ Delivery is priced by the road distance from the restaurant to `Receiver.locatio
 | 15–20 km | ฿110 |
 | over 20 km | ฿120 |
 
-Each band includes its upper edge. Show the fee in the cart before ordering with `getFoodDeliveryQuoteHttp`:
+Each band includes its upper edge. When the verified food subtotal is **above ฿1,000** (exactly ฿1,000 pays the distance fee), delivery is a flat **฿20** for any distance.
+
+Show the fee in the cart before ordering with `getFoodDeliveryQuoteHttp`:
 
 ```text
 POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/getFoodDeliveryQuoteHttp
@@ -193,7 +195,7 @@ Content-Type: application/json
 { "restaurantOwnerId": "restaurant_owner_uid", "location": { "latitude": 13.7463, "longitude": 100.5348 } }
 ```
 
-It returns `{ "ok": true, "data": { "deliveryCharge": 50, "distanceKm": 4.2, "distanceMeters": 4200, "distanceSource": "road", "band": { "fromKm": 3, "toKm": 5 }, "pricingVersion": "distance-v1", "ownerId": "…" } }`. `distanceSource` is `straight_line` when Google Maps is unavailable. The quote is for display only; `createFoodOrderHttp` prices delivery again (it reuses the same cached distance) and its `amount` is what the customer pays. If the quote fails, show the fee as calculated at checkout instead of blocking the order.
+It returns `{ "ok": true, "data": { "deliveryCharge": 50, "distanceKm": 4.2, "distanceMeters": 4200, "distanceSource": "road", "band": { "fromKm": 3, "toKm": 5 }, "largeOrder": { "aboveSubtotal": 1000, "deliveryCharge": 20 }, "pricingVersion": "distance-v2", "ownerId": "…" } }`. `deliveryCharge` is the distance fee; show `largeOrder.deliveryCharge` when the cart's food subtotal is above `largeOrder.aboveSubtotal`. `distanceSource` is `straight_line` when Google Maps is unavailable. The quote is for display only; `createFoodOrderHttp` prices delivery again (it reuses the same cached distance) and its `amount` is what the customer pays. If the quote fails, show the fee as calculated at checkout instead of blocking the order.
 
 ## Payment verification fields
 
@@ -251,7 +253,9 @@ New orders include:
   "deliveryCharge": 50,
   "deliveryDistanceKm": 4.2,
   "deliveryPricing": {
-    "version": "distance-v1",
+    "version": "distance-v2",
+    "rule": "distance",
+    "distanceFee": 50,
     "distanceMeters": 4200,
     "distanceSource": "road",
     "fallbackReason": null,

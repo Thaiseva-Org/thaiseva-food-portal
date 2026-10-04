@@ -192,9 +192,9 @@ Transactional store for food orders and verified accounting ledger entries.
 | `Restaurant` | Map | No | - | Store snapshot `{ ownerId, id, name }` |
 | `Receiver` | Map | No | - | Customer snapshot `{ id, name, phoneNumber, address, location }` |
 | `Items` | Array<Map> | No | - | Array of dish items `[{ ItemId, ItemName, Quantity, price, discount }]` |
-| `deliveryCharge` | Number | No | - | Distance-based delivery fee (THB ฿), see [DELIVERY_FEE.md](./DELIVERY_FEE.md) |
+| `deliveryCharge` | Number | No | - | Delivery fee charged (THB ฿): by distance, or ฿20 above a ฿1,000 food subtotal; see [DELIVERY_FEE.md](./DELIVERY_FEE.md) |
 | `deliveryDistanceKm` | Number | Yes | - | Distance the fee was priced on (km, 2 decimals); orders before 2026-10-04 have none |
-| `deliveryPricing` | Map | Yes | - | `{ version, distanceMeters, distanceSource ("road" or "straight_line"), fallbackReason, band: { fromKm, toKm }, restaurantLocation }` |
+| `deliveryPricing` | Map | Yes | - | `{ version, rule ("distance" or "large_order"), distanceFee, distanceMeters, distanceSource ("road" or "straight_line"), fallbackReason, band: { fromKm, toKm }, restaurantLocation }` |
 | `Amount` | Number | No | - | Total verified order value (THB ฿) |
 | `currentStatus` | String | No | - | State machine status (`"New Order"`, `"Order Confirm"`, `"Preparing"`, `"Ready for pickup"`, `"Out for Delivery"`, `"Delivered"`, `"Cancelled"`) |
 | `comission` | Number | No | - | Commission rate percentage stamped at order creation |

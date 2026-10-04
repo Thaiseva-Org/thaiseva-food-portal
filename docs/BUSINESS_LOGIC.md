@@ -39,7 +39,7 @@ $$\text{Subtotal} = \sum_{i=1}^{N} \left( \text{Verified Sale Price}_i \times \t
 
 $$\text{Verified Order Total} = \text{Subtotal} + \text{Delivery Fee}$$
 
-The delivery fee depends on the road distance from the restaurant to the customer pin: ฿20 up to 1 km, ฿30 up to 3 km, ฿50 up to 5 km, ฿70 up to 7 km, ฿80 up to 10 km, ฿100 up to 15 km, ฿110 up to 20 km and ฿120 beyond. Every order pays it. See [DELIVERY_FEE.md](./DELIVERY_FEE.md).
+The delivery fee depends on the road distance from the restaurant to the customer pin: ฿20 up to 1 km, ฿30 up to 3 km, ฿50 up to 5 km, ฿70 up to 7 km, ฿80 up to 10 km, ฿100 up to 15 km, ฿110 up to 20 km and ฿120 beyond. When the subtotal is above ฿1,000, delivery is a flat ฿20 for any distance (exactly ฿1,000 pays the distance fee). See [DELIVERY_FEE.md](./DELIVERY_FEE.md).
 
 ### 2.3 Financial Payout & Commission Split
 When an order is marked as `Delivered` via `markOrderDelivered`, the platform calculates revenue shares based on the stamped commission percentage:

@@ -199,7 +199,7 @@ test("only admin confirms; app delivery fee and frozen prices post earnings once
   assert.equal(f.records.get("food_items/a/items/dish").count, 2);
 });
 
-test("orders of 1000 or more pay the distance delivery fee too", async () => {
+test("an order of exactly 1000 pays the distance fee; above 1000 pays 20", async () => {
   const f = fixture();
   f.records.set("food_items/a/items/dish", {
     ...f.records.get("food_items/a/items/dish"),
@@ -213,6 +213,15 @@ test("orders of 1000 or more pay the distance delivery fee too", async () => {
   assert.equal(confirmed.deliveryCharge, 30);
   assert.equal(confirmed.Amount, 1030);
   assert.equal(confirmed.assignedRiderId, "rider");
+
+  // 2 × 500.01 = 1000.02: the flat 20 Baht large-order fee, confirmed as is.
+  f.records.set("food_items/a/items/dish", { ...f.records.get("food_items/a/items/dish"), price: 500.01 });
+  const large = await f.createFoodOrder(customer, { ...request(), idempotencyKey: "large-order" });
+  await f.masterConfirmOrder(admin, { orderId: large.orderId, riderId: "rider" });
+  const largeOrder = f.records.get(`orders/${large.orderId}`);
+  assert.equal(largeOrder.foodSubtotal, 1000.02);
+  assert.equal(largeOrder.deliveryCharge, 20);
+  assert.equal(largeOrder.Amount, 1020.02);
 });
 
 test("dispatch needs an active rider and cancellation needs an admin reason", async () => {

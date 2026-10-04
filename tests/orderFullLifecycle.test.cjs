@@ -273,7 +273,9 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
   assert.equal(savedOrder.deliveryDistanceKm, 4.2);
   assert.equal(savedOrder.deliveryPricing.distanceSource, "road");
   assert.equal(savedOrder.deliveryPricing.distanceMeters, 4200);
-  assert.equal(savedOrder.deliveryPricing.version, "distance-v1");
+  assert.equal(savedOrder.deliveryPricing.version, "distance-v2");
+  assert.equal(savedOrder.deliveryPricing.rule, "distance");
+  assert.equal(savedOrder.deliveryPricing.distanceFee, 50);
   assert.equal(savedOrder.Receiver.location.latitude, 13.7463);
   assert.equal(savedOrder.Amount, 560);
   assert.equal(savedOrder.currentStatus, "New Order");
@@ -317,8 +319,8 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
   assert.equal(confirmedOrder.deliveryCharge, 50);
   assert.equal(confirmedOrder.Amount, 560);
 
-  // 2. Large orders pay the distance fee too (no free delivery over 1,000).
-  // 12.5 km by road is 100 Baht.
+  // 2. Orders above 1,000 pay 20 Baht delivery for any distance: 12.5 km
+  // by road would be 100 Baht.
   f.routes.roadMeters = 12500;
   const banquetResult = await f.createFoodOrder(customer, {
     Restaurant: { ownerId: "rest-owner-1" },
@@ -339,9 +341,11 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
     riderId: "rider-somchai",
   });
   const banquetOrder = f.records.get(`orders/${banquetResult.orderId}`);
-  assert.equal(banquetOrder.deliveryCharge, 100);
+  assert.equal(banquetOrder.deliveryCharge, 20);
   assert.equal(banquetOrder.deliveryDistanceKm, 12.5);
-  assert.equal(banquetOrder.Amount, 1300);
+  assert.equal(banquetOrder.deliveryPricing.rule, "large_order");
+  assert.equal(banquetOrder.deliveryPricing.distanceFee, 100);
+  assert.equal(banquetOrder.Amount, 1220);
 });
 
 test("orderFullLifecycle: delivery falls back to straight-line distance when Google fails", async () => {
@@ -384,6 +388,8 @@ test("orderFullLifecycle: the cart quote is the fee the order is charged", async
   assert.equal(quote.distanceSource, "road");
   assert.equal(quote.band.fromKm, 5);
   assert.equal(quote.band.toKm, 7);
+  assert.equal(quote.largeOrder.aboveSubtotal, 1000);
+  assert.equal(quote.largeOrder.deliveryCharge, 20);
 
   // Even if Google would now measure differently, the order reuses the
   // cached distance the customer was quoted.

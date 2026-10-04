@@ -3,7 +3,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { writeAuditLogTx } = require("./audit");
 const { ROLES, assertTenantAccess } = require("./auth");
-const { quoteDelivery } = require("./deliveryFee");
+const { quoteDelivery, deliveryChargeForOrder } = require("./deliveryFee");
 const {
   loadActiveRiderSnapshot,
   loadRiderSnapshot,
@@ -791,7 +791,7 @@ async function createFoodOrder(caller, payload) {
     if (!delivery) throw new HttpsError("unavailable", "Please try placing the order again.");
     const dummyOrder = { ...payload, schemaVersion: 2, comission: null, deliveryCharge: 0 };
     const prepared = await prepareVerifiedAccounting(tx, db, dummyOrder, true);
-    const deliveryCharge = delivery.deliveryCharge;
+    const { deliveryCharge, rule: deliveryRule } = deliveryChargeForOrder(delivery.deliveryCharge, prepared.amount);
 
     const restSnap = await tx.get(prepared.restaurantRef);
     if (restSnap.data()?.active !== true || restSnap.data()?.status !== "Verified") {
@@ -853,6 +853,8 @@ async function createFoodOrder(caller, payload) {
       deliveryDistanceKm: delivery.distanceKm,
       deliveryPricing: {
         version: delivery.pricingVersion,
+        rule: deliveryRule,
+        distanceFee: delivery.deliveryCharge,
         distanceMeters: delivery.distanceMeters,
         distanceSource: delivery.distanceSource,
         fallbackReason: delivery.fallbackReason,
