@@ -48,6 +48,7 @@ Firebase Authentication ID token.
 
 ```text
 GET  https://asia-southeast1-gothai-ffea1.cloudfunctions.net/listOrderableRestaurantsHttp
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/getFoodDeliveryQuoteHttp
 POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/createFoodOrderHttp
 ```
 
@@ -135,6 +136,8 @@ final response = await http.post(
 
 Do not send a trusted price, total, restaurant name, commission, or delivery fee. The server ignores customer totals and reads every dish only from `food_items/{Restaurant.ownerId}/items/{ItemId}`.
 
+`Receiver.location` (`{latitude, longitude}`, the delivery pin) is required: the server prices delivery by the road distance from the restaurant to it (see [Delivery fee](#delivery-fee)).
+
 The restaurant must exist at `restaurants/{ownerUid}`, have `status == "Verified"`, and have `active == true`. Every item must be active and not archived. Quantity must be an integer from 1 through 100; an order may contain at most 100 lines.
 
 ## Response
@@ -149,6 +152,9 @@ idempotent retry returns HTTP `200`:
     "alreadyApplied": false,
     "orderId": "generated_order_document_id",
     "amount": 250,
+    "foodSubtotal": 200,
+    "deliveryCharge": 50,
+    "deliveryDistanceKm": 4.2,
     "restaurant": {
       "ownerId": "restaurant_owner_uid",
       "id": "public_restaurant_id",
@@ -160,7 +166,34 @@ idempotent retry returns HTTP `200`:
 }
 ```
 
-`amount` is the order total the customer pays: the verified food subtotal plus a fixed ฿100 delivery charge when that subtotal is below ฿1,000 (otherwise ฿0). It equals `orders/{orderId}.Amount`, and an idempotent retry returns the same value. `restaurant` confirms exactly where the server routed the order.
+`amount` is the order total the customer pays: the verified food subtotal plus the distance-based delivery fee (`deliveryCharge`, ฿20–฿120, charged on every order). It equals `orders/{orderId}.Amount`, and an idempotent retry returns the same values. `restaurant` confirms exactly where the server routed the order.
+
+## Delivery fee
+
+Delivery is priced by the road distance from the restaurant to `Receiver.location`. Full details: [DELIVERY_FEE.md](./DELIVERY_FEE.md).
+
+| Road distance | Fee |
+| --- | ---: |
+| up to 1 km | ฿20 |
+| 1–3 km | ฿30 |
+| 3–5 km | ฿50 |
+| 5–7 km | ฿70 |
+| 7–10 km | ฿80 |
+| 10–15 km | ฿100 |
+| 15–20 km | ฿110 |
+| over 20 km | ฿120 |
+
+Each band includes its upper edge. Show the fee in the cart before ordering with `getFoodDeliveryQuoteHttp`:
+
+```text
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/getFoodDeliveryQuoteHttp
+Authorization: Bearer <Firebase ID token>
+Content-Type: application/json
+
+{ "restaurantOwnerId": "restaurant_owner_uid", "location": { "latitude": 13.7463, "longitude": 100.5348 } }
+```
+
+It returns `{ "ok": true, "data": { "deliveryCharge": 50, "distanceKm": 4.2, "distanceMeters": 4200, "distanceSource": "road", "band": { "fromKm": 3, "toKm": 5 }, "pricingVersion": "distance-v1", "ownerId": "…" } }`. `distanceSource` is `straight_line` when Google Maps is unavailable. The quote is for display only; `createFoodOrderHttp` prices delivery again (it reuses the same cached distance) and its `amount` is what the customer pays. If the quote fails, show the fee as calculated at checkout instead of blocking the order.
 
 ## Payment verification fields
 
@@ -215,8 +248,17 @@ New orders include:
     "menuPath": "food_items/restaurant_owner_uid/items/pad-thai-01"
   }],
   "foodSubtotal": 216,
-  "deliveryCharge": 0,
-  "Amount": 216,
+  "deliveryCharge": 50,
+  "deliveryDistanceKm": 4.2,
+  "deliveryPricing": {
+    "version": "distance-v1",
+    "distanceMeters": 4200,
+    "distanceSource": "road",
+    "fallbackReason": null,
+    "band": { "fromKm": 3, "toKm": 5 },
+    "restaurantLocation": { "latitude": 13.7563, "longitude": 100.5018 }
+  },
+  "Amount": 266,
   "currentStatus": "New Order"
 }
 ```
@@ -230,6 +272,7 @@ List verified open restaurants
   -> customer selects one restaurant ownerId
   -> load food_items/{ownerId}/items
   -> keep a single-restaurant cart
+  -> POST getFoodDeliveryQuoteHttp to show the delivery fee for the pin
   -> POST createFoodOrderHttp with Restaurant.ownerId and bearer ID token
   -> show the returned restaurant and orderId
   -> listen to orders/{orderId}
@@ -251,8 +294,8 @@ New Order -> Order Confirm -> Preparing -> Ready for pickup
 | Code | Meaning |
 | --- | --- |
 | `unauthenticated` | Customer session is missing |
-| `invalid-argument` | Restaurant, receiver, item ID, quantity, or idempotency key is invalid |
-| `failed-precondition` | Restaurant is closed/unverified or an item is missing/inactive/archived |
+| `invalid-argument` | Restaurant, receiver, delivery location, item ID, quantity, or idempotency key is invalid |
+| `failed-precondition` | Restaurant is closed/unverified/has no location, or an item is missing/inactive/archived |
 | `already-exists` | Idempotency key was reused for a changed checkout |
 
 On an item availability error, refresh the selected restaurant's menu and ask the customer to review the cart. Never substitute an item or route the order to another restaurant.

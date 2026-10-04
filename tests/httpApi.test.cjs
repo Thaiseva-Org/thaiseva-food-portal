@@ -59,3 +59,15 @@ test("Flutter order endpoint is standard HTTP and cannot enforce callable App Ch
     /exports\.createFoodOrder\s*=/
   );
 });
+
+test("delivery quote endpoint is standard HTTP like the order endpoint", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../functions/src/index.js"),
+    "utf8"
+  );
+
+  assert.match(
+    source,
+    /exports\.getFoodDeliveryQuoteHttp\s*=\s*onRequest\([\s\S]*?getFoodDeliveryQuoteHttpHandler/
+  );
+});

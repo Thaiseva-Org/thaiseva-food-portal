@@ -22,6 +22,8 @@ function fixture() {
         status: "Verified",
         active: true,
         comission: 15,
+        latitude: "13.7563",
+        longitude: "100.5018",
       },
     ],
     [
@@ -141,6 +143,21 @@ function fixture() {
     return rider.data();
   };
 
+  // Fake Google Routes API: roadMeters is the distance it returns; null
+  // makes it fail so the server falls back to straight-line distance.
+  const routes = { roadMeters: 4200, calls: 0 };
+  const fakeFetch = async () => {
+    routes.calls += 1;
+    if (routes.roadMeters == null) {
+      return { ok: false, status: 503, text: async () => "unavailable" };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => [{ condition: "ROUTE_EXISTS", distanceMeters: routes.roadMeters, status: {} }],
+    };
+  };
+
   const audits = [];
   const deps = {
     "node:crypto": require("node:crypto"),
@@ -180,7 +197,7 @@ function fixture() {
     },
   };
 
-  const load = (name) => {
+  const load = (name, globals = {}) => {
     const context = {
       module: { exports: {} },
       require: (dep) => {
@@ -188,6 +205,7 @@ function fixture() {
         throw new Error(`Missing dependency ${dep}`);
       },
       console,
+      ...globals,
     };
     vm.runInNewContext(
       readFileSync(path.join(__dirname, `../functions/src/lib/${name}.js`), "utf8"),
@@ -196,11 +214,19 @@ function fixture() {
     return context.module.exports;
   };
 
+  deps["./deliveryFee"] = load("deliveryFee", {
+    fetch: fakeFetch,
+    AbortSignal,
+    process: { env: { GOOGLE_ROUTES_API_KEY: "test-key" } },
+  });
+
   return {
     ...load("orders"),
     ...load("orderPayments"),
     records,
     audits,
+    routes,
+    quoteFoodDelivery: deps["./deliveryFee"].quoteFoodDelivery,
   };
 }
 
@@ -211,7 +237,7 @@ const master = { uid: "master-admin", role: "masterAdmin" };
 test("orderFullLifecycle: price tampering defense and server-managed delivery fee", async () => {
   const f = fixture();
 
-  // 1. The server charges 100 Baht when the verified subtotal is below 1,000.
+  // 1. The server charges the distance fee: 4.2 km by road is 50 Baht.
   // Massaman Curry (250 - 10% discount = 225) * 2 = 450
   // Jasmine Rice (30) * 2 = 60
   // Subtotal = 510 Baht.
@@ -226,6 +252,7 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
       name: "Customer Jane",
       address: "123 Sukhumvit Road",
       phoneNumber: "0891234567",
+      location: { latitude: 13.7463, longitude: 100.5348 },
     },
     paymentMethod: "Cash on Delivery",
     deliveryCharge: 35,
@@ -242,9 +269,42 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
   assert.equal(savedOrder.Items[0].discount, 10);
   assert.equal(savedOrder.Items[0].lineAmount, 450);
   assert.equal(savedOrder.foodSubtotal, 510);
-  assert.equal(savedOrder.deliveryCharge, 100);
-  assert.equal(savedOrder.Amount, 610);
+  assert.equal(savedOrder.deliveryCharge, 50);
+  assert.equal(savedOrder.deliveryDistanceKm, 4.2);
+  assert.equal(savedOrder.deliveryPricing.distanceSource, "road");
+  assert.equal(savedOrder.deliveryPricing.distanceMeters, 4200);
+  assert.equal(savedOrder.deliveryPricing.version, "distance-v1");
+  assert.equal(savedOrder.Receiver.location.latitude, 13.7463);
+  assert.equal(savedOrder.Amount, 560);
   assert.equal(savedOrder.currentStatus, "New Order");
+  assert.equal(orderResult.amount, 560);
+  assert.equal(orderResult.foodSubtotal, 510);
+  assert.equal(orderResult.deliveryCharge, 50);
+  assert.equal(orderResult.deliveryDistanceKm, 4.2);
+
+  // A network retry returns the same order without asking Google again.
+  const callsBeforeRetry = f.routes.calls;
+  const retry = await f.createFoodOrder(customer, {
+    Restaurant: { ownerId: "rest-owner-1" },
+    Items: [
+      { ItemId: "item-curry", Quantity: 2, Price: 1 },
+      { ItemId: "item-rice", Quantity: 2, Price: 0 },
+    ],
+    Receiver: {
+      name: "Customer Jane",
+      address: "123 Sukhumvit Road",
+      phoneNumber: "0891234567",
+      location: { latitude: 13.7463, longitude: 100.5348 },
+    },
+    paymentMethod: "Cash on Delivery",
+    deliveryCharge: 35,
+    idempotencyKey: "test-order-1",
+  });
+  assert.equal(retry.alreadyApplied, true);
+  assert.equal(retry.orderId, orderId);
+  assert.equal(retry.amount, 560);
+  assert.equal(retry.deliveryCharge, 50);
+  assert.equal(f.routes.calls, callsBeforeRetry);
 
   // Admin confirms without changing the app-provided delivery charge.
   await f.transitionOrderStatus(master, {
@@ -254,10 +314,12 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
   });
   const confirmedOrder = f.records.get(`orders/${orderId}`);
   assert.equal(confirmedOrder.currentStatus, "Order Confirm");
-  assert.equal(confirmedOrder.deliveryCharge, 100);
-  assert.equal(confirmedOrder.Amount, 610);
+  assert.equal(confirmedOrder.deliveryCharge, 50);
+  assert.equal(confirmedOrder.Amount, 560);
 
-  // 2. Delivery is free when the verified subtotal is 1,000 Baht or more.
+  // 2. Large orders pay the distance fee too (no free delivery over 1,000).
+  // 12.5 km by road is 100 Baht.
+  f.routes.roadMeters = 12500;
   const banquetResult = await f.createFoodOrder(customer, {
     Restaurant: { ownerId: "rest-owner-1" },
     Items: [{ ItemId: "item-feast", Quantity: 1 }], // 1200 Baht
@@ -265,6 +327,7 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
       name: "Customer Bob",
       address: "456 Silom Road",
       phoneNumber: "0897654321",
+      location: { latitude: 13.7244, longitude: 100.5296 },
     },
     paymentMethod: "Thai QR",
     deliveryCharge: 75,
@@ -276,12 +339,107 @@ test("orderFullLifecycle: price tampering defense and server-managed delivery fe
     riderId: "rider-somchai",
   });
   const banquetOrder = f.records.get(`orders/${banquetResult.orderId}`);
-  assert.equal(banquetOrder.deliveryCharge, 0);
-  assert.equal(banquetOrder.Amount, 1200);
+  assert.equal(banquetOrder.deliveryCharge, 100);
+  assert.equal(banquetOrder.deliveryDistanceKm, 12.5);
+  assert.equal(banquetOrder.Amount, 1300);
+});
+
+test("orderFullLifecycle: delivery falls back to straight-line distance when Google fails", async () => {
+  const f = fixture();
+  f.routes.roadMeters = null;
+
+  const result = await f.createFoodOrder(customer, {
+    Restaurant: { ownerId: "rest-owner-1" },
+    Items: [{ ItemId: "item-rice", Quantity: 1 }],
+    Receiver: {
+      name: "Customer Kai",
+      address: "1 Rama IV Road",
+      phoneNumber: "0890000000",
+      // About 3.7 km in a straight line from the restaurant: 50 Baht.
+      location: { latitude: 13.7463, longitude: 100.5348 },
+    },
+    paymentMethod: "Cash on Delivery",
+    idempotencyKey: "fallback-order",
+  });
+
+  const order = f.records.get(`orders/${result.orderId}`);
+  assert.equal(order.deliveryPricing.distanceSource, "straight_line");
+  assert.equal(order.deliveryPricing.fallbackReason, "http_503");
+  assert.ok(order.deliveryDistanceKm > 3 && order.deliveryDistanceKm <= 5);
+  assert.equal(order.deliveryCharge, 50);
+  assert.equal(order.Amount, 80);
+});
+
+test("orderFullLifecycle: the cart quote is the fee the order is charged", async () => {
+  const f = fixture();
+  f.routes.roadMeters = 6800; // 6.8 km: 70 Baht
+  const pin = { latitude: 13.7300, longitude: 100.5600 };
+
+  const quote = await f.quoteFoodDelivery(customer, {
+    restaurantOwnerId: "rest-owner-1",
+    location: pin,
+  });
+  assert.equal(quote.deliveryCharge, 70);
+  assert.equal(quote.distanceKm, 6.8);
+  assert.equal(quote.distanceSource, "road");
+  assert.equal(quote.band.fromKm, 5);
+  assert.equal(quote.band.toKm, 7);
+
+  // Even if Google would now measure differently, the order reuses the
+  // cached distance the customer was quoted.
+  f.routes.roadMeters = 7300;
+  const result = await f.createFoodOrder(customer, {
+    Restaurant: { ownerId: "rest-owner-1" },
+    Items: [{ ItemId: "item-rice", Quantity: 1 }],
+    Receiver: { name: "Quoted", address: "Rama III", phoneNumber: "0890000002", location: pin },
+    paymentMethod: "Stripe",
+    idempotencyKey: "quoted-order",
+  });
+  assert.equal(result.deliveryCharge, 70);
+  assert.equal(result.amount, 100);
+  assert.equal(f.routes.calls, 1);
+
+  await assert.rejects(
+    f.quoteFoodDelivery({}, { restaurantOwnerId: "rest-owner-1", location: pin }),
+    { code: "unauthenticated" }
+  );
+  await assert.rejects(
+    f.quoteFoodDelivery(customer, { restaurantOwnerId: "../bad", location: pin }),
+    { code: "invalid-argument" }
+  );
+  f.records.get("restaurants/rest-owner-1").active = false;
+  await assert.rejects(
+    f.quoteFoodDelivery(customer, { restaurantOwnerId: "rest-owner-1", location: pin }),
+    { code: "failed-precondition" }
+  );
+});
+
+test("orderFullLifecycle: delivery needs a customer pin and a restaurant location", async () => {
+  const f = fixture();
+  const payload = {
+    Restaurant: { ownerId: "rest-owner-1" },
+    Items: [{ ItemId: "item-rice", Quantity: 1 }],
+    Receiver: { name: "No Pin", address: "Somewhere", phoneNumber: "0890000001" },
+    paymentMethod: "Cash on Delivery",
+    idempotencyKey: "no-pin-order",
+  };
+  await assert.rejects(f.createFoodOrder(customer, payload), { code: "invalid-argument" });
+
+  delete f.records.get("restaurants/rest-owner-1").latitude;
+  await assert.rejects(
+    f.createFoodOrder(customer, {
+      ...payload,
+      Receiver: { ...payload.Receiver, location: { latitude: 13.75, longitude: 100.5 } },
+      idempotencyKey: "no-restaurant-location",
+    }),
+    { code: "failed-precondition" }
+  );
+  assert.equal([...f.records.keys()].some((key) => key.startsWith("orders/")), false);
 });
 
 test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and locked financial clearing", async () => {
   const f = fixture();
+  f.routes.roadMeters = 800; // 0.8 km: 20 Baht delivery
 
   // Create order: Massaman Curry (225 * 2 = 450 subtotal)
   const { orderId } = await f.createFoodOrder(customer, {
@@ -291,21 +449,22 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
       name: "Customer Alice",
       address: "789 Phra Khanong",
       phoneNumber: "0811113333",
+      location: { latitude: 13.7140, longitude: 100.5920 },
     },
     paymentMethod: "Cash on Delivery",
     deliveryCharge: 25,
     idempotencyKey: "lifecycle-order",
   });
 
-  // Step 1: Master Admin confirms the server-calculated 100 Baht fee.
+  // Step 1: Master Admin confirms the server-calculated 20 Baht fee.
   await f.transitionOrderStatus(master, {
     orderId,
     toStatus: "Order Confirm",
     riderId: "rider-somchai",
   });
   assert.equal(f.records.get(`orders/${orderId}`).currentStatus, "Order Confirm");
-  assert.equal(f.records.get(`orders/${orderId}`).deliveryCharge, 100);
-  assert.equal(f.records.get(`orders/${orderId}`).Amount, 550);
+  assert.equal(f.records.get(`orders/${orderId}`).deliveryCharge, 20);
+  assert.equal(f.records.get(`orders/${orderId}`).Amount, 470);
 
   // Non-master cannot confirm order
   await assert.rejects(
@@ -374,7 +533,7 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   assert.ok(delivered.accounting);
   assert.equal(delivered.accounting.commissionPct, 15);
   assert.equal(delivered.accounting.commissionBase, 500); // original price: 250 x 2
-  assert.equal(delivered.accounting.adminShare, 175); // 75 commission + 100 delivery fee
+  assert.equal(delivered.accounting.adminShare, 95); // 75 commission + 20 delivery fee
   assert.equal(delivered.accounting.partnerShare, 375);
   assert.equal(delivered.comission, 15);
 
@@ -383,7 +542,7 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   await assert.rejects(
     f.verifyOrderPayment(owner, {
       orderId,
-      expectedAmount: 550,
+      expectedAmount: 470,
       expectedMethod: "cod",
     }),
     { code: "permission-denied" }
@@ -392,7 +551,7 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   // Master verifies COD payment
   const payResult = await f.verifyOrderPayment(master, {
     orderId,
-    expectedAmount: 550,
+    expectedAmount: 470,
     expectedMethod: "cod",
   });
   assert.equal(payResult.isPaymentDone, true);

@@ -70,6 +70,8 @@ erDiagram
         map Receiver
         array Items
         number deliveryCharge
+        number deliveryDistanceKm
+        map deliveryPricing
         number Amount
         string currentStatus
         map accounting
@@ -190,7 +192,9 @@ Transactional store for food orders and verified accounting ledger entries.
 | `Restaurant` | Map | No | - | Store snapshot `{ ownerId, id, name }` |
 | `Receiver` | Map | No | - | Customer snapshot `{ id, name, phoneNumber, address, location }` |
 | `Items` | Array<Map> | No | - | Array of dish items `[{ ItemId, ItemName, Quantity, price, discount }]` |
-| `deliveryCharge` | Number | No | - | Delivery fee (THB ฿) |
+| `deliveryCharge` | Number | No | - | Distance-based delivery fee (THB ฿), see [DELIVERY_FEE.md](./DELIVERY_FEE.md) |
+| `deliveryDistanceKm` | Number | Yes | - | Distance the fee was priced on (km, 2 decimals); orders before 2026-10-04 have none |
+| `deliveryPricing` | Map | Yes | - | `{ version, distanceMeters, distanceSource ("road" or "straight_line"), fallbackReason, band: { fromKm, toKm }, restaurantLocation }` |
 | `Amount` | Number | No | - | Total verified order value (THB ฿) |
 | `currentStatus` | String | No | - | State machine status (`"New Order"`, `"Order Confirm"`, `"Preparing"`, `"Ready for pickup"`, `"Out for Delivery"`, `"Delivered"`, `"Cancelled"`) |
 | `comission` | Number | No | - | Commission rate percentage stamped at order creation |
@@ -200,6 +204,11 @@ Transactional store for food orders and verified accounting ledger entries.
 | `accounting` | Map | Yes | - | Stamped verified earnings `{ amount, commissionPct, adminShare, partnerShare }` |
 | `orderDate` | String | No | - | Date string (`"YYYY-MM-DD"`) for query indexing |
 | `createdAt` | Timestamp | No | - | Creation timestamp |
+
+---
+
+### 3.5.1 `deliveryDistanceCache/{hash}`
+Server-only cache of measured delivery distances, keyed by a SHA-256 of the route profile, restaurant coordinates and customer pin. Road distances expire after 30 days, straight-line fallbacks after 15 minutes. Fields: `origin`, `destination`, `distanceMeters`, `distanceSource`, `fallbackReason`, `routeProfile`, `createdAt`, `expiresAt`. Clients cannot read or write it (default-deny rule). An optional Firestore TTL policy on `expiresAt` deletes old entries.
 
 ---
 

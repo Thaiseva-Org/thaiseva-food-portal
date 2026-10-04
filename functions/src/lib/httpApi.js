@@ -3,6 +3,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resolveCaller, enforceRateLimit } = require("./auth");
 const { createFoodOrder } = require("./orders");
+const { quoteFoodDelivery } = require("./deliveryFee");
 const {
   verifyStripeOrderPayment,
   verifyStripeSignature,
@@ -103,6 +104,29 @@ async function createFoodOrderHttpHandler(req, res) {
       ok: true,
       data: result,
     });
+  } catch (err) {
+    return sendApiError(res, err);
+  }
+}
+
+async function getFoodDeliveryQuoteHttpHandler(req, res) {
+  res.set("Cache-Control", "no-store");
+  if (req.method !== "POST") {
+    res.set("Allow", "POST");
+    return res.status(405).json({
+      ok: false,
+      error: { code: "method-not-allowed", message: "Use POST." },
+    });
+  }
+
+  try {
+    const caller = await authenticateHttpRequest(req);
+    await enforceRateLimit(caller, "getFoodDeliveryQuoteHttp", 60);
+    const payload = req.body?.data && typeof req.body.data === "object"
+      ? req.body.data
+      : req.body || {};
+    const result = await quoteFoodDelivery(caller, payload);
+    return res.status(200).json({ ok: true, data: result });
   } catch (err) {
     return sendApiError(res, err);
   }
@@ -209,6 +233,7 @@ module.exports = {
   publicRestaurant,
   sendApiError,
   createFoodOrderHttpHandler,
+  getFoodDeliveryQuoteHttpHandler,
   verifyFoodOrderPaymentHttpHandler,
   stripeFoodWebhookHandler,
   listOrderableRestaurantsHttpHandler,

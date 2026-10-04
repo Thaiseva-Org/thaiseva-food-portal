@@ -39,6 +39,8 @@ $$\text{Subtotal} = \sum_{i=1}^{N} \left( \text{Verified Sale Price}_i \times \t
 
 $$\text{Verified Order Total} = \text{Subtotal} + \text{Delivery Fee}$$
 
+The delivery fee depends on the road distance from the restaurant to the customer pin: ฿20 up to 1 km, ฿30 up to 3 km, ฿50 up to 5 km, ฿70 up to 7 km, ฿80 up to 10 km, ฿100 up to 15 km, ฿110 up to 20 km and ฿120 beyond. Every order pays it. See [DELIVERY_FEE.md](./DELIVERY_FEE.md).
+
 ### 2.3 Financial Payout & Commission Split
 When an order is marked as `Delivered` via `markOrderDelivered`, the platform calculates revenue shares based on the stamped commission percentage:
 
@@ -118,6 +120,7 @@ sequenceDiagram
 
 * Menu Catalog Backend: [`functions/src/lib/menu.js`](../functions/src/lib/menu.js)
 * Order State Machine: [`functions/src/lib/orders.js`](../functions/src/lib/orders.js)
+* Delivery Fee: [`functions/src/lib/deliveryFee.js`](../functions/src/lib/deliveryFee.js)
 * Onboarding Application Logic: [`functions/src/lib/applications.js`](../functions/src/lib/applications.js)
 * Commission Calculation Helper: [`src/utils/commission.js`](../src/utils/commission.js)
 * State Machine Test Specs: [`tests/restaurantMenuFlow.test.cjs`](../tests/restaurantMenuFlow.test.cjs)
