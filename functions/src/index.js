@@ -55,6 +55,7 @@ const {
 } = require("./lib/partnerPush");
 const {
   createFoodOrderHttpHandler,
+  getFoodDeliveryQuoteHttpHandler,
   verifyFoodOrderPaymentHttpHandler,
   stripeFoodWebhookHandler,
   listOrderableRestaurantsHttpHandler,
@@ -182,6 +183,14 @@ exports.ensurePlatformRestaurant = wrap(async (caller, data) => {
 exports.createFoodOrderHttp = onRequest(
   { cors: true, invoker: "public" },
   createFoodOrderHttpHandler
+);
+
+// Distance-based delivery fee for the cart before ordering (same pricing as
+// createFoodOrderHttp). Reads GOOGLE_ROUTES_API_KEY from functions/.env; see
+// docs/DELIVERY_FEE.md.
+exports.getFoodDeliveryQuoteHttp = onRequest(
+  { cors: true, invoker: "public" },
+  getFoodDeliveryQuoteHttpHandler
 );
 
 // Customer app calls this after its Stripe PaymentSheet succeeds; reads

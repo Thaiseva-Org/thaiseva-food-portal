@@ -33,6 +33,7 @@ The system uses separate environment configurations for development (`.env.local
 | `VITE_FIREBASE_APPCHECK_SITE_KEY` | Yes | Client | reCAPTCHA Enterprise Site Key | `6Ld_YOUR_RECAPTCHA_SITE_KEY` |
 | `FUNCTIONS_EMULATOR` | No | Backend | Disables App Check during local emulator testing | `true` / `false` |
 | `ENFORCE_APP_CHECK` | No | Backend | Explicit toggle for backend App Check enforcement | `true` / `false` |
+| `GOOGLE_ROUTES_API_KEY` | Yes (production) | Backend (`functions/.env`) | Routes API key for distance-based food delivery fees; without it fees use straight-line distance. See [DELIVERY_FEE.md](./DELIVERY_FEE.md) | `AIza…` (restricted to `routes.googleapis.com`) |
 
 ---
 

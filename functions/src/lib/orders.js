@@ -3,6 +3,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { writeAuditLogTx } = require("./audit");
 const { ROLES, assertTenantAccess } = require("./auth");
+const { quoteDelivery } = require("./deliveryFee");
 const {
   loadActiveRiderSnapshot,
   loadRiderSnapshot,
@@ -760,6 +761,18 @@ async function createFoodOrder(caller, payload) {
   const orderRef = safeKey
     ? db.collection("orders").doc(`ORD-${createHash("sha256").update(`${caller.uid}:${safeKey}`).digest("hex")}`)
     : db.collection("orders").doc();
+
+  // Price delivery before the transaction: it may call Google, and a
+  // transaction can run more than once. A retry of an existing order skips
+  // it and gets the stored order back below.
+  const priorOrder = safeKey ? await orderRef.get() : null;
+  let delivery = null;
+  if (!priorOrder?.exists) {
+    const restaurantSnap = await db.collection("restaurants").doc(payload.Restaurant.ownerId).get();
+    if (!restaurantSnap.exists) throw new HttpsError("failed-precondition", "Restaurant no longer exists.");
+    delivery = await quoteDelivery({ restaurant: restaurantSnap.data() || {}, location: payload.Receiver.location, db });
+  }
+
   const result = await db.runTransaction(async (tx) => {
     const existing = await tx.get(orderRef);
     if (existing.exists) {
@@ -769,12 +782,16 @@ async function createFoodOrder(caller, payload) {
         alreadyApplied: true,
         orderId: orderRef.id,
         amount: Number(prior.Amount ?? prior.foodSubtotal) || 0,
+        foodSubtotal: Number(prior.foodSubtotal) || 0,
+        deliveryCharge: Number(prior.deliveryCharge) || 0,
+        deliveryDistanceKm: prior.deliveryDistanceKm ?? null,
         restaurant: prior.Restaurant || null,
       };
     }
+    if (!delivery) throw new HttpsError("unavailable", "Please try placing the order again.");
     const dummyOrder = { ...payload, schemaVersion: 2, comission: null, deliveryCharge: 0 };
     const prepared = await prepareVerifiedAccounting(tx, db, dummyOrder, true);
-    const deliveryCharge = prepared.amount < 1000 ? 100 : 0;
+    const deliveryCharge = delivery.deliveryCharge;
 
     const restSnap = await tx.get(prepared.restaurantRef);
     if (restSnap.data()?.active !== true || restSnap.data()?.status !== "Verified") {
@@ -821,7 +838,7 @@ async function createFoodOrder(caller, payload) {
         name: String(payload.Receiver.name).slice(0, 120),
         phoneNumber: String(payload.Receiver.phoneNumber).slice(0, 30),
         address: String(payload.Receiver.address).slice(0, 500),
-        location: payload.Receiver.location || null,
+        location: delivery.destination,
         landmark: payload.Receiver.landmark || "",
         locationType: payload.Receiver.locationType ? String(payload.Receiver.locationType).slice(0, 20) : "",
         buildingFloor: payload.Receiver.buildingFloor ? String(payload.Receiver.buildingFloor).slice(0, 100) : "",
@@ -833,6 +850,15 @@ async function createFoodOrder(caller, payload) {
       },
       Items: finalItems,
       deliveryCharge,
+      deliveryDistanceKm: delivery.distanceKm,
+      deliveryPricing: {
+        version: delivery.pricingVersion,
+        distanceMeters: delivery.distanceMeters,
+        distanceSource: delivery.distanceSource,
+        fallbackReason: delivery.fallbackReason,
+        band: delivery.band,
+        restaurantLocation: delivery.origin,
+      },
       paymentMethod: payload.paymentMethod || "Cash on Delivery",
       Amount: Math.round((prepared.amount + deliveryCharge) * 100) / 100,
       comission: prepared.commissionPct,
@@ -866,6 +892,9 @@ async function createFoodOrder(caller, payload) {
       alreadyApplied: false,
       orderId,
       amount: Math.round((prepared.amount + deliveryCharge) * 100) / 100,
+      foodSubtotal: prepared.amount,
+      deliveryCharge,
+      deliveryDistanceKm: delivery.distanceKm,
       restaurant: restaurantSnapshot,
     };
   });
