@@ -15,6 +15,8 @@ test("partner paths never include user ids", () => {
     partnerPath("manageOrder", "orderView", "abc"),
     "/partner/manageOrder/orderView/abc",
   );
+  assert.equal(partnerPath("finance"), "/partner/finance");
+  assert.equal(partnerPath("stats"), "/partner/stats");
 });
 
 test("legacy uid bookmarks rewrite to /partner", () => {

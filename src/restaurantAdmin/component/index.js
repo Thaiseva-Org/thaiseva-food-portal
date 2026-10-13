@@ -1,5 +1,5 @@
 import { lazy } from "react";
-// Route guards must be eager — lazy PrivateRoute has no Suspense parent in App.jsx
+// Route guards must be eager - lazy PrivateRoute has no Suspense parent in App.jsx
 // and delays the first paint of /:uid with a blank screen.
 import PrivateRoute from "./PrivateRoute";
 

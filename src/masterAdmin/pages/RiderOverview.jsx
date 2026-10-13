@@ -364,10 +364,10 @@ const RiderOverview = () => {
                         key={job.OrderID}
                         className="bg-white hover:bg-brand-50/40"
                       >
-                        <td className="px-4 py-4 font-medium">{job.Date || "—"}</td>
+                        <td className="px-4 py-4 font-medium">{job.Date || "-"}</td>
                         <td className="px-4 py-4">
                           <p className="font-medium">
-                            {job.CustomerName || "—"}
+                            {job.CustomerName || "-"}
                           </p>
                           {job.CustomerPhone ? (
                             <a
@@ -377,13 +377,13 @@ const RiderOverview = () => {
                               {job.CustomerPhone}
                             </a>
                           ) : (
-                            <p className="text-xs text-ink-muted">—</p>
+                            <p className="text-xs text-ink-muted">-</p>
                           )}
                         </td>
                         <td className="px-4 py-4 text-ink-muted">
-                          {job.Location || "—"}
+                          {job.Location || "-"}
                         </td>
-                        <td className="px-4 py-4">{job.RestaurantName || "—"}</td>
+                        <td className="px-4 py-4">{job.RestaurantName || "-"}</td>
                         <td className="px-4 py-4 font-semibold tabular-nums">
                           {formatOrderAmount(job.Amount)}
                         </td>

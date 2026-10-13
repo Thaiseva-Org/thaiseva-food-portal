@@ -21,7 +21,7 @@ const COPY = {
     icon: "bi-wallet2",
     title: "Payout, custom invoices, and period offers",
     message:
-      "Step through weeks or pick custom dates. An offer rate changes this invoice only — not the restaurant default. Mark paid stays on Records.",
+      "Step through weeks or pick custom dates. An offer rate changes this invoice only - not the restaurant default. Mark paid stays on Records.",
   },
 };
 

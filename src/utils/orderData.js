@@ -100,16 +100,48 @@ export function formatOrderAddressesText(
 }
 
 export function normalizeOrder(data = {}) {
+  const rawItems = Array.isArray(data.Items) && data.Items.length > 0
+    ? data.Items
+    : Array.isArray(data.items) && data.items.length > 0
+      ? data.items
+      : Array.isArray(data.orderDetails) && data.orderDetails.length > 0
+        ? data.orderDetails
+        : Array.isArray(data.orderItems) && data.orderItems.length > 0
+          ? data.orderItems
+          : Array.isArray(data.dishes) && data.dishes.length > 0
+            ? data.dishes
+            : data.Items && typeof data.Items === "object" && !Array.isArray(data.Items)
+              ? Object.values(data.Items).filter(Boolean)
+              : data.items && typeof data.items === "object" && !Array.isArray(data.items)
+                ? Object.values(data.items).filter(Boolean)
+                : Array.isArray(data.Items) ? data.Items : [];
+
+  const rawGross = data.Amount ?? data.totalAmount ?? data.amount ?? data.TotalAmount ?? 0;
+  const rawDelivery = Number(data.deliveryCharge ?? data.DeliveryCharge ?? 0);
+  const rawSubtotal = data.foodSubtotal ?? data.subtotal ?? (Number(rawGross) > 0 ? Math.max(0, Number(rawGross) - rawDelivery) : null);
+
   return {
     ...data,
     timestamp: data.timestamp ?? data.createdAt,
-    Amount: data.Amount ?? data.totalAmount ?? 0,
-    deliveryCharge: Number(data.deliveryCharge ?? 0),
+    Amount: rawGross,
+    totalAmount: rawGross,
+    amount: rawGross,
+    foodSubtotal: rawSubtotal,
+    subtotal: rawSubtotal,
+    deliveryCharge: rawDelivery,
     Location: data.Location || data.Receiver?.address || "",
+    CustomerName: data.CustomerName || data.Receiver?.name || data.Sender?.name || "",
+    CustomerContact: data.CustomerContact || data.Receiver?.phone || data.Receiver?.phoneNumber || "",
+    CustomerEmail: data.CustomerEmail || data.Receiver?.email || data.Sender?.email || "",
+    currentStatus: data.currentStatus || data.Status || data.status || "New Order",
+    Status: data.Status || data.currentStatus || data.status || "New Order",
+    status: data.status || data.currentStatus || data.Status || "New Order",
     Receiver: {
       ...data.Receiver,
-      phone: data.Receiver?.phone || data.Receiver?.phoneNumber || "",
-      phoneNumber: data.Receiver?.phoneNumber || data.Receiver?.phone || "",
+      name: data.Receiver?.name || data.CustomerName || data.Sender?.name || "",
+      phone: data.Receiver?.phone || data.Receiver?.phoneNumber || data.CustomerContact || "",
+      phoneNumber: data.Receiver?.phoneNumber || data.Receiver?.phone || data.CustomerContact || "",
+      email: data.Receiver?.email || data.CustomerEmail || data.Sender?.email || "",
       buildingFloor: data.Receiver?.buildingFloor || "",
       street: data.Receiver?.street || "",
       landmark: data.Receiver?.landmark || "",
@@ -123,13 +155,18 @@ export function normalizeOrder(data = {}) {
     Restaurant: data.Restaurant
       ? {
           ...data.Restaurant,
+          name: data.Restaurant.name || data.restaurantName || "",
           imageUrl: data.Restaurant.imageUrl || data.Restaurant.photo || "",
           location: data.Restaurant.location || data.Restaurant.address || "",
         }
       : null,
-    Items: (Array.isArray(data.Items) ? data.Items : []).map((item) => ({
+    restaurantName: data.restaurantName || data.Restaurant?.name || "",
+    Items: (Array.isArray(rawItems) ? rawItems : []).map((item) => ({
       ...item,
-      Price: item.Price ?? item.price ?? 0,
+      ItemName: item.ItemName || item.itemName || item.name || item.title || item.dishName || "Item",
+      Price: item.Price ?? item.price ?? item.unitPrice ?? item.cost ?? 0,
+      Quantity: Number(item.Quantity ?? item.quantity ?? item.qty ?? item.count ?? 1) || 1,
+      discount: Number(item.discount ?? item.Discount ?? 0) || 0,
       imageUrl: String(item.imageUrl || "")
         .replace(/^\[[^\]]*\]\((.*)\)$/, "$1")
         .replace(/\\&/g, "&"),

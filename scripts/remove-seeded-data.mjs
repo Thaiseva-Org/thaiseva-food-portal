@@ -25,7 +25,7 @@ const FS = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases
 async function getAccessToken() {
   const configPath = join(homedir(), ".config/configstore/firebase-tools.json");
   if (!existsSync(configPath)) {
-    throw new Error("firebase-tools.json missing — run `firebase login` first.");
+    throw new Error("firebase-tools.json missing - run `firebase login` first.");
   }
   const cfg = JSON.parse(readFileSync(configPath, "utf8"));
   const refreshToken = cfg.tokens?.refresh_token;

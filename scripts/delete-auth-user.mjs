@@ -132,7 +132,7 @@ async function main() {
   // notifications/restaurants/{uid}
   try {
     const notifRoot = db.collection("notifications").doc("restaurants");
-    // path: notifications/restaurants/{uid}/{id} — in rules it's type/restaurantId/notificationId
+    // path: notifications/restaurants/{uid}/{id} - in rules it's type/restaurantId/notificationId
     // Client uses: notifications/restaurants/{channelId}/{id}
     // Firestore: collection group under notifications/restaurants as subcollections?
     // Actual path from code: collection(db, `notifications/restaurants/${channelId}`)

@@ -262,7 +262,8 @@ const TopNav = ({ toggle, show }) => {
 };
 
 export const MasterStat = () => {
-  const { orders } = useOrders();
+  const { orders, ordersLoading } = useOrders();
+  const lastOrderState = useRef(null);
   const [reqData, setReqData] = useState(0);
   const [totalRes, setTotalRes] = useState(0);
   const [orderCount, setOrderCount] = useState(0);
@@ -308,6 +309,23 @@ export const MasterStat = () => {
     );
     setTotalCus(uniqueCustomers.size);
   }, [orders]);
+
+  useEffect(() => {
+    if (ordersLoading) return undefined;
+    const nextState = orders.map((order) => `${order.OrderID}:${order.Status}`).sort().join("|");
+    const previousState = lastOrderState.current;
+    lastOrderState.current = nextState;
+    if (previousState === null || previousState === nextState) return undefined;
+
+    let cancelled = false;
+    fetchOrdersDoughnutData(startDate, endDate).then((summary) => {
+      if (cancelled) return;
+      setOrderSummary(summary);
+      setOrderCount(summary.total);
+      setSoldCount(summary.delivered);
+    });
+    return () => { cancelled = true; };
+  }, [orders, ordersLoading, startDate, endDate]);
 
   const applyDateRange = async (nextStart = startDate, nextEnd = endDate) => {
     fetchRestroRequests(nextStart, nextEnd, setReqData, setTotalRes, "", "");
@@ -375,7 +393,7 @@ export const MasterStat = () => {
           <Box minWidth={0}>
             <Typography variant="h4">Dashboard</Typography>
             <Typography variant="body2" color="text.secondary" mt={0.5}>
-              Platform overview — restaurants, orders, and performance
+              Platform overview - restaurants, orders, and performance
             </Typography>
           </Box>
           <Chip size="small" color="primary" variant="outlined" label={rangeLabel} />

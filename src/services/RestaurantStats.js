@@ -57,7 +57,7 @@ export async function fetchRestaurantOrderCount(ownerId) {
   if (!ownerId) return 0;
   const snapshot = await getCountFromServer(
     query(
-      collection(db, "orders"),
+      collection(db, "partnerOrderViews"),
       where("Restaurant.ownerId", "==", ownerId)
     )
   );
@@ -193,7 +193,7 @@ export async function fetchRestaurantOrdersInRange({
   maxPages = 50,
 }) {
   const { start, end } = toDayBounds(startDate, endDate);
-  const ordersRef = collection(db, "orders");
+  const ordersRef = collection(db, "partnerOrderViews");
   const dateFields = ["timestamp", "createdAt"];
   let partial = false;
 
@@ -250,7 +250,7 @@ export function subscribeRestaurantOrders(ownerId, onChange, onError) {
   const unsubscribers = ["timestamp", "createdAt"].map((dateField, index) =>
     onSnapshot(
       query(
-        collection(db, "orders"),
+        collection(db, "partnerOrderViews"),
         where("Restaurant.ownerId", "==", ownerId),
         where(dateField, ">=", last24Hours),
         orderBy(dateField, "desc")

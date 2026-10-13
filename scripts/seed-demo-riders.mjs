@@ -65,7 +65,7 @@ function hoursAgo(h) {
 async function getAccessToken() {
   const configPath = join(homedir(), ".config/configstore/firebase-tools.json");
   if (!existsSync(configPath)) {
-    throw new Error("firebase-tools.json missing — run firebase login");
+    throw new Error("firebase-tools.json missing - run firebase login");
   }
   const cfg = JSON.parse(readFileSync(configPath, "utf8"));
   const access = cfg.tokens?.access_token;
@@ -73,7 +73,7 @@ async function getAccessToken() {
   if (access && Date.now() < expiresAt - 60_000) return access;
 
   const refreshToken = cfg.tokens?.refresh_token;
-  if (!refreshToken) throw new Error("No refresh token — run firebase login");
+  if (!refreshToken) throw new Error("No refresh token - run firebase login");
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

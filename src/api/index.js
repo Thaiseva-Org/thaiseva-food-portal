@@ -4,6 +4,7 @@ import { callApi, newIdempotencyKey } from "./client";
 export const ensureUserProfile = (data) => callApi("ensureUserProfile", data);
 
 // Restaurants
+export const checkPublicPartnerEmail = (data) => callApi("checkPublicPartnerEmail", data);
 export const submitRestaurantApplication = (data) =>
   callApi("submitRestaurantApplication", data);
 export const reviewRestaurantApplication = (data) =>
@@ -12,6 +13,8 @@ export const startPublicRestaurantApplication = (data) =>
   callApi("startPublicRestaurantApplication", data);
 export const getPublicApplicationUploadUrl = (data) =>
   callApi("getPublicApplicationUploadUrl", data);
+export const uploadPublicApplicationContent = (data) =>
+  callApi("uploadPublicApplicationContent", data);
 export const finalizePublicUpload = (data) =>
   callApi("finalizePublicUpload", data);
 export const getApplicationFileUrl = (data) =>

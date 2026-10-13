@@ -27,7 +27,7 @@ const STATUS_RANK = {
 };
 
 /**
- * Detailed status filter tabs — full kitchen flow.
+ * Detailed status filter tabs - full kitchen flow.
  * `match` is the raw status string (or group key for composites).
  */
 export const ORDER_STATUS_FILTERS = [

@@ -14,11 +14,11 @@ const IT = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}`;
 async function getAccessToken() {
   const configPath = join(homedir(), ".config/configstore/firebase-tools.json");
   if (!existsSync(configPath)) {
-    throw new Error("firebase-tools.json missing — please run firebase login.");
+    throw new Error("firebase-tools.json missing - please run firebase login.");
   }
   const cfg = JSON.parse(readFileSync(configPath, "utf8"));
   const refreshToken = cfg.tokens?.refresh_token;
-  if (!refreshToken) throw new Error("No refresh token found — run firebase login");
+  if (!refreshToken) throw new Error("No refresh token found - run firebase login");
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

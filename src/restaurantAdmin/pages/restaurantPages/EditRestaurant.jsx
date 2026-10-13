@@ -15,6 +15,7 @@ import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { partnerPath } from "../../../utils/partnerRoutes";
 
 import ConfirmModal from "../../../components/ConfirmModal";
+import VerificationDocuments from "../../../components/VerificationDocuments";
 
 const EditRestaurant = () => {
   const [restaurantName, setRestaurantName] = useState("");
@@ -60,9 +61,17 @@ const EditRestaurant = () => {
           setTaxId(data.taxId || "");
           setServiceType(data.serviceType || "");
           setOpeningHours(data.openingHours || "");
-          setBusinessLicense(data.businessLicenseUrl ? { url: data.businessLicenseUrl, name: data.businessLicenseName || "Business license" } : null);
-          setOwnerIdDoc(data.ownerIdDocUrl ? { url: data.ownerIdDocUrl, name: data.ownerIdDocName || "Owner ID" } : null);
-          setFoodSafetyCert(data.foodSafetyCertUrl ? { url: data.foodSafetyCertUrl, name: data.foodSafetyCertName || "Food safety certificate" } : null);
+          const bUrl = data.businessLicenseUrl || data.documents?.businessLicense?.url;
+          const bName = data.businessLicenseName || data.documents?.businessLicense?.name || (bUrl ? "Business license" : "");
+          setBusinessLicense(bUrl ? { url: bUrl, name: bName } : null);
+
+          const oUrl = data.ownerIdDocUrl || data.documents?.ownerId?.url;
+          const oName = data.ownerIdDocName || data.documents?.ownerId?.name || (oUrl ? "Owner ID" : "");
+          setOwnerIdDoc(oUrl ? { url: oUrl, name: oName } : null);
+
+          const fUrl = data.foodSafetyCertUrl || data.documents?.foodSafetyCert?.url;
+          const fName = data.foodSafetyCertName || data.documents?.foodSafetyCert?.name || (fUrl ? "Food safety certificate" : "");
+          setFoodSafetyCert(fUrl ? { url: fUrl, name: fName } : null);
           setImage(data.imageUrl || "");
         } else {
           customAlert("No such restaurant!");
@@ -127,30 +136,6 @@ const EditRestaurant = () => {
     const file = e.target.files[0];
     if (file) {
       handleImageUpload(file);
-    }
-  };
-
-  const handleDocumentUpload = async (file, kind, setter) => {
-    if (!file) return;
-    if (!file.type?.startsWith("image/") && file.type !== "application/pdf") {
-      customAlert("Documents must be a PDF or image file.");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      customAlert("Document must be under 10MB.");
-      return;
-    }
-    try {
-      setUploading(true);
-      const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      const storageRef = ref(storage, `restaurants/${currentUser.uid}/documents/${kind}/${safeName}`);
-      await uploadBytes(storageRef, file);
-      setter({ url: await getDownloadURL(storageRef), name: file.name });
-    } catch (error) {
-      console.error("Document upload failed:", error);
-      customAlert("Unable to upload the document.");
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -237,9 +222,6 @@ const EditRestaurant = () => {
           ...(taxId.trim() ? { taxId } : {}),
           serviceType,
           openingHours,
-          ...(businessLicense ? { businessLicenseUrl: businessLicense.url, businessLicenseName: businessLicense.name } : {}),
-          ...(ownerIdDoc ? { ownerIdDocUrl: ownerIdDoc.url, ownerIdDocName: ownerIdDoc.name } : {}),
-          ...(foodSafetyCert ? { foodSafetyCertUrl: foodSafetyCert.url, foodSafetyCertName: foodSafetyCert.name } : {}),
         },
       });
       customAlert("Restaurant information updated successfully");
@@ -490,22 +472,16 @@ const EditRestaurant = () => {
                     </div>
                   </div>
 
-                  <div className="mb-6">
-                    <h3 className="text-gray-700 text-sm font-bold mb-3">Verification Documents</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {[
-                        ["Business license", "business-license", businessLicense, setBusinessLicense],
-                        ["Owner ID", "owner-id", ownerIdDoc, setOwnerIdDoc],
-                        ["Food safety certificate", "food-safety", foodSafetyCert, setFoodSafetyCert],
-                      ].map(([label, kind, document, setter]) => (
-                        <label key={kind} className="rounded-xl border border-neutral-200 p-3 text-sm cursor-pointer hover:border-brand-400">
-                          <span className="block font-semibold text-ink">{label}</span>
-                          <span className="mt-1 block truncate text-xs text-ink-muted">{document?.name || "Choose PDF or image"}</span>
-                          <input className="sr-only" type="file" accept="application/pdf,image/*" onChange={(e) => handleDocumentUpload(e.target.files?.[0], kind, setter)} />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                  <VerificationDocuments
+                    businessLicense={businessLicense}
+                    setBusinessLicense={setBusinessLicense}
+                    ownerIdDoc={ownerIdDoc}
+                    setOwnerIdDoc={setOwnerIdDoc}
+                    foodSafetyCert={foodSafetyCert}
+                    setFoodSafetyCert={setFoodSafetyCert}
+                    ownerUid={currentUser?.uid}
+                    readOnly={true}
+                  />
 
                   <div className="mb-4">
                     <label

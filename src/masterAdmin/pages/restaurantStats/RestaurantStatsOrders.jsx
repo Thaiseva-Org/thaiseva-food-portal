@@ -8,7 +8,7 @@ import DateRangeFilter from "../../../components/DateRangeFilter";
 import InfoMessage from "../../../components/InfoMessage";
 import Loading from "../../../components/Loading";
 import StatusBadge from "../../../components/StatusBadge";
-import { fetchOrders, fetchOrdersTotalPages } from "../../../services/GetOrders";
+import { fetchOrders, fetchOrdersTotalPages, fetchAllOrders } from "../../../services/GetOrders";
 import { subscribeRestaurantOrders } from "../../../services/RestaurantStats";
 import {
   formatCommissionMoney,
@@ -31,6 +31,8 @@ import {
 } from "./components/AccountingBadge";
 import { formatDisplayOrderId } from "../../../utils/orderData";
 import { useRestaurantStats } from "./components/RestaurantContext";
+import { exportOrdersToExcel } from "../../../utils/excelExport";
+import { safeCsvFilenamePart } from "../../../utils/financeCsv";
 
 const matchesSearch = (item, query) => {
   if (!query) return true;
@@ -47,9 +49,7 @@ const RestaurantStatsOrders = () => {
   const [historyRows, setHistoryRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // The period control defaults to "All time", so the initial query must match it.
-  // Live mode remains available through the explicit Live (24h) reset button.
-  const [isRealTime, setIsRealTime] = useState(false);
+  const [isRealTime, setIsRealTime] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
@@ -58,6 +58,7 @@ const RestaurantStatsOrders = () => {
   const [refetch, setRefetch] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   useEffect(() => {
     if (!isRealTime) return undefined;
@@ -121,6 +122,48 @@ const RestaurantStatsOrders = () => {
     };
   });
 
+  const handleExportExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+      const dateLabel = isRealTime
+        ? "Live last 24h"
+        : startDate && endDate
+          ? `${startDate} to ${endDate}`
+          : "All Time";
+
+      let ordersToExport = filteredRows;
+      if (!isRealTime && ownerId) {
+        try {
+          const allOrders = await fetchAllOrders({
+            restaurantId: ownerId,
+            startDate,
+            endDate,
+          });
+          const matched = (allOrders || []).filter(
+            (item) =>
+              orderMatchesStatusFilter(item.Status, statusFilter) &&
+              matchesSearch(item, searchQuery.trim().toLowerCase())
+          );
+          ordersToExport = statusFilter === "all" ? sortOrdersByStatus(matched) : matched;
+        } catch (fetchErr) {
+          console.warn("Falling back to paginated view for Excel export:", fetchErr);
+        }
+      }
+
+      await exportOrdersToExcel({
+        orders: ordersToExport,
+        restaurantName: restaurant.name || "Restaurant",
+        dateRangeLabel: dateLabel,
+        filename: `${safeCsvFilenamePart(restaurant.name)}-orders-${isRealTime ? "live" : startDate || "all"}.xlsx`,
+      });
+    } catch (err) {
+      console.error("Export Excel failed:", err);
+      alert("Failed to export Excel report.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   return (
     <div>
       <div className="panel !px-4 !py-3">
@@ -141,16 +184,30 @@ const RestaurantStatsOrders = () => {
               {isRealTime ? "live" : "loaded"} orders
             </p>
           </div>
-          {csvRows.length > 0 && (
-            <CSVLink
-              data={csvRows}
-              filename={`${restaurant.name || "restaurant"}-orders-loaded.csv`}
-              className="btn-ghost"
-            >
-              <i className="bi bi-download" aria-hidden="true" />
-              Export loaded results
-            </CSVLink>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {filteredRows.length > 0 && (
+              <button
+                type="button"
+                className="btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1.5 shadow-sm"
+                onClick={handleExportExcel}
+                disabled={isExportingExcel}
+                title="Download formatted Excel (.xlsx) spreadsheet"
+              >
+                <i className="bi bi-file-earmark-excel" aria-hidden="true" />
+                {isExportingExcel ? "Exporting..." : "Export Excel (.xlsx)"}
+              </button>
+            )}
+            {csvRows.length > 0 && (
+              <CSVLink
+                data={csvRows}
+                filename={`${restaurant.name || "restaurant"}-orders-loaded.csv`}
+                className="btn-ghost !py-1 text-xs"
+              >
+                <i className="bi bi-download" aria-hidden="true" />
+                CSV
+              </CSVLink>
+            )}
+          </div>
         </div>
       </div>
 

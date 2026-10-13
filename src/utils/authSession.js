@@ -18,7 +18,7 @@ import {
 /**
  * Apply Firebase Auth persistence before sign-in.
  * - rememberMe: localStorage (survives browser restart)
- * - default: sessionStorage (clears when browser closes) — safer for admin portals
+ * - default: sessionStorage (clears when browser closes) - safer for admin portals
  */
 export async function applyAuthPersistence(rememberMe = false) {
   await setPersistence(

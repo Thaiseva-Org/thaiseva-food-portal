@@ -11,6 +11,7 @@ import {
 import { db } from "../../firebaseConfig";
 
 import { isPlatformOwnerId } from "../utils/platformRestaurant";
+import { normalizeOrder } from "../utils/orderData";
 
 const PAGE_SIZE = 10;
 
@@ -37,7 +38,7 @@ export function recordsQuery({
   cursor,
   dateField = "createdAt",
 }) {
-  const ordersRef = collection(db, "orders");
+  const ordersRef = collection(db, restaurantId ? "partnerOrderViews" : "orders");
   const parts = [];
   if (restaurantId) {
     parts.push(where("Restaurant.ownerId", "==", restaurantId));
@@ -112,29 +113,76 @@ export async function fetchVerifiedRestaurantsList() {
   }
 }
 
+function safeNormalizeOrder(raw, docId) {
+  if (typeof normalizeOrder === "function") {
+    return normalizeOrder(raw, docId);
+  }
+  const data = raw && typeof raw === "object" ? raw : {};
+  const items = Array.isArray(data.Items)
+    ? data.Items
+    : Array.isArray(data.items)
+    ? data.items
+    : Array.isArray(data.orderDetails)
+    ? data.orderDetails
+    : Array.isArray(data.orderItems)
+    ? data.orderItems
+    : [];
+  const rawAmt = data.Amount ?? data.totalAmount ?? data.amount ?? data.TotalAmount ?? 0;
+  const numAmt = Number(rawAmt);
+  const amount = Number.isFinite(numAmt) ? numAmt : 0;
+  const receiver = data.Receiver || data.customer || {};
+  return {
+    ...data,
+    id: data.id || docId,
+    orderId: data.orderId || data.OrderID || docId,
+    Amount: amount,
+    Items: items,
+    items,
+    CustomerName: receiver.name || receiver.customerName || data.CustomerName || "-",
+    CustomerContact: receiver.phoneNumber || receiver.phone || receiver.contact || data.CustomerContact || "-",
+    CustomerEmail: receiver.email || data.CustomerEmail || "-",
+    Location: receiver.address || data.Location || "-",
+    restaurantName: data.Restaurant?.name || data.restaurantName || "-",
+  };
+}
+
 function mapRecordDoc(snap) {
   const orderData = snap.data() || {};
+  const normalized = safeNormalizeOrder(orderData, snap.id);
   const recordedAt = orderData.createdAt || orderData.timestamp;
   const date = recordedAt?.toDate
     ? recordedAt.toDate().toLocaleString()
-    : "Unknown";
+    : (orderData.Date || "Unknown");
   return {
-    OrderID: snap.id || "-",
+    ...normalized,
+    OrderID: snap.id || normalized.orderId || "-",
     Date: date || "-",
-    CustomerName: orderData.Receiver?.name || "-",
+    CustomerName: normalized.CustomerName || orderData.Receiver?.name || "-",
     CustomerContact:
-      orderData.Receiver?.phoneNumber || orderData.Receiver?.phone || "-",
-    CustomerEmail: orderData.Receiver?.email || "-",
-    Location: orderData.Receiver?.address || orderData.Location || "-",
-    Amount: orderData.Amount || "0.00",
-    Status: orderData.currentStatus || "-",
-    restaurantName: orderData?.Restaurant?.name || "-",
+      normalized.CustomerContact ||
+      orderData.Receiver?.phoneNumber ||
+      orderData.Receiver?.phone ||
+      "-",
+    CustomerEmail: normalized.CustomerEmail || orderData.Receiver?.email || "-",
+    Location:
+      orderData.Receiver?.address || orderData.Location || normalized.Location || "-",
+    Amount:
+      normalized.Amount !== undefined && normalized.Amount !== null
+        ? normalized.Amount
+        : (orderData.Amount || "0.00"),
+    Status: orderData.currentStatus || normalized.currentStatus || normalized.Status || "-",
+    restaurantName:
+      orderData?.Restaurant?.name || normalized.restaurantName || "-",
     restaurantID: orderData?.RestaurantId || orderData?.Restaurant?.id || "-",
-    ownerId: orderData?.Restaurant?.ownerId || "",
+    ownerId: orderData?.Restaurant?.ownerId || normalized.ownerId || "",
     comission:
       orderData?.accounting?.commissionPct ?? orderData?.comission ?? 0,
     accounting: orderData?.accounting || null,
     isClear: orderData?.isPaymentClear || false,
+    Items: normalized.Items || [],
+    deliveryCharge: normalized.deliveryCharge ?? orderData.deliveryCharge ?? 0,
+    foodSubtotal: normalized.foodSubtotal ?? normalized.subtotal ?? orderData.foodSubtotal ?? null,
+    paymentMethod: orderData.paymentMethod || normalized.paymentMethod || "",
   };
 }
 
@@ -247,3 +295,13 @@ export const subscribeOrderRecords = (
   );
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 };
+
+export async function fetchAllOrderRecords({ restaurantId = null, startDate = "", endDate = "" } = {}) {
+  const bounds = dayBounds(startDate, endDate);
+  const docs = await fetchCompatibleRecordDocs({
+    restaurantId,
+    start: bounds?.start,
+    end: bounds?.end,
+  });
+  return docs.map(mapRecordDoc);
+}

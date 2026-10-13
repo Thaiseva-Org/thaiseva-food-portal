@@ -1,4 +1,4 @@
-# Business Logic & Workflow Specifications — Thaiseva Food Portal
+# Business Logic & Workflow Specifications - Thaiseva Food Portal
 
 ## 1. Decentralized Partner Menu Architecture
 

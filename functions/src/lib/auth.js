@@ -8,7 +8,6 @@ const ROLES = {
   CUSTOMER: "customer",
 };
 
-const MASTER_ADMIN_EMAILS = new Set(["admin@gmail.com"]);
 
 function requireAuth(request) {
   if (!request.auth?.uid) {
@@ -21,9 +20,7 @@ function requireAuth(request) {
 }
 
 function getRoleFromToken(token) {
-  const email = String(token.email || "").trim().toLowerCase();
   if (
-    MASTER_ADMIN_EMAILS.has(email) ||
     token.foodRole === ROLES.MASTER ||
     token.foodMasterAdmin === true
   ) {

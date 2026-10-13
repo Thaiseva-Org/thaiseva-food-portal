@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
 import { AuthProvider } from "./AuthContext";
 import Loading from "./components/Loading";
+import FoodPrivacyPage from "./components/FoodPrivacyPage";
 const CuisineCategories = lazy(() => import("./masterAdmin/pages/CuisineCategories"));
 import AccountSettings from "./components/AccountSettings";
 import { MasterStat } from "./masterAdmin/component";
@@ -25,6 +26,7 @@ import {
   Riders,
   RiderOverview,
   RestaurantChat as MasterRestaurantChat,
+  CustomerChat,
   TodayOrders,
   TableBookings,
 } from "./masterAdmin/pages";
@@ -53,6 +55,7 @@ import {
   ResturantAdminHome,
   RestaurantChat,
   TableBooking,
+  PartnerFinance,
 } from "./restaurantAdmin/pages";
 import { PARTNER_BASE } from "./utils/partnerRoutes";
 import { SHOW_TABLE_RESERVATIONS } from "./utils/bookingStatus";
@@ -81,6 +84,7 @@ const App = () => {
                 }
               >
               <Routes>
+                <Route path="/privacy" element={<FoodPrivacyPage />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/apply" element={<PublicApply />} />
                 <Route path="/" element={<Home />} />
@@ -105,7 +109,7 @@ const App = () => {
                   />
                 </Route>
 
-                {/* Protected routes for restaurant owners — no UIDs in the URL */}
+                {/* Protected routes for restaurant owners - no UIDs in the URL */}
                 <Route
                   element={<PrivateRoute allowedRoles={["restaurantAdmin"]} />}
                 >
@@ -171,6 +175,15 @@ const App = () => {
                     <Route
                       path="foodItem/edit/:itemId"
                       element={<EditFoodItem />}
+                    />
+                    <Route path="finance" element={<PartnerFinance />} />
+                    <Route
+                      path="stats"
+                      element={<Navigate to={`${PARTNER_BASE}/finance`} replace />}
+                    />
+                    <Route
+                      path="restaurantStats"
+                      element={<Navigate to={`${PARTNER_BASE}/finance`} replace />}
                     />
                     <Route path="restaurant" element={<Restaurant />} />
                     <Route
@@ -331,6 +344,10 @@ const App = () => {
                       element={<MasterRestaurantChat />}
                     />
                     <Route
+                      path="foodCustomerChat"
+                      element={<CustomerChat />}
+                    />
+                    <Route
                       path="ordersDetails/ordersDetView/:orderId"
                       element={<OrdersDetView />}
                     />
@@ -344,6 +361,7 @@ const App = () => {
                 <Route path="*" element={<NotFound />} />
               </Routes>
               </Suspense>
+              <footer className="py-3 text-center text-xs text-slate-500"><Link to="/privacy" className="underline">Food and Partner Privacy Notice</Link></footer>
         </BrowserRouter>
       </AuthProvider>
     </>

@@ -28,8 +28,7 @@ import {
 } from "../../services/DashboardData";
 import { useOrders } from "../../context/OrdersProvider";
 import { formatCount, formatMoney } from "../../utils/format";
-
-// Heavy chart libs (chart.js / apexcharts) — load after shell paints
+// Heavy chart libs (chart.js / apexcharts) - load after shell paints
 const ChartPage = lazy(() => import("./ChartPage"));
 const ChartTwo = lazy(() => import("./ChartTwo"));
 const FoodStats = lazy(() => import("./FoodStats"));
@@ -184,9 +183,10 @@ const TopNav = ({ toggle, show }) => {
 
 export const Stat = () => {
   const { isRestaurantAdmin, roleData, currentUser, resData } = useAuth();
-  const { orders } = useOrders();
+  const { orders, ordersLoading } = useOrders();
+  const lastOrderState = useRef(null);
   // Prefer owner uid for menu paths; restaurantId field may be publicId
-  // Tenant from auth only — never from the URL
+  // Tenant from auth only - never from the URL
   const resId =
     roleData?.restaurantOwnerUid ||
     currentUser?.uid ||
@@ -211,6 +211,7 @@ export const Stat = () => {
     newOrder: 0,
   });
   const [rangeLoading, setRangeLoading] = useState(false);
+
 
   useEffect(() => {
     document.title = "Thaiseva | Dashboard";
@@ -242,7 +243,7 @@ export const Stat = () => {
           []
         );
         if (!cancelled && summary) setOrderSummary(summary);
-        // Top items is secondary — do not block shell paint
+        // Top items is secondary - do not block shell paint
         fetchTopItem(resId, setTopItems).catch((err) =>
           console.error("Top items:", err)
         );
@@ -266,6 +267,24 @@ export const Stat = () => {
     );
     setCountCustomer(uniqueCustomers.size);
   }, [orders]);
+
+  useEffect(() => {
+    if (!isRestaurantAdmin || !restaurantId || ordersLoading) return undefined;
+    const nextState = orders.map((order) => `${order.OrderID}:${order.Status}`).sort().join("|");
+    const previousState = lastOrderState.current;
+    lastOrderState.current = nextState;
+    if (previousState === null || previousState === nextState) return undefined;
+
+    let cancelled = false;
+    fetchPartnerOrdersData(
+      restaurantId, startDate, endDate,
+      setTotalOrder, setCountCustomer, setCompleteOrder, setDelivered,
+      setCanceled, setError, resId, orders
+    ).then((summary) => {
+      if (!cancelled && summary) setOrderSummary(summary);
+    });
+    return () => { cancelled = true; };
+  }, [orders, ordersLoading, isRestaurantAdmin, restaurantId, resId, startDate, endDate]);
 
   const applyDateRange = async (nextStart = startDate, nextEnd = endDate) => {
     setRangeLoading(true);
@@ -363,11 +382,14 @@ export const Stat = () => {
             <Typography variant="h4">Dashboard</Typography>
             <Typography variant="body2" color="text.secondary" mt={0.5}>
               {resData?.name
-                ? `${resData.name} — orders, earnings, and menu performance`
+                ? `${resData.name} - orders, earnings, and menu performance`
                 : "Orders, earnings, and menu performance"}
             </Typography>
           </Box>
-          <Chip size="small" color="primary" variant="outlined" label={rangeLabel} />
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Chip size="small" color="primary" variant="outlined" label={rangeLabel} />
+
+          </Stack>
         </Stack>
 
         {error ? (

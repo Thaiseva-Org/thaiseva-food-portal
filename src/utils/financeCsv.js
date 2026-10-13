@@ -181,3 +181,60 @@ export function buildFinanceCsvReport({
   return report;
 }
 
+/**
+ * Builds a statistics CSV report for partner dashboard export.
+ */
+export function buildStatisticsCsvReport({
+  restaurantName = "Restaurant",
+  restaurantId = "",
+  dateRangeLabel = "All time",
+  kpis = {},
+  orderSummary = {},
+  topItems = [],
+  commissionRate = 0,
+}) {
+  const report = [
+    ["THAISEVA RESTAURANT STATISTICS REPORT"],
+    ["Restaurant Name", restaurantName],
+    ["Restaurant ID", restaurantId],
+    ["Date Range", dateRangeLabel],
+    ["Report Generated", new Date().toLocaleString()],
+    ["Commission Rate", `${commissionRate}%`],
+    [],
+    ["=== 1. OPERATIONAL & REVENUE KPI METRICS ==="],
+    ["Metric", "Value"],
+    ["Total Orders", kpis.totalOrder ?? orderSummary.total ?? 0],
+    ["Orders Delivered (Completed)", kpis.delivered ?? orderSummary.delivered ?? 0],
+    ["Orders Cancelled", kpis.canceled ?? orderSummary.cancelled ?? 0],
+    ["Orders In Process", orderSummary.inprocess ?? 0],
+    ["New Orders Awaiting Confirmation", orderSummary.newOrder ?? 0],
+    ["Unique Customers", kpis.countCustomer ?? 0],
+    ["Dishes / Items Sold", kpis.completeOrder ?? 0],
+    [],
+    ["=== 2. ORDER STATUS BREAKDOWN ==="],
+    ["Status", "Count"],
+    ["Delivered", kpis.delivered ?? orderSummary.delivered ?? 0],
+    ["In Process", orderSummary.inprocess ?? 0],
+    ["New Orders", orderSummary.newOrder ?? 0],
+    ["Cancelled", kpis.canceled ?? orderSummary.cancelled ?? 0],
+    [],
+    ["=== 3. TOP SELLING DISHES ==="],
+    ["Rank", "Dish Name", "Orders Count", "Earnings (THB)"],
+  ];
+
+  if (Array.isArray(topItems) && topItems.length > 0) {
+    topItems.forEach((dish, idx) => {
+      report.push([
+        idx + 1,
+        csvText(dish.itemName || "Item"),
+        dish.count || 0,
+        csvMoney(dish.earning || 0),
+      ]);
+    });
+  } else {
+    report.push(["-", "No top sales data for this period", 0, "0.00"]);
+  }
+
+  return report;
+}
+

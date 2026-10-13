@@ -1,4 +1,4 @@
-# Cloud Infrastructure, Environment & Deployment Documentation — Thaiseva Food Portal
+# Cloud Infrastructure, Environment & Deployment Documentation - Thaiseva Food Portal
 
 ## 1. Cloud Infrastructure & Hosting Platform
 

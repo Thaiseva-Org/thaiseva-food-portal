@@ -1,4 +1,4 @@
-# Security Architecture & Risk Analysis — Thaiseva Food Portal
+# Security Architecture & Risk Analysis - Thaiseva Food Portal
 
 ## 1. Security Architecture & Threat Model
 

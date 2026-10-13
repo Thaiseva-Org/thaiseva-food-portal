@@ -31,6 +31,15 @@ const {
   cleanImageUrl,
 } = require("../functions/src/lib/restaurants");
 const { getRoleFromToken, ROLES } = require("../functions/src/lib/auth");
+const { privateFilePath } = require("../functions/src/lib/privateFiles");
+test("legacy private-document URLs resolve only within the approved project and paths", () => {
+  const object = "restaurants/owner_1/documents/license/proof.pdf";
+  assert.equal(privateFilePath(object), object);
+  assert.equal(privateFilePath(`https://firebasestorage.googleapis.com/v0/b/gothai-ffea1.firebasestorage.app/o/${encodeURIComponent(object)}?alt=media&token=synthetic`), object);
+  assert.equal(privateFilePath(`https://firebasestorage.googleapis.com/v0/b/other-project.appspot.com/o/${encodeURIComponent(object)}`), null);
+  assert.equal(privateFilePath("https://example.test/proof.pdf"), null);
+  assert.equal(privateFilePath("restaurants/owner_1/profile/avatar.png"), null);
+});
 test("order workflow cannot skip or move backwards", () => {
   assert.deepEqual(nextAllowedStatuses("New Order"), ["Order Confirm", "Cancelled"]);
   assert.deepEqual(nextAllowedStatuses("Order Confirm"), ["Preparing", "Cancelled"]);
@@ -169,7 +178,7 @@ test("restaurant and menu input lengths and image URLs are bounded", () => {
   assert.equal(cleanOptionalImageUrl(""), "");
   assert.throws(() => cleanText("x".repeat(21), "name", 20));
   assert.throws(() => cleanImageUrl("javascript:alert(1)"));
-  assert.throws(() => cleanOptionalImageUrl("http://example.com/a.jpg"));
+  assert.throws(() => cleanOptionalImageUrl("ftp://example.com/a.jpg"));
 });
 
 test("food roles use namespaced claims without trusting unrelated app roles", () => {
@@ -179,5 +188,6 @@ test("food roles use namespaced claims without trusting unrelated app roles", ()
   assert.equal(getRoleFromToken({ role: "masterAdmin" }), null);
   assert.equal(getRoleFromToken({ role: "restaurantOwner" }), null);
   assert.equal(getRoleFromToken({ masterAdmin: true }), null);
-  assert.equal(getRoleFromToken({ email: "ADMIN@gmail.com" }), ROLES.MASTER);
+  assert.equal(getRoleFromToken({ email: "ADMIN@gmail.com" }), null);
+  assert.equal(getRoleFromToken({ email: "ADMIN@gmail.com", email_verified: true }), null);
 });

@@ -182,7 +182,7 @@ const RestaurantStatsOverview = () => {
         <>
           {stats?.partial && (
             <p className="rounded-xl border border-warning-100 bg-warning-50 px-3 py-2 text-sm text-warning-800">
-              Partial period — too many orders to scan. Narrow the date range
+              Partial period - too many orders to scan. Narrow the date range
               for a complete total.
             </p>
           )}
@@ -217,7 +217,7 @@ const RestaurantStatsOverview = () => {
             <BentoGridItem
               className="xl:col-span-1"
               title="Lifetime"
-              description="Reliable restaurant-document totals — not estimated from the current rate."
+              description="Reliable restaurant-document totals - not estimated from the current rate."
             >
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 {[

@@ -68,7 +68,7 @@ const MenuListItem = ({ item, onView, onEdit, onToggleActive, busyId, canManageM
           Category
         </span>
         <span className="truncate font-medium text-ink">
-          {item.category || "—"}
+          {item.category || "-"}
         </span>
       </div>
 

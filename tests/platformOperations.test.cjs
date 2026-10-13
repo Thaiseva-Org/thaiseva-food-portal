@@ -11,13 +11,14 @@ class HttpsError extends Error {
   }
 }
 
-function fixture() {
+function fixture({signingDenied = false} = {}) {
   const records = new Map();
   const authUsers = new Map();
   const claimsLog = [];
   const auditLogs = [];
   const deletedUsers = [];
   const deletedStoragePrefixes = [];
+  const savedFiles = [];
 
   const snap = (p) => ({
     exists: records.has(p),
@@ -141,6 +142,8 @@ function fixture() {
   };
 
   const deps = {
+    "./privateFiles": require("../functions/src/lib/privateFiles"),
+    "./emailVerification": require("../functions/src/lib/emailVerification"),
     "node:crypto": require("node:crypto"),
     "firebase-functions/v2/https": { HttpsError },
     "firebase-admin/firestore": {
@@ -164,7 +167,13 @@ function fixture() {
           deleteFiles: async ({ prefix }) => deletedStoragePrefixes.push(prefix),
           file: (f) => ({
             name: f,
-            getSignedUrl: async () => [`https://storage.signed.url/${f}`],
+            getSignedUrl: async () => {
+              if (signingDenied) throw Object.assign(new Error("Permission denied: signBlob"), {code: 403});
+              return [`https://storage.signed.url/${f}`];
+            },
+            getMetadata: async () => [{size: "14", contentType: "application/pdf"}],
+            download: async () => [Buffer.from("%PDF-synthetic")],
+            save: async (bytes, options) => { savedFiles.push({path: f, bytes, options}); },
             exists: async () => [true],
             copy: async () => {},
             makePublic: async () => {},
@@ -214,6 +223,7 @@ function fixture() {
         throw new Error(`Missing dependency ${dep}`);
       },
       console,
+      Buffer,
     };
     vm.runInNewContext(
       readFileSync(path.join(__dirname, `../functions/src/lib/${name}.js`), "utf8"),
@@ -233,12 +243,42 @@ function fixture() {
     auditLogs,
     deletedUsers,
     deletedStoragePrefixes,
+    savedFiles,
   };
 }
 
 const master = { uid: "master-1", role: "masterAdmin" };
 const owner = { uid: "owner-1", role: "restaurantOwner" };
 const customer = { uid: "cust-1", role: "customer" };
+
+test("private previews remain authorized when the service account cannot sign URLs", async () => {
+  const f = fixture({signingDenied: true});
+  const path = "restaurants/owner-1/documents/license/proof.pdf";
+  const result = await f.appsLib.getApplicationFileUrl(owner, {path});
+  assert.equal(result.contentBase64, Buffer.from("%PDF-synthetic").toString("base64"));
+  assert.equal(result.url, undefined);
+  await assert.rejects(f.appsLib.getApplicationFileUrl(customer, {path}), {code: "permission-denied"});
+  await assert.rejects(f.appsLib.getApplicationFileUrl({uid: "other", role: "restaurantOwner"}, {path}), {code: "permission-denied"});
+});
+
+test("public applications use bounded private server uploads with type and capability checks", async () => {
+  const f = fixture();
+  const {applicationId} = await f.appsLib.startPublicRestaurantApplication();
+  const payload = {applicationId, kind: "ownerId", contentType: "application/pdf", fileName: "proof.pdf",
+    contentBase64: Buffer.from("%PDF-synthetic").toString("base64")};
+  const result = await f.appsLib.uploadPublicApplicationContent(payload);
+  assert.match(result.path, new RegExp(`^applications/${applicationId}/ownerId_`));
+  assert.equal(f.savedFiles.length, 1);
+  assert.equal(f.savedFiles[0].options.metadata.cacheControl, "private, no-store");
+  assert.equal(f.savedFiles[0].options.metadata.firebaseStorageDownloadTokens, undefined);
+  await assert.rejects(f.appsLib.uploadPublicApplicationContent({...payload, contentBase64: Buffer.from("<script>bad</script>").toString("base64")}), {code: "invalid-argument"});
+  await assert.rejects(f.appsLib.uploadPublicApplicationContent({...payload, applicationId: "../victim"}), {code: "invalid-argument"});
+  const record = f.records.get(`restaurantApplications/${applicationId}`);
+  record.uploadCount = 12;
+  await assert.rejects(f.appsLib.uploadPublicApplicationContent(payload), {code: "resource-exhausted"});
+  record.uploadCount = 0; record.status = "Verified";
+  await assert.rejects(f.appsLib.uploadPublicApplicationContent(payload), {code: "failed-precondition"});
+});
 
 test("permanent restaurant deletion is master-only, confirmed, and preserves order records", async () => {
   const f = fixture();
@@ -329,6 +369,19 @@ test("riders: creation, updating, and active status toggling", async () => {
   );
 });
 
+test("applications: rejects reused emails from accounts, restaurants and applications", async () => {
+  const f = fixture();
+  await assert.rejects(f.appsLib.checkPublicPartnerEmail({ email: "invalid" }), { code: "invalid-argument" });
+  assert.equal((await f.appsLib.checkPublicPartnerEmail({ email: " New@Example.com " })).available, true);
+  f.authUsers.set("account@example.com", { uid: "existing-owner" });
+  f.records.set("restaurants/existing", { emailId: "restaurant@example.com" });
+  f.records.set("restaurantApplications/pending", { emailId: "pending@example.com", status: "Pending" });
+  f.records.set("restaurantApplications/approved", { emailId: "approved@example.com", status: "Verified" });
+  for (const email of [" Account@Example.com ", "restaurant@example.com", "pending@example.com", "approved@example.com"]) {
+    await assert.rejects(f.appsLib.checkPublicPartnerEmail({ email }), { code: "already-exists" });
+  }
+});
+
 test("applications: public submission and master review approval / rejection", async () => {
   const f = fixture();
   const { appsLib } = f;
@@ -356,10 +409,21 @@ test("applications: public submission and master review approval / rejection", a
     ownerIdDocUrl: `applications/${appId}/id.pdf`,
   };
 
-  await appsLib.submitPublicRestaurantApplication(payload);
+  const { proofHash } = require("../functions/src/lib/emailVerification");
+  const otpKey = "test-only-otp-key";
+  const token = "a".repeat(43);
+  const proofPath = `emailOtpVerificationProofs/${proofHash(otpKey, "signup-proof", token)}`;
+  f.records.set(proofPath, { emailHash: proofHash(otpKey, "signup-email", payload.emailId),
+    expiresAt: Date.now() + 60000, consumedBy: null });
+  await assert.rejects(appsLib.submitPublicRestaurantApplication(payload, otpKey), { code: "unauthenticated" });
+  payload.verificationToken = token;
+  await appsLib.submitPublicRestaurantApplication(payload, otpKey);
+  assert.equal(f.records.get(proofPath).consumedBy, `partner-application:${appId}`);
+  await appsLib.submitPublicRestaurantApplication(payload, otpKey);
   const submittedApp = f.records.get(`restaurantApplications/${appId}`);
   assert.equal(submittedApp.status, "Pending");
   assert.equal(submittedApp.name, "Aroy Thai Bistro");
+  assert.equal(submittedApp.emailVerified, true);
 
   // Master approval
   await appsLib.reviewPublicApplication(master, {
@@ -387,14 +451,19 @@ test("applications: public submission and master review approval / rejection", a
   // Test rejection flow on another application
   const started2 = await appsLib.startPublicRestaurantApplication();
   const appId2 = started2.applicationId;
+  const secondToken = "b".repeat(43);
+  f.records.set(`emailOtpVerificationProofs/${proofHash(otpKey, "signup-proof", secondToken)}`,
+    { emailHash: proofHash(otpKey, "signup-email", "reject@example.com"),
+      expiresAt: Date.now() + 60000, consumedBy: null });
   await appsLib.submitPublicRestaurantApplication({
     ...payload,
+    verificationToken: secondToken,
     applicationId: appId2,
     emailId: "reject@example.com",
     imageUrl: `applications/${appId2}/cover.jpg`,
     businessLicenseUrl: `applications/${appId2}/license.pdf`,
     ownerIdDocUrl: `applications/${appId2}/id.pdf`,
-  });
+  }, otpKey);
 
   // Rejection with decision: "Rejected"
   await appsLib.reviewPublicApplication(master, {

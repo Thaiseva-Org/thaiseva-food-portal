@@ -15,6 +15,7 @@ import {
   updateRestaurantProfile,
 } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
+import VerificationDocuments from "../../../components/VerificationDocuments";
 
 
 const EditRestaurantAdmin = () => {
@@ -30,6 +31,9 @@ const EditRestaurantAdmin = () => {
   const [description, setDescription] = useState("");
   const [image, setImage] = useState(null);
   const [comission, setComission] = useState(0);
+  const [businessLicense, setBusinessLicense] = useState(null);
+  const [ownerIdDoc, setOwnerIdDoc] = useState(null);
+  const [foodSafetyCert, setFoodSafetyCert] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const { currentUser } = useAuth();
@@ -53,6 +57,17 @@ const EditRestaurantAdmin = () => {
           setLocation(data.location || "");
           setDescription(data.description || "");
           setImage(data.imageUrl || "");
+          const bUrl = data.businessLicenseUrl || data.documents?.businessLicense?.url;
+          const bName = data.businessLicenseName || data.documents?.businessLicense?.name || (bUrl ? "Business license" : "");
+          setBusinessLicense(bUrl ? { url: bUrl, name: bName } : null);
+
+          const oUrl = data.ownerIdDocUrl || data.documents?.ownerId?.url;
+          const oName = data.ownerIdDocName || data.documents?.ownerId?.name || (oUrl ? "Owner ID" : "");
+          setOwnerIdDoc(oUrl ? { url: oUrl, name: oName } : null);
+
+          const fUrl = data.foodSafetyCertUrl || data.documents?.foodSafetyCert?.url;
+          const fName = data.foodSafetyCertName || data.documents?.foodSafetyCert?.name || (fUrl ? "Food safety certificate" : "");
+          setFoodSafetyCert(fUrl ? { url: fUrl, name: fName } : null);
           setComission(data.comission || 0);
         } else {
           customAlert("No such restaurant!");
@@ -130,9 +145,21 @@ const EditRestaurantAdmin = () => {
           location: locationAddr || "N/A",
           description: description || "N/A",
           imageUrl: image || "N/A",
+          ...(businessLicense?.newUpload
+            ? { businessLicenseUrl: businessLicense.url, businessLicenseName: businessLicense.name }
+            : {}),
+          ...(ownerIdDoc?.newUpload
+            ? { ownerIdDocUrl: ownerIdDoc.url, ownerIdDocName: ownerIdDoc.name }
+            : {}),
+          ...(foodSafetyCert?.newUpload
+            ? { foodSafetyCertUrl: foodSafetyCert.url, foodSafetyCertName: foodSafetyCert.name }
+            : {}),
+          ...(foodSafetyCert?.cleared
+            ? { foodSafetyCertUrl: "", foodSafetyCertName: "" }
+            : {}),
         },
       });
-      // Commission is a locked field — separate privileged API
+      // Commission is a locked field - separate privileged API
       await adminUpdateCommission({
         ownerUid,
         commission: Number(comission) || 0,
@@ -411,6 +438,17 @@ const EditRestaurantAdmin = () => {
                       </button>
                     </div>
                   </div>
+
+                  <VerificationDocuments
+                    businessLicense={businessLicense}
+                    setBusinessLicense={setBusinessLicense}
+                    ownerIdDoc={ownerIdDoc}
+                    setOwnerIdDoc={setOwnerIdDoc}
+                    foodSafetyCert={foodSafetyCert}
+                    setFoodSafetyCert={setFoodSafetyCert}
+                    ownerUid={ownerUid}
+                    disabled={uploading}
+                  />
 
                   <div className="mb-4">
                     <label

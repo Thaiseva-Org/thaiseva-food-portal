@@ -3,6 +3,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { randomBytes } = require("node:crypto");
 const { writeAuditLog } = require("./audit");
 const { ROLES, setUserClaims, assertTenantAccess } = require("./auth");
+const {isPrivateFilePath} = require("./privateFiles");
 
 const PLATFORM_OWNER_ID = "thaiseva-platform";
 
@@ -74,10 +75,15 @@ function cleanText(value, field, maxLength) {
 
 function cleanImageUrl(value) {
   const url = cleanText(value, "imageUrl", 2048);
-  if (!/^https:\/\//i.test(url)) {
-    throw new HttpsError("invalid-argument", "imageUrl must use HTTPS.");
+  if (!/^https?:\/\//i.test(url)) {
+    throw new HttpsError("invalid-argument", "imageUrl must use HTTP or HTTPS.");
   }
   return url;
+}
+
+const APPLICATION_PATH_RE = /^applications\/[a-f0-9]{16,32}\/[A-Za-z0-9._-]+$/;
+function isApplicationStoragePath(value) {
+  return APPLICATION_PATH_RE.test(String(value || "").trim());
 }
 
 /** HTTPS URL for uploaded docs (images or PDF). Optional when required=false. */
@@ -89,7 +95,8 @@ function cleanDocUrl(value, field, { required = true } = {}) {
     }
     return null;
   }
-  if (raw.length > 2048 || !/^https:\/\//i.test(raw)) {
+  if (isApplicationStoragePath(raw) || isPrivateFilePath(raw)) return raw;
+  if (raw.length > 2048 || !/^https?:\/\//i.test(raw)) {
     throw new HttpsError(
       "invalid-argument",
       `${field} must be a valid HTTPS URL (max 2048 chars).`
@@ -455,18 +462,50 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
   }
 
   const updates = {};
+  const OPTIONAL_FIELDS = new Set([
+    "taxId",
+    "landmark",
+    "city",
+    "foodSafetyCertUrl",
+    "foodSafetyCertName",
+  ]);
+
+  const ADMIN_ONLY_FIELDS = new Set([
+    "emailId",
+    "businessLicenseUrl",
+    "businessLicenseName",
+    "ownerIdDocUrl",
+    "ownerIdDocName",
+    "foodSafetyCertUrl",
+    "foodSafetyCertName",
+  ]);
+
   for (const key of PROFILE_SAFE_FIELDS) {
-    // Partner admins can view their contact email, but only a platform admin
-    // may change it.
-    if (key === "emailId" && caller.role === ROLES.OWNER) continue;
+    // Partner admins / owners cannot change their sign-in email or verification documents.
+    // Only a platform / master admin may change them.
+    if (ADMIN_ONLY_FIELDS.has(key) && caller.role === ROLES.OWNER) continue;
     if (fields[key] !== undefined && fields[key] !== null) {
-      updates[key] = key === "emailId"
-        ? String(fields[key]).trim().toLowerCase()
-        : key === "imageUrl"
-        ? cleanImageUrl(fields[key])
-        : key.endsWith("Url")
-          ? cleanDocUrl(fields[key], key)
-          : cleanText(fields[key], key, PROFILE_FIELD_LIMITS[key]);
+      if (key === "emailId") {
+        updates[key] = String(fields[key]).trim().toLowerCase();
+      } else if (key === "imageUrl") {
+        updates[key] = cleanImageUrl(fields[key]);
+      } else if (key.endsWith("Url")) {
+        const isOpt = OPTIONAL_FIELDS.has(key);
+        const val = cleanDocUrl(fields[key], key, { required: !isOpt });
+        if (val !== null && val !== undefined) {
+          updates[key] = val;
+        } else if (isOpt && fields[key] === "") {
+          updates[key] = "";
+        }
+      } else {
+        const isOpt = OPTIONAL_FIELDS.has(key);
+        if (isOpt) {
+          const val = cleanOptionalText(fields[key], key, PROFILE_FIELD_LIMITS[key]);
+          updates[key] = val !== null ? val : "";
+        } else {
+          updates[key] = cleanText(fields[key], key, PROFILE_FIELD_LIMITS[key]);
+        }
+      }
     }
   }
   if (updates.serviceType && !SERVICE_TYPES.has(updates.serviceType)) {
@@ -488,6 +527,32 @@ async function updateRestaurantProfile(caller, { ownerUid, fields }) {
   const ref = db.collection("restaurants").doc(target);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Restaurant not found.");
+
+  // Keep nested documents object synchronized with top-level document fields
+  if (updates.businessLicenseUrl !== undefined || updates.businessLicenseName !== undefined) {
+    updates["documents.businessLicense.url"] =
+      updates.businessLicenseUrl !== undefined
+        ? updates.businessLicenseUrl
+        : (snap.data()?.businessLicenseUrl || snap.data()?.documents?.businessLicense?.url || "");
+    updates["documents.businessLicense.name"] =
+      updates.businessLicenseName !== undefined
+        ? updates.businessLicenseName
+        : (snap.data()?.businessLicenseName || snap.data()?.documents?.businessLicense?.name || "");
+  }
+  if (updates.ownerIdDocUrl !== undefined || updates.ownerIdDocName !== undefined) {
+    updates["documents.ownerId.url"] =
+      updates.ownerIdDocUrl !== undefined
+        ? updates.ownerIdDocUrl
+        : (snap.data()?.ownerIdDocUrl || snap.data()?.documents?.ownerId?.url || "");
+    updates["documents.ownerId.name"] =
+      updates.ownerIdDocName !== undefined
+        ? updates.ownerIdDocName
+        : (snap.data()?.ownerIdDocName || snap.data()?.documents?.ownerId?.name || "");
+  }
+  if (updates.foodSafetyCertUrl !== undefined || updates.foodSafetyCertName !== undefined) {
+    updates["documents.foodSafetyCert.url"] = updates.foodSafetyCertUrl || "";
+    updates["documents.foodSafetyCert.name"] = updates.foodSafetyCertName || "";
+  }
 
   const emailChanged = updates.emailId && updates.emailId !== snap.data().emailId;
   if (emailChanged) {

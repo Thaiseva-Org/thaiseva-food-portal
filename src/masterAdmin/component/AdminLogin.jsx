@@ -3,8 +3,7 @@ import { useNavigate } from "react-router";
 import {
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "../../../firebaseConfig"; // Import from the firebaseConfig file
+import { auth } from "../../../firebaseConfig";
 import { isMasterAdminIdentity } from "../../utils/adminIdentity";
 
 const AdminLogin = () => {
@@ -17,13 +16,7 @@ const AdminLogin = () => {
     try {
       const token = await user.getIdTokenResult(true);
       const claims = token.claims || {};
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const data = userDoc.exists() ? userDoc.data() : {};
-      const isMaster =
-        isMasterAdminIdentity(claims, user.email) ||
-        data.isMasterAdmin === true ||
-        data.role === "Admin" ||
-        data.role === "admin";
+      const isMaster = isMasterAdminIdentity(claims);
       if (isMaster) {
         navigate("/foodAdmin");
       } else {

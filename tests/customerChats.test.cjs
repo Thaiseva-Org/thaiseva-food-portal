@@ -28,11 +28,11 @@ test("food customer chat does not bridge the legacy support collection", () => {
     "utf8"
   );
   assert.doesNotMatch(handler, /_CustomerSupport|collection\("chats"\)/);
-  assert.doesNotMatch(functionsIndex, /mirrorFoodCustomerChat|onDocumentWritten/);
+  assert.doesNotMatch(functionsIndex, /mirrorFoodCustomerChat|onDocumentWritten\(\{document:\s*"(?:chats|foodCustomerSupportChats)\//);
   assert.match(functionsIndex, /exports\.sendFoodCustomerMessage/);
 });
 
-test("Food Customer Chat is removed from navigation and routes, Menu label is present", () => {
+test("Food Customer Chat is available to the master admin and not restaurant partners", () => {
   const root = join(__dirname, "..");
   const app = readFileSync(join(root, "src", "App.jsx"), "utf8");
   const masterSidebar = readFileSync(
@@ -43,8 +43,9 @@ test("Food Customer Chat is removed from navigation and routes, Menu label is pr
     join(root, "src", "restaurantAdmin", "component", "Sidebar.jsx"),
     "utf8"
   );
-  assert.doesNotMatch(app, /path="foodCustomerChat"/);
-  assert.doesNotMatch(masterSidebar, /Food Customer Chat|foodCustomerChat/);
+  assert.match(app, /path="foodCustomerChat"/);
+  assert.match(masterSidebar, /label: "Food Customer Chat"/);
+  assert.match(masterSidebar, /to: "foodCustomerChat"/);
   assert.match(masterSidebar, /label: "Menu"/);
   assert.doesNotMatch(restaurantSidebar, /Food Customer Chat|foodCustomerChat/);
 });

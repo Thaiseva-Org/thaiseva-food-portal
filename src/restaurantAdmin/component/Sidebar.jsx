@@ -8,6 +8,7 @@ import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import ChatRoundedIcon from "@mui/icons-material/ChatRounded";
 import TableRestaurantRoundedIcon from "@mui/icons-material/TableRestaurantRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import { useAuth } from "../../AuthContext";
 import NavBadge from "../../components/NavBadge";
 import { useOrders } from "../../context/OrdersProvider";
@@ -55,6 +56,12 @@ const Sidebar = ({ show, toggle }) => {
       requiresVerified: true,
       badge: newOrders,
       badgeTone: "danger",
+    },
+    {
+      icon: <AccountBalanceWalletRoundedIcon fontSize="small" />,
+      label: "Finance & Stats",
+      to: partnerPath("finance"),
+      requiresVerified: true,
     },
   ].filter((item) => !item.requiresVerified || verified);
 

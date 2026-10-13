@@ -42,62 +42,68 @@ service cloud.firestore {
     // Food masters use isFoodAdmin() on food paths only. See FIRESTORE_RULES_NOTES.md.
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email in [
-          "admin@gmail.com",
-          "thaiseva_admin@gmail.com"
-        ] ||
-        request.auth.token.admin == true ||
+        request.auth.token.get('admin', false) == true ||
         userRole() in ["Admin", "admin", "Sub Admin"]
       );
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() && (request.auth.token.get('admin', false) == true || userRole() in ["Admin", "admin"]);
+    }
+
     function isOwner(userIdField) {
-      return isAuthenticated() && (
-        resource == null ||
-        resource.data[userIdField] == request.auth.uid ||
-        resource.data.userId == request.auth.uid ||
-        resource.data.authUid == request.auth.uid ||
-        resource.data.uid == request.auth.uid ||
-        resource.data.providerUid == request.auth.uid ||
-        resource.data.hotelUid == request.auth.uid ||
-        resource.data.restaurantUid == request.auth.uid
+      return isAuthenticated() && resource != null && (
+        resource.data.get(userIdField, '') == request.auth.uid ||
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('authUid', '') == request.auth.uid ||
+        resource.data.get('uid', '') == request.auth.uid ||
+        resource.data.get('providerUid', '') == request.auth.uid ||
+        resource.data.get('hotelUid', '') == request.auth.uid ||
+        resource.data.get('restaurantUid', '') == request.auth.uid
       );
     }
 
     function ownsIncoming(userIdField) {
-      return isAuthenticated() && (
-        request.resource.data[userIdField] == request.auth.uid ||
-        request.resource.data.userId == request.auth.uid ||
-        request.resource.data.authUid == request.auth.uid ||
-        request.resource.data.uid == request.auth.uid ||
-        request.resource.data.providerUid == request.auth.uid ||
-        request.resource.data.hotelUid == request.auth.uid ||
-        request.resource.data.restaurantUid == request.auth.uid
+      return isAuthenticated() && request.resource != null && (
+        request.resource.data.get(userIdField, '') == request.auth.uid ||
+        request.resource.data.get('userId', '') == request.auth.uid ||
+        request.resource.data.get('authUid', '') == request.auth.uid ||
+        request.resource.data.get('uid', '') == request.auth.uid ||
+        request.resource.data.get('providerUid', '') == request.auth.uid ||
+        request.resource.data.get('hotelUid', '') == request.auth.uid ||
+        request.resource.data.get('restaurantUid', '') == request.auth.uid
       );
     }
 
     function isSafeUserCreate() {
       return request.resource.data.role == "Partner" &&
         request.resource.data.status == "Pending" &&
-        request.resource.data.isSuspended != true;
+        request.resource.data.get('isSuspended', false) == false &&
+        !request.resource.data.keys().hasAny(['password', 'admin', 'isAdmin', 'isMasterAdmin',
+          'isRestaurantAdmin', 'foodRole', 'foodMasterAdmin', 'customClaims']);
     }
 
     function isSafeUserUpdate(userId) {
       return request.auth.uid == userId &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.status == resource.data.status &&
-        request.resource.data.isSuspended == resource.data.isSuspended;
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(profileFields());
     }
 
     function isSafeUserSelfUpdate(userId) {
       return request.auth.uid == userId &&
-        request.resource.data.get('role', resource.data.get('role', '')) == resource.data.get('role', '') &&
-        request.resource.data.get('status', resource.data.get('status', '')) == resource.data.get('status', '') &&
-        request.resource.data.get('isSuspended', resource.data.get('isSuspended', false)) == resource.data.get('isSuspended', false);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(profileFields());
+    }
+
+    // Only ordinary profile fields may be edited by the account owner.
+    function profileFields() {
+      return ['uid', 'userId', 'authUid', 'name', 'firstName', 'lastName', 'fullName',
+        'displayName', 'email', 'photoURL', 'profilePic', 'phone', 'phoneNo', 'phoneNumber',
+        'nationality', 'address', 'userLocation1', 'dateOfBirth', 'gender', 'country',
+        'createdAt', 'updatedAt', 'onboardingCompleted', 'onboardingCompletedAt'];
     }
 
     function isSafeWebsiteUserCreate() {
-      return !request.resource.data.keys().hasAny(['role', 'status', 'isSuspended', 'admin']);
+      return request.resource.data.keys().hasOnly(profileFields()) &&
+        !request.resource.data.keys().hasAny(['role', 'status', 'isSuspended', 'admin', 'isMasterAdmin', 'isRestaurantAdmin']);
     }
 
     // Client booking creates must not forge paid / accepted / inventory / Stripe
@@ -164,11 +170,12 @@ service cloud.firestore {
     }
 
     function isEmailOwner() {
-      return isAuthenticated() && request.auth.token.email != null && (
-        resource.data.get('email', '') == request.auth.token.email ||
-        resource.data.get('guestEmail', '') == request.auth.token.email ||
-        resource.data.get('userEmail', '') == request.auth.token.email
-      );
+      return isAuthenticated() && request.auth.token.get('email_verified', false) == true &&
+        request.auth.token.get('email', '') != '' && (
+          resource.data.get('email', '') == request.auth.token.email ||
+          resource.data.get('guestEmail', '') == request.auth.token.email ||
+          resource.data.get('userEmail', '') == request.auth.token.email
+        );
     }
 
     function isChatParticipant() {
@@ -207,7 +214,6 @@ service cloud.firestore {
     // Used only on food paths so other apps keep the original isAdmin() contract.
     function isFoodAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email in ["admin@gmail.com"] ||
         request.auth.token.get('foodRole', '') == 'masterAdmin' ||
         request.auth.token.get('foodMasterAdmin', false) == true
       );
@@ -236,14 +242,14 @@ service cloud.firestore {
 
     // Restaurant-owner self-signup (never self-grant admin flags)
     function isSafeFoodPortalUserCreate() {
-      return request.resource.data.get('isMasterAdmin', false) == false
-        && request.resource.data.get('isRestaurantAdmin', false) == false
-        && request.resource.data.get('role', 'restaurantOwner') in [
-          'Partner', 'restaurantOwner', 'customer', 'Customer'
-        ]
-        && !request.resource.data.keys().hasAny([
-          'admin', 'isAdmin', 'masterAdmin', 'restaurantOwner'
-        ]);
+      return request.resource.data.keys().hasOnly(profileFields().concat([
+          'role', 'status', 'isSuspended', 'serviceCategory', 'isMasterAdmin', 'isRestaurantAdmin'
+        ])) &&
+        request.resource.data.get('isMasterAdmin', false) == false &&
+        request.resource.data.get('isRestaurantAdmin', false) == false &&
+        request.resource.data.get('status', 'Pending') == 'Pending' &&
+        request.resource.data.get('isSuspended', false) == false &&
+        request.resource.data.get('role', 'restaurantOwner') in ['Partner', 'restaurantOwner', 'customer', 'Customer'];
     }
 
     // Food restaurant: partners cannot change money / verification fields
@@ -264,10 +270,15 @@ service cloud.firestore {
         'BlogDB', 'ServiceDB', 'HotelDB', 'sightseeingPackages',
         'sightseeingPackagesDetails', 'hotelPackages', 'hotelPackageDetails',
         'TestimonialDB', 'FaqDB', 'OfferDB', 'ContentDB', 'localServices',
-        'restaurants', 'carDetails', 'foodMenu', 'coupons', 'partners',
+        'carDetails', 'foodMenu', 'coupons', 'partners',
         'TourDB', 'travelServices', 'Thaiseva_terms', 'food_items', 'packages'
       ];
-      allow write: if isAdmin();
+      allow write: if collection in [
+        'BlogDB', 'ServiceDB', 'HotelDB', 'sightseeingPackages', 'sightseeingPackagesDetails',
+        'hotelPackages', 'hotelPackageDetails', 'TestimonialDB', 'FaqDB', 'OfferDB', 'ContentDB',
+        'localServices', 'carDetails', 'foodMenu', 'coupons', 'partners', 'TourDB',
+        'travelServices', 'Thaiseva_terms', 'packages'
+      ] && isAdmin();
     }
 
     match /settings/{docId} {
@@ -292,23 +303,26 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // WEBSITE MEDIA & DYNAMIC CONTENT (Images, Banners, QR, Stats)
+    // Strictly scoped to 'image' collection — read-only for public, admin write
+    // Does NOT touch or affect any other apps, collections, or helpers.
+    // ============================================================
+
+    match /image/{slotId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ============================================================
     // USERS
     // ============================================================
 
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isFoodAdmin());
-      allow create: if isAuthenticated() &&
-        request.auth.uid == userId &&
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin() || isFoodAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == userId &&
         (isSafeWebsiteUserCreate() || isSafeFoodPortalUserCreate());
-      // Self-update: keep production role/status locks; also block self-grant of food admin flags
-      allow update: if isAdmin() || isFoodAdmin() ||
-        (isAuthenticated() && isSafeUserSelfUpdate(userId) &&
-          request.resource.data.get('isMasterAdmin', resource.data.get('isMasterAdmin', false)) ==
-            resource.data.get('isMasterAdmin', false) &&
-          request.resource.data.get('isRestaurantAdmin', resource.data.get('isRestaurantAdmin', false)) ==
-            resource.data.get('isRestaurantAdmin', false));
-      allow delete: if isAdmin() || isFoodAdmin() ||
-        (isAuthenticated() && request.auth.uid == userId);
+      allow update: if isSuperAdmin() || (isAuthenticated() && isSafeUserSelfUpdate(userId));
+      allow delete: if isSuperAdmin();
 
       match /notifications/{notificationId} {
         allow read, update, delete: if isAuthenticated() &&
@@ -319,12 +333,10 @@ service cloud.firestore {
     }
 
     match /Users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow create: if isAdmin() ||
-        (isAuthenticated() && request.auth.uid == userId && isSafeUserCreate());
-      allow update: if isAdmin() ||
-        (isAuthenticated() && isSafeUserUpdate(userId));
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow create: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == userId && isSafeUserCreate());
+      allow update: if isSuperAdmin() || (isAuthenticated() && isSafeUserUpdate(userId));
+      allow delete: if isSuperAdmin();
 
       match /notifications/{notificationId} {
         allow read, update, delete: if isAuthenticated() &&
@@ -339,7 +351,12 @@ service cloud.firestore {
         request.resource.data.uid == request.auth.uid &&
         request.resource.data.email == request.auth.token.email &&
         !('password' in request.resource.data);
-      allow read, update, delete: if isAdmin();
+      allow read: if isAdmin();
+      // Clients can cancel a pending request; erasure results are server-owned.
+      allow update: if isAdmin() && resource.data.status == 'Pending' &&
+        request.resource.data.status == 'Cancelled' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt']);
+      allow delete: if false;
     }
 
     // ============================================================
@@ -347,8 +364,8 @@ service cloud.firestore {
     // ============================================================
 
     match /hotelBookingData/{bookingId} {
-      // APP ISSUE: Allow app users to create hotel bookings.
-      allow create: if request.auth != null && request.resource.data.authUid == request.auth.uid;
+      // Legacy app clients may create only unpaid, unconfirmed pending bookings.
+      allow create: if isAuthenticated() && isSafeBookingCreate();
       allow read: if isAdmin() || isOwner('userId') || isEmailOwner();
       allow update: if isAdmin() || isOwnerCancelOnly();
       allow delete: if isAdmin();
@@ -417,12 +434,17 @@ service cloud.firestore {
       allow read: if isAdmin() || isFoodAdmin()
         || isOwner('uid')
         || isOwner('userId')
-        || isFoodOrderRestaurantOwner()
         || isFoodOrderReceiver()
         || isFoodOrderSender();
       allow update: if false; // Order cancellation is an admin callable action.
       // Money / delivery / earnings / kitchen status: Cloud Functions (Admin SDK) only
       allow delete: if isAdmin() || isFoodAdmin();
+    }
+
+    // Server-generated delivery/settlement projection. No customer email/account or payment-provider IDs.
+    match /partnerOrderViews/{orderId} {
+      allow read: if isAdmin() || isFoodAdmin() || isFoodOrderRestaurantOwner();
+      allow create, update, delete: if false;
     }
 
     // Dine-in reservations are created and updated only by validated callables.
@@ -538,20 +560,21 @@ service cloud.firestore {
 
     // Food portal restaurants/{ownerUid}: owners cannot self-set commission / verify
     match /restaurants/{restaurantId} {
-      allow read: if true;
-      allow create: if isAdmin() || isFoodAdmin() ||
-        (isAuthenticated() && request.auth.uid == restaurantId);
-      allow update: if isAdmin() || isFoodAdmin() ||
-        (isAuthenticated()
-          && request.auth.uid == restaurantId
-          && restaurantLockedFieldsUnchanged());
+      // Website diners use the allowlisted listOrderableRestaurantsHttp API.
+      // Preserve the live mobile-app access at the owner's explicit request.
+      // Firestore reads return the entire record, including any private fields.
+      allow read: if isAdmin() || isFoodAdmin() ||
+        (isAuthenticated() && request.auth.uid == restaurantId) ||
+        (isAuthenticated() && resource.data.get('status', '') == 'Verified' &&
+          resource.data.get('active', false) == true);
+      allow create, update: if isAdmin() || isFoodAdmin();
       allow delete: if isAdmin() || isFoodAdmin();
     }
 
     match /restaurants/{ownerId}/restaurantDetails/{restaurantId} {
-      allow read: if true;
-      allow write: if isAdmin() || isFoodAdmin() ||
+      allow read: if isAdmin() || isFoodAdmin() ||
         (isAuthenticated() && request.auth.uid == ownerId);
+      allow write: if isAdmin() || isFoodAdmin();
     }
 
     // Public apply-first inbox. Clients never write; Cloud Functions (Admin SDK) only.
@@ -719,7 +742,6 @@ service cloud.firestore {
       allow update: if isAdmin() || isFoodAdmin() || isChatParticipant() || (
         isAuthenticated() && roomId == "CustomerSupport"
       );
-      // APP ISSUE: Allow write to CustomerSupport for authenticated users (handled via update and read above, plus createSelf if they create it)
       allow delete: if isAdmin();
     }
 
@@ -837,6 +859,23 @@ service cloud.firestore {
     // ============================================================
     // DEFAULT DENY
     // ============================================================
+
+    // OTP codes, counters, and delivery status are server-only, including for admins.
+    match /emailOtpChallenges/{id} {
+      allow read, write: if false;
+    }
+    match /emailOtpVerificationProofs/{id} {
+      allow read, write: if false;
+    }
+    match /emailOtpRateLimits/{id} {
+      allow read, write: if false;
+    }
+
+    // Privacy operations are server-only; clients never mark erasure complete.
+    match /privacyErasureJobs/{jobId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
 
     match /{document=**} {
       allow read, write: if false;

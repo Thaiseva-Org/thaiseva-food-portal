@@ -1,4 +1,5 @@
 import OrderPayment from "../../../components/OrderPayment";
+import PrivateOrderPhoto from "../../../components/PrivateOrderPhoto";
 import { normalizeOrder, formatDisplayOrderId } from "../../../utils/orderData";
 import { collection, doc, getDoc, getDocs, orderBy, query, Timestamp } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
@@ -830,9 +831,7 @@ const OrdersDetView = () => {
                   <span className="text-slate-400 block mb-2">Location Photos:</span>
                   <div className="grid grid-cols-3 gap-2">
                     {completeOrderDetails.CustomerDetails.locationPhotos.map((photo, index) => (
-                      <a key={`${photo}-${index}`} href={photo} target="_blank" rel="noreferrer">
-                        <img src={photo} alt={`Delivery location ${index + 1}`} className="w-full aspect-square object-cover rounded-lg border border-slate-200" />
-                      </a>
+                      <PrivateOrderPhoto key={`${photo}-${index}`} orderId={id} path={photo} alt={`Delivery location ${index + 1}`} className="w-full aspect-square object-cover rounded-lg border border-slate-200" />
                     ))}
                   </div>
                 </div>

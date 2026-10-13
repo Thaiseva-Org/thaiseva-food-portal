@@ -5,7 +5,7 @@ const header = `rules_version = '2';
 // SHARED multi-app Firestore rules (website + hotel/travel/cars + food portal).
 //
 // DO NOT change hotel / travel / car / van / chat / catalog / contact blocks
-// or the body of isAdmin() for food-only needs — that breaks other products.
+// or the body of isAdmin() for food-only needs - that breaks other products.
 //
 // Food portal changes ONLY:
 //   - helpers under "FOOD PORTAL HELPERS ONLY"

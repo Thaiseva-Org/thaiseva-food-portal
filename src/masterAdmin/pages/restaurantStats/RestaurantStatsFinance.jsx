@@ -1,12 +1,12 @@
 import { doc, updateDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CSVLink } from "react-csv";
 import { Link } from "react-router";
 import { db } from "../../../../firebaseConfig";
 import DateRangeFilter from "../../../components/DateRangeFilter";
 import DataBoxes from "../../../components/DataBoxes";
 import { StatGrid } from "../../../components/dashboard";
 import Loading from "../../../components/Loading";
+import { useAuth } from "../../../AuthContext";
 import { fetchRestaurantOrdersInRange } from "../../../services/RestaurantStats";
 import {
   applyPeriodOffer,
@@ -31,10 +31,8 @@ import {
 import { formatDisplayOrderId } from "../../../utils/orderData";
 import CommissionSplit from "./components/CommissionSplit";
 import { useRestaurantStats } from "./components/RestaurantContext";
-import {
-  buildFinanceCsvReport,
-  safeCsvFilenamePart,
-} from "../../../utils/financeCsv";
+
+import { exportFinanceToExcel } from "../../../utils/excelExport";
 
 const MODES = [
   { value: "week", label: "Week" },
@@ -51,6 +49,7 @@ const findSavedOffer = (offers, startDate, endDate) =>
   );
 
 const RestaurantStatsFinance = () => {
+  const { isMasterAdmin } = useAuth();
   const { ownerId, restaurant, refreshRestaurant } = useRestaurantStats();
   const defaultRate = Number(restaurant.comission || 0);
   const todayWeek = weekFromStartDate(weekIdFromDate());
@@ -91,6 +90,33 @@ const RestaurantStatsFinance = () => {
   );
   const [offerBusy, setOfferBusy] = useState(false);
   const [offerMessage, setOfferMessage] = useState("");
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+      await exportFinanceToExcel({
+        restaurant,
+        ownerId,
+        mode,
+        range,
+        activeOffer,
+        parsedOffer,
+        defaultRate,
+        periodicBreakdown,
+        delivered,
+        orders,
+        moneyFor,
+        totals,
+        generatedAt: new Date().toLocaleString(),
+      });
+    } catch (err) {
+      console.error("Finance Excel export failed:", err);
+      alert("Failed to export Excel report.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
 
   useEffect(() => {
     const found = findSavedOffer(
@@ -141,7 +167,7 @@ const RestaurantStatsFinance = () => {
   const delivered = useMemo(
     () =>
       orders.filter(
-        (item) => String(item?.Status || "").trim().toLowerCase() === "delivered"
+        (item) => String(item?.Status || item?.status || "").trim().toLowerCase() === "delivered"
       ),
     [orders]
   );
@@ -368,33 +394,7 @@ const RestaurantStatsFinance = () => {
     return buckets;
   }, [delivered, mode, yearStart, monthStart, weekStart, range, moneyFor]);
 
-  const financeCsvData = useMemo(() => {
-    return buildFinanceCsvReport({
-      restaurant,
-      ownerId,
-      mode,
-      range,
-      activeOffer,
-      parsedOffer,
-      defaultRate,
-      periodicBreakdown,
-      delivered,
-      moneyFor,
-      totals,
-    });
-  }, [
-    restaurant,
-    ownerId,
-    mode,
-    range,
-    activeOffer,
-    parsedOffer,
-    defaultRate,
-    periodicBreakdown,
-    delivered,
-    moneyFor,
-    totals,
-  ]);
+
 
   const persistOffers = async (nextOffers) => {
     await updateDoc(doc(db, "restaurants", ownerId), {
@@ -468,23 +468,24 @@ const RestaurantStatsFinance = () => {
             <h2 className="section-title">Finance & payouts</h2>
             <p className="page-subtext mt-0.5">
               Jump week by week, month by month, year by year, or select custom dates. An
-              offer rate applies only to this period — the restaurant default
+              offer rate applies only to this period - the restaurant default
               stays {defaultRate}%.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {financeCsvData.length > 0 && (
-              <CSVLink
-                data={financeCsvData}
-                filename={`${safeCsvFilenamePart(restaurant.name)}-finance-${mode}-${range.startDate}-to-${range.endDate}.csv`}
-                separator=","
-                enclosingCharacter={'"'}
-                className="btn-ghost"
+          <div className="flex flex-wrap items-center gap-2">
+            {delivered.length > 0 && (
+              <button
+                type="button"
+                className="btn-primary !py-1.5 !px-3.5 !text-sm flex items-center gap-1.5 shadow-sm"
+                onClick={handleExportExcel}
+                disabled={isExportingExcel}
+                title="Download formatted multi-tab Excel report"
               >
-                <i className="bi bi-file-earmark-spreadsheet" aria-hidden="true" />
-                Export Finance CSV
-              </CSVLink>
+                <i className="bi bi-file-earmark-excel" aria-hidden="true" />
+                {isExportingExcel ? "Generating..." : "Export Excel (.xlsx)"}
+              </button>
             )}
+
           </div>
         </div>
 
@@ -688,102 +689,116 @@ const RestaurantStatsFinance = () => {
         )}
       </div>
 
-      <div className="panel">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="section-title">Period offer</h3>
-            <p className="page-subtext mt-0.5">
-              Optional. Recalculates this period only. Does not change the
-              restaurant default ({defaultRate}%) or rewrite old settled orders.
-            </p>
-          </div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink select-none">
-            <input
-              type="checkbox"
-              className="rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
-              checked={useOffer}
-              onChange={(e) => setUseOffer(e.target.checked)}
-            />
-            Apply offer to this period
-          </label>
-        </div>
-
-        {useOffer && (
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-surface-muted px-3 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                Default
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums">{defaultRate}%</p>
-              <p className="mt-1 text-xs text-ink-muted">
-                Payout {formatCommissionMoney(defaultTotals.payout, "locked")}
+      {isMasterAdmin ? (
+        <div className="panel">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h3 className="section-title">Period offer</h3>
+              <p className="page-subtext mt-0.5">
+                Optional. Recalculates this period only. Does not change the
+                restaurant default ({defaultRate}%) or rewrite old settled orders.
               </p>
             </div>
-            <label className="rounded-xl border border-secondary-200 bg-secondary-50/50 px-3 py-3">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-secondary-800">
-                Offer rate
-              </span>
-              <div className="mt-1 flex items-baseline gap-1">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.1"
-                  value={offerRate}
-                  onChange={(e) => setOfferRate(e.target.value)}
-                  onWheel={(e) => e.target.blur()}
-                  className="w-full bg-transparent text-2xl font-bold tabular-nums text-ink outline-none"
-                  aria-label="Offer commission rate"
-                />
-                <span className="text-sm font-semibold text-ink-muted">%</span>
-              </div>
-              {!offerValid && (
-                <p className="mt-1 text-xs text-danger-600">Enter 0–100.</p>
-              )}
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink select-none">
+              <input
+                type="checkbox"
+                className="rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+                checked={useOffer}
+                onChange={(e) => setUseOffer(e.target.checked)}
+              />
+              Apply offer to this period
             </label>
-            <div className="rounded-xl border border-success-100 bg-success-50/70 px-3 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-success-800">
-                Offer payout
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
-                {formatCommissionMoney(totals.payout, "offer")}
-              </p>
-              <p className="mt-1 text-xs text-ink-muted">
-                On ฿1,000 → restaurant{" "}
-                {offerPreview
-                  ? formatCommissionMoney(offerPreview.partnerShare, "offer")
-                  : "—"}
-              </p>
-            </div>
           </div>
-        )}
 
-        {useOffer && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={offerBusy || !offerValid}
-              onClick={saveOffer}
-            >
-              {offerBusy ? "Saving…" : savedOffer ? "Update saved offer" : "Save offer for these dates"}
-            </button>
-            {savedOffer && (
+          {useOffer && (
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-xl bg-surface-muted px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Default
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums">{defaultRate}%</p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  Payout {formatCommissionMoney(defaultTotals.payout, "locked")}
+                </p>
+              </div>
+              <label className="rounded-xl border border-secondary-200 bg-secondary-50/50 px-3 py-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-secondary-800">
+                  Offer rate
+                </span>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    value={offerRate}
+                    onChange={(e) => setOfferRate(e.target.value)}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-full bg-transparent text-2xl font-bold tabular-nums text-ink outline-none"
+                    aria-label="Offer commission rate"
+                  />
+                  <span className="text-sm font-semibold text-ink-muted">%</span>
+                </div>
+                {!offerValid && (
+                  <p className="mt-1 text-xs text-danger-600">Enter 0–100.</p>
+                )}
+              </label>
+              <div className="rounded-xl border border-success-100 bg-success-50/70 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-success-800">
+                  Offer payout
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-ink">
+                  {formatCommissionMoney(totals.payout, "offer")}
+                </p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  On ฿1,000 → restaurant{" "}
+                  {offerPreview
+                    ? formatCommissionMoney(offerPreview.partnerShare, "offer")
+                    : "-"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {useOffer && (
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="btn-ghost"
-                disabled={offerBusy}
-                onClick={clearOffer}
+                className="btn-secondary"
+                disabled={offerBusy || !offerValid}
+                onClick={saveOffer}
               >
-                Remove saved offer
+                {offerBusy ? "Saving…" : savedOffer ? "Update saved offer" : "Save offer for these dates"}
               </button>
-            )}
+              {savedOffer && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={offerBusy}
+                  onClick={clearOffer}
+                >
+                  Remove saved offer
+                </button>
+              )}
+            </div>
+          )}
+          {offerMessage && (
+            <p className="mt-3 text-sm text-ink-muted">{offerMessage}</p>
+          )}
+        </div>
+      ) : activeOffer ? (
+        <div className="panel !py-3 !px-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="section-title text-sm">Special Period Promotion Active</h3>
+              <p className="page-subtext mt-0.5">
+                ThaiSeva has applied an exclusive promotional commission rate of <strong>{parsedOffer}%</strong> (default: {defaultRate}%) for this period.
+              </p>
+            </div>
+            <span className="badge-primary !py-1 !px-2.5">{parsedOffer}% Rate</span>
           </div>
-        )}
-        {offerMessage && (
-          <p className="mt-3 text-sm text-ink-muted">{offerMessage}</p>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       {error && (
         <p className="rounded-xl border border-danger-100 bg-danger-50 px-3 py-2 text-sm text-danger-700">
@@ -886,18 +901,20 @@ const RestaurantStatsFinance = () => {
                     Aggregated financial metrics across {mode === "year" ? "months" : mode === "month" ? "weeks" : mode === "week" ? "days" : "intervals"} of this period
                   </p>
                 </div>
-                {financeCsvData.length > 0 && (
-                  <CSVLink
-                    data={financeCsvData}
-                    filename={`${safeCsvFilenamePart(restaurant.name)}-finance-${mode}-${range.startDate}-to-${range.endDate}.csv`}
-                    separator=","
-                    enclosingCharacter={'"'}
-                    className="btn-ghost !py-1 text-xs"
-                  >
-                    <i className="bi bi-file-earmark-spreadsheet" aria-hidden="true" />
-                    Export Finance CSV
-                  </CSVLink>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {delivered.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-outline !py-1 !px-2.5 text-xs flex items-center gap-1"
+                      onClick={handleExportExcel}
+                      disabled={isExportingExcel}
+                    >
+                      <i className="bi bi-file-earmark-excel text-emerald-600" aria-hidden="true" />
+                      Excel (.xlsx)
+                    </button>
+                  )}
+
+                </div>
               </div>
 
               <div className="overflow-x-auto">

@@ -6,6 +6,8 @@ const { randomBytes } = require("node:crypto");
 const { writeAuditLog } = require("./audit");
 const { ROLES, setUserClaims } = require("./auth");
 const { cleanText, cleanImageUrl } = require("./restaurants");
+const { readEmailProof, proofHash } = require("./emailVerification");
+const {isPrivateFilePath, verificationOwner, privateFilePath} = require("./privateFiles");
 
 const SERVICE_TYPES = new Set(["Delivery", "Dine-in", "Both"]);
 
@@ -49,8 +51,8 @@ function cleanDocUrl(value, field, { required = true } = {}) {
     }
     return null;
   }
-  if (isApplicationStoragePath(raw)) return raw;
-  if (raw.length > 2048 || !/^https:\/\//i.test(raw)) {
+  if (isPrivateFilePath(raw)) return raw;
+  if (raw.length > 2048 || !/^https?:\/\//i.test(raw)) {
     throw new HttpsError(
       "invalid-argument",
       `${field} must be a private application file or HTTPS URL.`
@@ -139,18 +141,22 @@ function cleanApplicationPayload(payload) {
   };
 }
 
-async function assertEmailAvailable(db, email) {
+async function assertEmailAvailable(db, email, applicationId) {
   const existing = await db
     .collection("restaurantApplications")
     .where("emailId", "==", email)
-    .limit(10)
     .get();
-  const hasPending = existing.docs.some((doc) => doc.data()?.status === "Pending");
+  const hasPending = existing.docs.some((doc) => doc.id !== applicationId &&
+    ["Pending", "Verified"].includes(doc.data()?.status));
   if (hasPending) {
     throw new HttpsError(
       "already-exists",
-      "A pending request already exists for this email."
+      "This email already has a partner application or account. Please log in or contact support."
     );
+  }
+  const restaurants = await db.collection("restaurants").where("emailId", "==", email).limit(1).get();
+  if (!restaurants.empty) {
+    throw new HttpsError("already-exists", "This email already belongs to a food partner. Please log in.");
   }
   try {
     await getAuth().getUserByEmail(email);
@@ -166,15 +172,64 @@ async function assertEmailAvailable(db, email) {
   }
 }
 
+async function checkPublicPartnerEmail({ email }) {
+  const normalized = normalizeEmail(email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) || normalized.length > 254) {
+    throw new HttpsError("invalid-argument", "Enter a valid email address.");
+  }
+  await assertEmailAvailable(getFirestore(), normalized);
+  return { available: true };
+}
+
 async function startPublicRestaurantApplication() {
   const db = getFirestore();
   const applicationId = randomBytes(12).toString("hex");
   await db.collection("restaurantApplications").doc(applicationId).set({
     status: "Draft",
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    uploadCount: 0,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
   return { applicationId };
+}
+
+async function uploadPublicApplicationContent({applicationId, kind, contentType, fileName, contentBase64}) {
+  if (!/^[a-f0-9]{16,32}$/.test(String(applicationId || "")) ||
+      !["image", "businessLicense", "ownerId", "foodSafety"].includes(kind) ||
+      typeof contentBase64 !== "string" || !contentBase64 || contentBase64.length > 12 * 1024 * 1024 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(contentBase64)) {
+    throw new HttpsError("invalid-argument", "Invalid application upload.");
+  }
+  const bytes = Buffer.from(contentBase64, "base64");
+  const signatures = {
+    "image/jpeg": bytes.subarray(0, 3).toString("hex") === "ffd8ff",
+    "image/png": bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a",
+    "image/gif": /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString("ascii")),
+    "image/webp": bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP",
+    "application/pdf": kind !== "image" && bytes.subarray(0, 5).toString("ascii") === "%PDF-",
+  };
+  if (!bytes.length || bytes.length > 8 * 1024 * 1024 || !signatures[contentType]) {
+    throw new HttpsError("invalid-argument", "Upload a valid JPG, PNG, GIF, WebP or PDF under 8MB.");
+  }
+  const db = getFirestore();
+  const application = db.collection("restaurantApplications").doc(applicationId);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(application);
+    const data = snap.data() || {};
+    if (!snap.exists || data.status !== "Draft" || !(Number(data.expiresAt) > Date.now())) {
+      throw new HttpsError("failed-precondition", "Start a new application before uploading.");
+    }
+    const count = Number(data.uploadCount || 0);
+    if (count >= 12) throw new HttpsError("resource-exhausted", "Application upload limit reached.");
+    tx.update(application, {uploadCount: count + 1, updatedAt: FieldValue.serverTimestamp()});
+  });
+  const safe = String(fileName || "file").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+  const path = `applications/${applicationId}/${kind}_${randomBytes(8).toString("hex")}_${safe}`;
+  await getStorage().bucket().file(path).save(bytes, {
+    resumable: false, metadata: {contentType, cacheControl: "private, no-store"},
+  });
+  return {path};
 }
 
 async function getPublicApplicationUploadUrl({ applicationId, kind, contentType, fileName }) {
@@ -226,10 +281,10 @@ async function finalizePublicUpload({ applicationId, path }) {
 
 async function getApplicationFileUrl(caller, { path }) {
   const clean = String(path || "").trim();
-  if (!isApplicationStoragePath(clean)) {
+  if (!isPrivateFilePath(clean)) {
     throw new HttpsError("invalid-argument", "Invalid application file path.");
   }
-  if (caller.role !== ROLES.MASTER) {
+  if (caller.role !== ROLES.MASTER && verificationOwner(clean) !== caller.uid) {
     if (caller.role !== ROLES.OWNER) {
       throw new HttpsError("permission-denied", "Not allowed to open this file.");
     }
@@ -244,21 +299,36 @@ async function getApplicationFileUrl(caller, { path }) {
       data.documents?.ownerId?.url,
       data.documents?.foodSafetyCert?.url,
     ];
-    if (!refs.includes(clean)) {
+    if (!refs.some(value => privateFilePath(value) === clean) && verificationOwner(clean) !== caller.uid) {
       throw new HttpsError("permission-denied", "Not allowed to open this file.");
     }
   }
   const file = getStorage().bucket().file(clean);
   const [exists] = await file.exists();
   if (!exists) throw new HttpsError("not-found", "File was not uploaded.");
-  const url = await signedReadUrl(clean, 60 * 60 * 1000);
-  return { url, path: clean };
+    try {
+      const url = await signedReadUrl(clean, 10 * 60 * 1000);
+      return { url, path: clean };
+    } catch (error) {
+      // A missing signBlob grant must not cause public-token fallback. The
+      // already-authorized callable can deliver bounded content directly.
+      const permissionError = error?.code === 403 || error?.code === 7 ||
+        error?.code === "PERMISSION_DENIED" || /signBlob|iam\.serviceAccounts\.signBlob|permission denied/i.test(String(error?.message || ""));
+      if (!permissionError) throw error;
+      const [metadata] = await file.getMetadata();
+      if (!Number.isFinite(Number(metadata.size)) || Number(metadata.size) > 15 * 1024 * 1024) {
+        throw new HttpsError("resource-exhausted", "Document exceeds the safe preview limit.");
+      }
+      const [bytes] = await file.download();
+      if (bytes.length > 15 * 1024 * 1024) throw new HttpsError("resource-exhausted", "Document exceeds the safe preview limit.");
+      return {path: clean, contentBase64: bytes.toString("base64"),
+        contentType: metadata.contentType || "application/octet-stream"};
+    }
 }
 
-async function submitPublicRestaurantApplication(payload) {
+async function submitPublicRestaurantApplication(payload, otpHashKey) {
   const cleaned = cleanApplicationPayload(payload);
   const db = getFirestore();
-  await assertEmailAvailable(db, cleaned.emailId);
 
   let applicationId = String(payload?.applicationId || "").trim();
   if (applicationId && !/^[a-f0-9]{16,32}$/.test(applicationId)) {
@@ -269,7 +339,7 @@ async function submitPublicRestaurantApplication(payload) {
     const existing = await db.collection("restaurantApplications").doc(applicationId).get();
     if (existing.exists) {
       const status = existing.data()?.status;
-      if (status && status !== "Draft") {
+      if (status && status !== "Draft" && status !== "Pending") {
         throw new HttpsError(
           "failed-precondition",
           "This application can no longer be submitted."
@@ -277,6 +347,7 @@ async function submitPublicRestaurantApplication(payload) {
       }
     }
   }
+  await assertEmailAvailable(db, cleaned.emailId, applicationId);
 
   const restaurant = {
     ...cleaned,
@@ -301,9 +372,30 @@ async function submitPublicRestaurantApplication(payload) {
     timestamp: FieldValue.serverTimestamp(),
   };
 
-  await db.collection("restaurantApplications").doc(applicationId).set(restaurant, {
-    merge: true,
+  const newlySubmitted = await db.runTransaction(async (tx) => {
+    const applicationRef = db.collection("restaurantApplications").doc(applicationId);
+    const existing = await tx.get(applicationRef);
+    // A retry after a lost success response must not need another OTP.
+    if (existing.exists && existing.data().status === "Pending" &&
+        existing.data().emailVerified === true && existing.data().emailId === cleaned.emailId) {
+      const proofRef = db.collection("emailOtpVerificationProofs");
+      if (typeof payload.verificationToken === "string" && otpHashKey) {
+        const proof = await tx.get(proofRef.doc(proofHash(otpHashKey, "signup-proof", payload.verificationToken)));
+        if (proof.exists && proof.data().consumedBy === `partner-application:${applicationId}`) return false;
+      }
+      throw new HttpsError("failed-precondition", "This application has already been submitted.");
+    }
+    if (existing.exists && existing.data().status !== "Draft") {
+      throw new HttpsError("failed-precondition", "This application can no longer be submitted.");
+    }
+    const proofRef = await readEmailProof(tx, db, cleaned.emailId, payload.verificationToken, otpHashKey);
+    tx.update(proofRef, { consumedBy: `partner-application:${applicationId}` });
+    tx.set(applicationRef, { ...restaurant, emailVerified: true,
+      emailVerifiedAt: FieldValue.serverTimestamp() }, { merge: true });
+    return true;
   });
+
+  if (!newlySubmitted) return { applicationId, status: "Pending" };
 
   await db
     .collection("notifications")
@@ -328,8 +420,8 @@ async function copyCoverToRestaurant(imageRef, ownerUid) {
   const destPath = `restaurants/${ownerUid}/profile/cover_${Date.now()}`;
   const bucket = getStorage().bucket();
   await bucket.file(raw).copy(bucket.file(destPath));
-  await bucket.file(destPath).makePublic();
-  return `https://storage.googleapis.com/${bucket.name}/${destPath}`;
+  // Explicit public media is served through Firebase rules; no ACL change.
+  return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(destPath)}?alt=media`;
 }
 
 async function createRestaurantFromApplication(app, ownerUid, commissionPct) {
@@ -535,8 +627,10 @@ async function reviewPublicApplication(caller, {
 }
 
 module.exports = {
+  checkPublicPartnerEmail,
   startPublicRestaurantApplication,
   getPublicApplicationUploadUrl,
+  uploadPublicApplicationContent,
   finalizePublicUpload,
   getApplicationFileUrl,
   submitPublicRestaurantApplication,

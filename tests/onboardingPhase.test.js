@@ -18,6 +18,6 @@ test("verified owner claims complete onboarding", () => {
 });
 
 test("configured admin email is recognized case-insensitively", () => {
-  assert.equal(isMasterAdminIdentity({}, "ADMIN@gmail.com"), true);
+  assert.equal(isMasterAdminIdentity({}, "ADMIN@gmail.com"), false);
   assert.equal(isMasterAdminIdentity({}, "owner@gmail.com"), false);
 });

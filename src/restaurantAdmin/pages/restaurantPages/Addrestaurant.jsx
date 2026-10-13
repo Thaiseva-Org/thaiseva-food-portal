@@ -3,7 +3,7 @@ import { useAuth } from "../../../AuthContext";
 import { partnerPath } from "../../../utils/partnerRoutes";
 
 /**
- * Legacy "add restaurant" empty state — send users to the new onboarding flow.
+ * Legacy "add restaurant" empty state - send users to the new onboarding flow.
  */
 const Addrestaurant = () => {
   const { isRestaurantAdmin, needsOnboarding } = useAuth();

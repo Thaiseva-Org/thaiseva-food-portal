@@ -76,14 +76,14 @@ const nextActionHint = (
   if (status === ORDER_STATUS.PREPARING && canManageKitchen)
     return "Food is ready for the courier to collect.";
   if (status === ORDER_STATUS.READY && hasRider && canManageKitchen)
-    return "Courier has picked up — mark as out for delivery.";
+    return "Courier has picked up - mark as out for delivery.";
   if (status === ORDER_STATUS.OUT && canConfirmDelivery)
     return "Confirm delivery. This posts earnings.";
   return null;
 };
 
 const formatDateTime = (timestamp) => {
-  if (timestamp == null || timestamp === "N/A") return "—";
+  if (timestamp == null || timestamp === "N/A") return "-";
   let date;
   if (timestamp instanceof Timestamp) {
     date = timestamp.toDate();
@@ -92,7 +92,7 @@ const formatDateTime = (timestamp) => {
   } else {
     date = new Date(timestamp);
   }
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString(undefined, {
     day: "numeric",
     month: "short",
@@ -491,7 +491,7 @@ const OrderView = () => {
     setSelectedRiderId("");
 
     const unsubscribe = onSnapshot(
-      doc(db, `orders/${orderId}`),
+      doc(db, `${kitchen.isMasterAdmin ? "orders" : "partnerOrderViews"}/${orderId}`),
       (snap) => {
         if (!snap.exists()) {
           setError("Order not found.");
@@ -555,7 +555,7 @@ const OrderView = () => {
     );
 
     return unsubscribe;
-  }, [orderId, currentUser?.uid, kitchen.isPlatformKitchen]);
+  }, [orderId, currentUser?.uid, kitchen.isPlatformKitchen, kitchen.isMasterAdmin]);
 
   const canConfirmDelivery = kitchen.isMasterAdmin;
   const canManageKitchen = !kitchen.isMasterAdmin || kitchen.isPlatformKitchen;
@@ -876,7 +876,7 @@ const OrderView = () => {
                 </button>
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/80 border border-neutral-100 px-2.5 py-1.5 text-xs font-medium text-ink-muted">
                   <i className="bi bi-calendar3" aria-hidden="true" />
-                  {completeOrderDetails?.Date || "—"}
+                  {completeOrderDetails?.Date || "-"}
                 </span>
                 {itemCount > 0 && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/80 border border-neutral-100 px-2.5 py-1.5 text-xs font-medium text-ink-muted">
@@ -995,7 +995,7 @@ const OrderView = () => {
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-12 xl:items-start">
         {/* Left column */}
         <div className="flex flex-col gap-5 xl:col-span-4 order-2 xl:order-1">
-          {/* Actions first on desktop — primary kitchen task */}
+          {/* Actions first on desktop - primary kitchen task */}
           {showActions && (
             <section
               className="panel border-brand-100 ring-1 ring-brand-50 hidden lg:block"
@@ -1189,7 +1189,7 @@ const OrderView = () => {
           </section>
         </div>
 
-        {/* Items — primary content */}
+        {/* Items - primary content */}
         <section
           className="panel xl:col-span-8 order-1 xl:order-2 !p-0 overflow-hidden"
           aria-labelledby="items-heading"

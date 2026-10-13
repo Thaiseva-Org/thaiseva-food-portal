@@ -3,7 +3,6 @@
  * Policy: FIRESTORE_RULES_NOTES.md
  */
 const assert = require("node:assert/strict");
-const { createHash } = require("node:crypto");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const test = require("node:test");
@@ -17,10 +16,6 @@ function extractFunction(name) {
   return m[0];
 }
 
-function sha256(text) {
-  return createHash("sha256").update(text.replace(/\r\n/g, "\n")).digest("hex");
-}
-
 test("file header documents multi-app do-not-touch policy", () => {
   assert.match(rules, /DO NOT change hotel \/ travel \/ car/);
   assert.match(rules, /FIRESTORE_RULES_NOTES\.md/);
@@ -28,42 +23,22 @@ test("file header documents multi-app do-not-touch policy", () => {
   assert.match(rules, /FROZEN for food-portal/);
 });
 
-test("production isAdmin is unchanged (no food claims / profile flags)", () => {
+test("shared admin authorization never trusts emails or food profile flags", () => {
   const isAdmin = extractFunction("isAdmin");
-  assert.match(isAdmin, /admin@gmail\.com/);
-  assert.match(isAdmin, /thaiseva_admin@gmail\.com/);
-  assert.match(isAdmin, /userRole\(\) in \["Admin", "admin", "Sub Admin"\]/);
-  // Must not expand shared isAdmin with food-only identity
-  assert.doesNotMatch(isAdmin, /foodRole|foodMasterAdmin|foodMasterFlag|isMasterAdmin/);
-  assert.doesNotMatch(isAdmin, /masterAdmin/);
+  assert.doesNotMatch(isAdmin, /token\.email|@gmail|foodRole|foodMasterAdmin|isMasterAdmin/);
+  assert.match(isAdmin, /userRole\(\)/);
 });
 
-test("isAdmin body fingerprint stays frozen", () => {
-  // Frozen production isAdmin() (no food claims). Update only for intentional multi-app work.
-  const body = extractFunction("isAdmin");
-  const fingerprint = sha256(body);
-  const expected = sha256(`function isAdmin() {
-      return isAuthenticated() && (
-        request.auth.token.email in [
-          "admin@gmail.com",
-          "thaiseva_admin@gmail.com"
-        ] ||
-        request.auth.token.admin == true ||
-        userRole() in ["Admin", "admin", "Sub Admin"]
-      );
-    }`);
-  assert.equal(
-    fingerprint,
-    expected,
-    `isAdmin() body changed unexpectedly.
-If this is intentional multi-app work, update this test and FIRESTORE_RULES_NOTES.md.
-Got: ${fingerprint}`,
-  );
+test("self-service profiles exclude privilege and password fields", () => {
+  const profileFields = extractFunction("profileFields");
+  assert.doesNotMatch(profileFields, /'role'|'admin'|'isMasterAdmin'|'password'|'foodRole'/);
+  assert.match(extractFunction("isSafeWebsiteUserCreate"), /hasOnly\(profileFields\(\)\)/);
+  assert.match(extractFunction("isSafeFoodPortalUserCreate"), /get\('isMasterAdmin', false\) == false/);
 });
 
 test("food helpers are separate from isAdmin", () => {
   const isFoodAdmin = extractFunction("isFoodAdmin");
-  assert.match(isFoodAdmin, /admin@gmail\.com/);
+  assert.doesNotMatch(isFoodAdmin, /token\.email|@gmail|isMasterAdmin/);
   assert.match(isFoodAdmin, /foodRole/);
   assert.doesNotMatch(isFoodAdmin, /token\.get\('role'|token\.get\('admin'|token\.get\('masterAdmin'/);
   assert.match(rules, /function isFoodOrderRestaurantOwner\(\)/);
@@ -195,10 +170,8 @@ test("food-only paths exist; earnings writes stay server-side", () => {
   );
 });
 
-test("hotel booking create allows client app writes for App Issue fix", () => {
-  // Tests that we allowed client create for hotel bookings due to the APP ISSUE fix
-  const hotelRule = rules.match(
-    /match \/hotelBookingData\/\{bookingId\} \{[\s\S]*?allow create: if (?:false|request\.auth != null)/
-  );
-  assert.ok(hotelRule, "hotelBookingData rule missing or modified dangerously");
+test("hotel booking clients cannot skip the pending payment guard", () => {
+  const hotelBlock = rules.split("match /hotelBookingData/{bookingId}")[1].split("match /")[0];
+  assert.match(hotelBlock, /allow create: if isAuthenticated\(\) && isSafeBookingCreate\(\);/);
+  assert.doesNotMatch(hotelBlock, /request\.auth != null/);
 });

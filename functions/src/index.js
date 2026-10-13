@@ -1,8 +1,11 @@
 const { verifyOrderPayment } = require("./lib/orderPayments");
 const { initializeApp } = require("firebase-admin/app");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
+const {syncPartnerOrderView, backfillPartnerOrderViews} = require("./lib/partnerOrderViews");
 const { setGlobalOptions } = require("firebase-functions/v2");
+const { defineSecret } = require("firebase-functions/params");
+const otpHashKey = defineSecret("OTP_HASH_KEY");
 
 const {
   resolveCaller,
@@ -22,7 +25,9 @@ const {
 } = require("./lib/restaurants");
 const {
   startPublicRestaurantApplication,
+  checkPublicPartnerEmail,
   getPublicApplicationUploadUrl,
+  uploadPublicApplicationContent,
   finalizePublicUpload,
   getApplicationFileUrl,
   submitPublicRestaurantApplication,
@@ -86,9 +91,9 @@ function wrap(handler, { roles, timeoutSeconds } = {}) {
   });
 }
 
-function wrapPublic(handler, maxRequests = 20) {
+function wrapPublic(handler, maxRequests = 20, secrets = [], options = {}) {
   return onCall(
-    { cors: true, enforceAppCheck: false, invoker: "public" },
+    { cors: true, enforceAppCheck: false, invoker: "public", secrets, ...options },
     async (request) => {
       try {
         const ip = String(
@@ -120,6 +125,8 @@ function wrapPublic(handler, maxRequests = 20) {
 exports.ensureUserProfile = wrap(async (caller, data) => {
   return ensureUserProfile(caller, data);
 });
+exports.syncPartnerOrderView = onDocumentWritten({document: "orders/{orderId}", retry: true}, event => syncPartnerOrderView(event.params.orderId));
+exports.backfillPartnerOrderViews = wrap(backfillPartnerOrderViews, {roles: ["masterAdmin"], timeoutSeconds: 120});
 
 // ─── Restaurants ──────────────────────────────────────────
 exports.submitRestaurantApplication = wrap(async (caller, data) => {
@@ -130,8 +137,14 @@ exports.startPublicRestaurantApplication = wrapPublic(async () => {
   return startPublicRestaurantApplication();
 });
 
+exports.checkPublicPartnerEmail = wrapPublic(checkPublicPartnerEmail, 8);
+
 exports.getPublicApplicationUploadUrl = wrapPublic(async (data) => {
   return getPublicApplicationUploadUrl(data);
+});
+exports.uploadPublicApplicationContent = wrapPublic(uploadPublicApplicationContent, 8, [], {
+  enforceAppCheck: process.env.FUNCTIONS_EMULATOR !== "true" && process.env.ENFORCE_APP_CHECK !== "false",
+  memory: "512MiB", concurrency: 10,
 });
 
 exports.finalizePublicUpload = wrapPublic(async (data) => {
@@ -139,13 +152,12 @@ exports.finalizePublicUpload = wrapPublic(async (data) => {
 });
 
 exports.getApplicationFileUrl = wrap(async (caller, data) => {
-  requireOwnerOrMaster(caller);
   return getApplicationFileUrl(caller, data);
 });
 
 exports.submitPublicRestaurantApplication = wrapPublic(async (data) => {
-  return submitPublicRestaurantApplication(data);
-}, 8);
+  return submitPublicRestaurantApplication(data, otpHashKey.value());
+}, 8, [otpHashKey]);
 
 exports.reviewRestaurantApplication = wrap(async (caller, data) => {
   requireMaster(caller);

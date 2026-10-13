@@ -15,6 +15,7 @@ const RestRequests = lazy(() => import("./RestRequests"));
 const TodayOrders = lazy(() => import("./TodayOrders"));
 const TableBookings = lazy(() => import("./TableBooking"));
 const RestaurantChat = lazy(() => import("./RestaurantChat"));
+const CustomerChat = lazy(() => import("./CustomerChat"));
 const RestaurantStatsList = lazy(() =>
   import("./restaurantStats/RestaurantStatsList")
 );
@@ -58,6 +59,7 @@ export {
   TodayOrders,
   TableBookings,
   RestaurantChat,
+  CustomerChat,
   RestaurantStatsList,
   RestaurantStatsShell,
   RestaurantStatsOverview,
