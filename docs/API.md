@@ -35,6 +35,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `permanentlyDeleteRestaurant` | Protected | Yes | Master Admin | Standard, 540s timeout | Permanently removes a partner restaurant and its owner-scoped operational data |
 | `ensurePlatformRestaurant` | Protected | Yes | Master Admin | Standard | Provisions official kitchen document |
 | `listOrderableRestaurantsHttp` | Public HTTP | No | Guest | 100 results/request | Lists verified, active restaurants using public fields only |
+| `getFoodDeliveryQuoteHttp` | Protected HTTP | Yes, Bearer ID token | Customer / User | 60 / min | Distance-based delivery fee for the cart before ordering |
 | `createFoodOrderHttp` | Protected HTTP | Yes, Bearer ID token | Customer / User | 30 / min | The customer food-order endpoint; no App Check required |
 | `transitionOrderStatus` | Protected | Yes | Owner / Master | Standard | Advances order state machine |
 | `markOrderDelivered` | Protected | Yes | Master Admin | Standard | Marks order delivered & updates financial ledger |
@@ -249,8 +250,10 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 * **Backend Processing**: Calls the internal `createFoodOrder` domain service. It
   re-queries restaurant-owned menu prices, validates the
   restaurant and cart inside a transaction, and writes the order with status
-  `"New Order"`. It adds a ฿100 delivery charge when the food subtotal is
-  under ฿1000; `amount` in the response is the full total (`Amount`).
+  `"New Order"`. `Receiver.location` is required: before the transaction it
+  prices delivery by the road distance from the restaurant to that pin
+  (฿20–฿120, every order; see [DELIVERY_FEE.md](./DELIVERY_FEE.md)).
+  `amount` in the response is the full total (`Amount`).
   `paymentMethod` is `"Cash on Delivery"`, `"Thai QR"` or `"Stripe"`. Every
   order starts with `isPaymentDone: false` and `verified: false`:
   - Cash on Delivery / Thai QR: master admin confirms the order, then calls
@@ -268,6 +271,9 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
     "alreadyApplied": false,
     "orderId": "generated_order_document_id",
     "amount": 350.00,
+    "foodSubtotal": 300.00,
+    "deliveryCharge": 50,
+    "deliveryDistanceKm": 4.2,
     "restaurant": {
       "ownerId": "REST_OWNER_UID_123",
       "name": "Bangkok Spice Kitchen"
@@ -279,6 +285,23 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 HTTP `401` means the `Authorization` header is missing, expired, malformed, or
 belongs to another Firebase project. A missing Android App Check provider cannot
 reject this endpoint because it performs Firebase Auth verification directly.
+
+#### `getFoodDeliveryQuoteHttp` (Flutter cart delivery fee)
+* **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/getFoodDeliveryQuoteHttp`
+* **Method**: `POST`
+* **Auth**: Firebase ID token in `Authorization: Bearer <token>`; 60 requests / min
+* **Request Body**: `{ "restaurantOwnerId": "REST_OWNER_UID_123", "location": { "latitude": 13.7463, "longitude": 100.5348 } }`
+* **Backend Processing**: Requires a verified, active restaurant with
+  coordinates. Measures the road distance with Google Routes API
+  `computeRouteMatrix` (`GOOGLE_ROUTES_API_KEY` in `functions/.env`), or the
+  straight-line distance if Google is unavailable, caches it in
+  `deliveryDistanceCache`, and returns the fee from the distance bands.
+  `createFoodOrderHttp` reuses the cached distance, so the order is charged
+  the quoted fee.
+* **Response Data**: `{ "ok": true, "data": { "ownerId": "…", "deliveryCharge": 50, "distanceKm": 4.2, "distanceMeters": 4200, "distanceSource": "road", "band": { "fromKm": 3, "toKm": 5 }, "pricingVersion": "distance-v1" } }`
+* **Errors**: `invalid-argument` (bad restaurant ID or location),
+  `failed-precondition` (restaurant closed or without a location),
+  `unauthenticated`, `resource-exhausted`.
 
 #### `verifyFoodOrderPaymentHttp` (Flutter Stripe payment)
 * **URL**: `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/verifyFoodOrderPaymentHttp`

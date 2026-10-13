@@ -7,8 +7,8 @@ const path = require("node:path");
 // Transaction harness commits atomically and rejects reads after writes, as Firestore does.
 function fixture() {
   const records = new Map([
-    ["restaurants/a", { id: "A", ownerId: "a", name: "Restaurant A", status: "Verified", active: true, comission: 10 }],
-    ["restaurants/b", { id: "B", ownerId: "b", name: "Restaurant B", status: "Verified", active: true, comission: 20 }],
+    ["restaurants/a", { id: "A", ownerId: "a", name: "Restaurant A", status: "Verified", active: true, comission: 10, latitude: 13.7563, longitude: 100.5018 }],
+    ["restaurants/b", { id: "B", ownerId: "b", name: "Restaurant B", status: "Verified", active: true, comission: 20, latitude: 13.7244, longitude: 100.5296 }],
     ["food_items/a/items/dish", { itemName: "Rice", price: 100, discount: 10, active: true, deleted: false }],
     ["food_items/b/items/dish", { itemName: "Rice B", price: 400, discount: 0, active: true, deleted: false }],
     ["food_items/thaiseva-platform/items/global", { itemName: "Global", price: 1, active: true }],
@@ -22,6 +22,7 @@ function fixture() {
       path: p, id: p.split("/").at(-1),
       collection: name => ref(`${p}/${name}`), doc: id => ref(`${p}/${id || `auto-${++serial}`}`),
       get: async () => snap(ref(p)),
+      set: async data => apply(p, data),
       create: async data => { if (records.has(p)) throw Object.assign(new Error("exists"), { code: 6 }); records.set(p, data); },
       update: async data => apply(p, data),
     };
@@ -75,17 +76,20 @@ function fixture() {
       riderSnapshot: (id, data) => ({ ...data, id }),
     },
   };
-  const load = name => {
-    const context = { module: { exports: {} }, require: dep => { assert.ok(deps[dep], dep); return deps[dep]; } };
+  // Google Routes API stub: every delivery is 2.5 km by road (30 Baht).
+  const fetch = async () => ({ ok: true, status: 200, json: async () => [{ condition: "ROUTE_EXISTS", distanceMeters: 2500 }] });
+  const load = (name, globals = {}) => {
+    const context = { module: { exports: {} }, require: dep => { assert.ok(deps[dep], dep); return deps[dep]; }, ...globals };
     vm.runInNewContext(readFileSync(path.join(__dirname, `../functions/src/lib/${name}.js`), "utf8"), context);
     return context.module.exports;
   };
+  deps["./deliveryFee"] = load("deliveryFee", { fetch, AbortSignal, console, process: { env: { GOOGLE_ROUTES_API_KEY: "test-key" } } });
   return { ...load("orders"), ...load("menu"), records };
 }
 const admin = { uid: "admin", role: "masterAdmin" };
 const owner = { uid: "a", role: "restaurantOwner" };
 const customer = { uid: "customer" };
-const request = () => ({ Restaurant: { ownerId: "a" }, Items: [{ ItemId: "dish", Quantity: 2 }], Receiver: { name: "Customer", address: "Address", phoneNumber: "123" }, idempotencyKey: "checkout" });
+const request = () => ({ Restaurant: { ownerId: "a" }, Items: [{ ItemId: "dish", Quantity: 2 }], Receiver: { name: "Customer", address: "Address", phoneNumber: "123", location: { latitude: 13.75, longitude: 100.52 } }, idempotencyKey: "checkout" });
 
 test("restaurant owns menu CRUD, including drafts and cross-tenant denials", async () => {
   const f = fixture();
@@ -110,13 +114,13 @@ test("checkout routes to its own menu, verifies prices, applies the delivery cha
   const payload = { ...request(), Amount: 1, deliveryCharge: 35 };
   const results = await Promise.all([f.createFoodOrder(customer, payload), f.createFoodOrder(customer, payload)]);
   assert.equal(results[0].orderId, results[1].orderId);
-  assert.equal(results[0].amount, 280);
-  assert.equal(results[1].amount, 280);
+  assert.equal(results[0].amount, 210);
+  assert.equal(results[1].amount, 210);
   assert.equal(results[1].alreadyApplied, true);
   const saved = f.records.get(`orders/${results[0].orderId}`);
   assert.equal(saved.Restaurant.ownerId, "a");
-  assert.equal(saved.deliveryCharge, 100);
-  assert.equal(saved.Amount, 280);
+  assert.equal(saved.deliveryCharge, 30);
+  assert.equal(saved.Amount, 210);
   assert.equal(saved.Items[0].menuPath, "food_items/a/items/dish");
   assert.equal(saved.currentStatus, "New Order");
   assert.equal(saved.comission, 10);
@@ -131,8 +135,8 @@ test("checkout ignores an app-provided delivery charge", async () => {
   const f = fixture();
   const result = await f.createFoodOrder(customer, { ...request(), deliveryCharge: -100 });
   const saved = f.records.get(`orders/${result.orderId}`);
-  assert.equal(saved.deliveryCharge, 100);
-  assert.equal(saved.Amount, 280);
+  assert.equal(saved.deliveryCharge, 30);
+  assert.equal(saved.Amount, 210);
 });
 
 test("checkout rejects shared fallback, mixed ownership, unavailable items and unverified restaurants", async () => {
@@ -165,8 +169,8 @@ test("only admin confirms; app delivery fee and frozen prices post earnings once
   await f.masterConfirmOrder(admin, { orderId, riderId: "rider", deliveryCharge: 35 });
   await f.masterConfirmOrder(admin, { orderId, riderId: "rider", deliveryCharge: 999 });
   assert.equal(f.records.get(`orders/${orderId}`).foodSubtotal, 180);
-  assert.equal(f.records.get(`orders/${orderId}`).deliveryCharge, 100);
-  assert.equal(f.records.get(`orders/${orderId}`).Amount, 280);
+  assert.equal(f.records.get(`orders/${orderId}`).deliveryCharge, 30);
+  assert.equal(f.records.get(`orders/${orderId}`).Amount, 210);
   await assert.rejects(
     f.transitionOrderStatus(admin, { orderId, toStatus: "Preparing" }),
     { code: "permission-denied" }
@@ -187,15 +191,15 @@ test("only admin confirms; app delivery fee and frozen prices post earnings once
   f.records.set("food_items/a/items/dish", { price: 999, discount: 0, active: false, deleted: true });
   await Promise.all([f.markOrderDelivered(admin, { orderId }), f.markOrderDelivered(admin, { orderId })]);
   const delivered = f.records.get(`orders/${orderId}`);
-  assert.equal(delivered.Amount, 280);
+  assert.equal(delivered.Amount, 210);
   assert.equal(delivered.accounting.commissionBase, 200);
   assert.equal(delivered.accounting.partnerShare, 160);
-  assert.equal(delivered.accounting.adminShare, 120);
+  assert.equal(delivered.accounting.adminShare, 50);
   assert.equal(f.records.get("restaurants/a").orderCount, 1);
   assert.equal(f.records.get("food_items/a/items/dish").count, 2);
 });
 
-test("orders have free delivery when the subtotal is at least 1000", async () => {
+test("orders of 1000 or more pay the distance delivery fee too", async () => {
   const f = fixture();
   f.records.set("food_items/a/items/dish", {
     ...f.records.get("food_items/a/items/dish"),
@@ -206,8 +210,8 @@ test("orders have free delivery when the subtotal is at least 1000", async () =>
   await f.masterConfirmOrder(admin, { orderId, riderId: "rider", deliveryCharge: 100 });
   const confirmed = f.records.get(`orders/${orderId}`);
   assert.equal(confirmed.foodSubtotal, 1000);
-  assert.equal(confirmed.deliveryCharge, 0);
-  assert.equal(confirmed.Amount, 1000);
+  assert.equal(confirmed.deliveryCharge, 30);
+  assert.equal(confirmed.Amount, 1030);
   assert.equal(confirmed.assignedRiderId, "rider");
 });
 
