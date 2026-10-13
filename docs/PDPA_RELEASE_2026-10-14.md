@@ -48,3 +48,6 @@ No production customer account was erased, no manual destructive retention run w
 The release improves technical readiness; it does not certify complete PDPA compliance. Working request/incident/vendor procedures are in PDPA_OPERATING_PROCEDURES.md; the detailed app contracts and rollout plan are in PDPA_APP_IMPACT_AND_RELEASE.md.
 
 Legal references: [Thai government controller guidance](https://www.drt.go.th/guidelinespdpa), [government privacy/transfer policy](https://www.dpe.go.th/en/personal-data-protection-policy), [government guidance on DPO applicability](https://www.secnia.go.th/2023/01/%E0%B9%81%E0%B8%99%E0%B8%A7%E0%B8%97%E0%B8%B2%E0%B8%87%E0%B9%83%E0%B8%99%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B8%84%E0%B8%B1%E0%B8%94%E0%B9%80%E0%B8%A5%E0%B8%B7%E0%B8%AD%E0%B8%81-%E0%B9%80%E0%B8%88%E0%B9%89/).
+
+
+For a simple checklist for the mobile/app developer, read [App-side changes and checks](APP_SIDE_CHECKS.md).
