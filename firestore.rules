@@ -23,7 +23,9 @@ service cloud.firestore {
     // ============================================================
 
     function isAuthenticated() {
-      return request.auth != null;
+      return request.auth != null &&
+        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuspended', false) != true);
     }
 
     // Safe role lookup — never call get().data on a missing doc (that errors and
@@ -43,12 +45,15 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.get('admin', false) == true ||
-        userRole() in ["Admin", "admin", "Sub Admin"]
+        userRole() in ["Admin", "admin"]
       );
     }
 
     function isSuperAdmin() {
-      return isAuthenticated() && (request.auth.token.get('admin', false) == true || userRole() in ["Admin", "admin"]);
+      return isAuthenticated() && (
+        request.auth.token.get('admin', false) == true ||
+        userRole() in ["Admin", "admin"]
+      );
     }
 
     function isOwner(userIdField) {
@@ -215,7 +220,8 @@ service cloud.firestore {
     function isFoodAdmin() {
       return isAuthenticated() && (
         request.auth.token.get('foodRole', '') == 'masterAdmin' ||
-        request.auth.token.get('foodMasterAdmin', false) == true
+        request.auth.token.get('foodMasterAdmin', false) == true ||
+        isAdmin()
       );
     }
 
@@ -270,7 +276,7 @@ service cloud.firestore {
         'BlogDB', 'ServiceDB', 'HotelDB', 'sightseeingPackages',
         'sightseeingPackagesDetails', 'hotelPackages', 'hotelPackageDetails',
         'TestimonialDB', 'FaqDB', 'OfferDB', 'ContentDB', 'localServices',
-        'carDetails', 'foodMenu', 'coupons', 'partners',
+        'carDetails', 'foodMenu', 'coupons',
         'TourDB', 'travelServices', 'Thaiseva_terms', 'food_items', 'packages'
       ];
       allow write: if collection in [
@@ -283,7 +289,6 @@ service cloud.firestore {
 
     match /settings/{docId} {
       allow read: if true;
-      // categories is food portal only; all other settings keep production isAdmin
       allow write: if isAdmin() || (docId in ['categories', 'cuisines'] && isFoodAdmin());
     }
 
@@ -427,6 +432,13 @@ service cloud.firestore {
     // ============================================================
 
     // Production order rules kept; food schema adds Restaurant.ownerId / Receiver / Sender.
+    // PDPA release: minimized views for current Food web readers.
+    // Legacy raw-order restaurant reads remain until mobile compatibility is verified.
+    match /partnerOrderViews/{orderId} {
+      allow read: if isAdmin() || isFoodAdmin() || isFoodOrderRestaurantOwner();
+      allow create, update, delete: if false;
+    }
+
     match /orders/{orderId} {
       // Order creation shifted to Cloud Functions (createFoodOrder) for secure price verification
       allow create: if false;
@@ -439,12 +451,6 @@ service cloud.firestore {
       allow update: if false; // Order cancellation is an admin callable action.
       // Money / delivery / earnings / kitchen status: Cloud Functions (Admin SDK) only
       allow delete: if isAdmin() || isFoodAdmin();
-    }
-
-    // Server-generated delivery/settlement projection. No customer email/account or payment-provider IDs.
-    match /partnerOrderViews/{orderId} {
-      allow read: if isAdmin() || isFoodAdmin() || isFoodOrderRestaurantOwner();
-      allow create, update, delete: if false;
     }
 
     // Dine-in reservations are created and updated only by validated callables.
@@ -525,7 +531,8 @@ service cloud.firestore {
     // ============================================================
 
     match /partners/{partnerId} {
-      allow read: if true;
+      allow read: if isAdmin() ||
+        (isAuthenticated() && request.auth.uid == partnerId);
       allow create, update: if isAdmin() ||
         (isAuthenticated() && request.auth.uid == partnerId);
       allow delete: if isAdmin();
@@ -737,23 +744,42 @@ service cloud.firestore {
     // ============================================================
 
     match /chatRooms/{roomId} {
-      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant() || (isAuthenticated() && roomId == "CustomerSupport");
-      allow create: if isAdmin() || chatCreateSelf();
-      allow update: if isAdmin() || isFoodAdmin() || isChatParticipant() || (
-        isAuthenticated() && roomId == "CustomerSupport"
-      );
+      allow read: if isAdmin() || isFoodAdmin() || (roomId != "CustomerSupport" && isChatParticipant());
+      allow create: if isAdmin() || (roomId != "CustomerSupport" && chatCreateSelf());
+      allow update: if isAdmin() || isFoodAdmin() || (roomId != "CustomerSupport" && isChatParticipant());
       allow delete: if isAdmin();
     }
 
     match /chats/{chatId} {
-      allow read: if isAdmin() || isFoodAdmin() || isChatParticipant() || (isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport");
-      allow create: if isAdmin() || isFoodAdmin() || chatCreateSelf() || (isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport");
-      allow update: if isAdmin() || isFoodAdmin() || isChatParticipant() || (isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport");
+      function supportChat() { return chatId.matches('.*_CustomerSupport'); }
+      function ownSupportChat() {
+        return isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport";
+      }
+      function safeSupportAppend() {
+        let previous = resource.data.get('messages', []);
+        let incoming = request.resource.data.get('messages', []);
+        return incoming == previous || (
+          incoming.size() == previous.size() + 1 &&
+          incoming == previous.concat([incoming[incoming.size() - 1]]) &&
+          incoming[incoming.size() - 1].get('senderId', '') == request.auth.uid
+        );
+      }
+      allow read: if isAdmin() || isFoodAdmin() ||
+        (supportChat() ? ownSupportChat() : isChatParticipant());
+      allow create: if isAdmin() || isFoodAdmin() ||
+        (supportChat() ? (ownSupportChat() && (
+          request.resource.data.get('messages', []).size() == 0 ||
+          (request.resource.data.get('messages', []).size() == 1 &&
+           request.resource.data.messages[0].get('senderId', '') == request.auth.uid))) : chatCreateSelf());
+      allow update: if isAdmin() || isFoodAdmin() ||
+        (supportChat() ? (ownSupportChat() && safeSupportAppend()) : isChatParticipant());
       allow delete: if isAdmin();
-      
-      // APP ISSUE: Subcollection messages rule for CustomerSupport
+
       match /messages/{messageId} {
-        allow read, write: if isAuthenticated() && chatId == request.auth.uid + "_CustomerSupport";
+        allow read: if isAdmin() || isFoodAdmin() || ownSupportChat();
+        allow create: if isAdmin() || isFoodAdmin() || (ownSupportChat() &&
+          request.resource.data.get('senderId', '') == request.auth.uid);
+        allow update, delete: if isAdmin() || isFoodAdmin();
       }
     }
 
@@ -872,6 +898,14 @@ service cloud.firestore {
     }
 
     // Privacy operations are server-only; clients never mark erasure complete.
+    match /privacyRetentionReviews/{reviewId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /privacyRetentionRuns/{runId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
     match /privacyErasureJobs/{jobId} {
       allow read: if isAdmin();
       allow write: if false;

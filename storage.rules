@@ -46,7 +46,7 @@ service firebase.storage {
       allow update: if false;
       allow delete: if isAdmin() || isFoodAdmin();
     }
-    // Delivery photos are private. Legacy paths use the authorized photo callable.
+    // Delivery photos are private; legacy partner readers use the authorized callable.
     match /food_orders/{uid}/{file=**} {
       allow read: if owner(uid) || isAdmin() || isFoodAdmin();
       allow create, update: if owner(uid) &&
@@ -73,9 +73,9 @@ service firebase.storage {
       allow read: if true;
       allow write: if isAdmin() && sized(50 * 1024 * 1024);
     }
-    // Unclassified legacy root objects are staff-only; publish catalog assets under explicit public folders.
+    // Existing dashboard image links remain readable; new root uploads are denied.
     match /{fileName} {
-      allow read: if fileName.matches('[0-9]+-file') && (isAdmin() || isFoodAdmin());
+      allow read: if fileName.matches('[0-9]+-file');
       allow write: if false;
     }
     match /{folder}/{file=**} {

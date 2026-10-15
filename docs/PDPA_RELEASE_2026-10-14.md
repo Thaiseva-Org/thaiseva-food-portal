@@ -1,3 +1,5 @@
+> Historical release notes. Current status (15 October): shared order/photo rules deployed; 11 delivery-photo tokens revoked and verified. See [the current remaining-work list](PDPA_REMAINING.md).
+
 # PDPA deployment and remaining work — 14 October 2026
 
 ## Released
@@ -51,3 +53,11 @@ Legal references: [Thai government controller guidance](https://www.drt.go.th/gu
 
 
 For a simple checklist for the mobile/app developer, read [App-side changes and checks](APP_SIDE_CHECKS.md).
+
+## Status update: 15 October 2026
+
+The 14 October scheduled run removed 21 expired messages. The latest checked run (15 October, 01:30 India time) reported no failures; five records still need review. Earlier statements about those 21 messages awaiting cleanup are superseded. See [current remaining work](PDPA_REMAINING.md). Privacy contact: ThaiSeva - support@thaiseva.com.
+
+The owner subsequently confirmed app-team completion. On 15 October the shared order/photo rules were deployed after 10 access/integration tests passed. Current Firestore SHA-256: `299baac60326c47923bf8af4b4308357ec8beb1c332f1af987149794c4e7c5a6`; Storage: `3c4bc0f4755775168c80b7eee91ecea77fd2878ef1d2fab16ba6e0abe4529981`. These supersede earlier compatibility-rule status. Suspension, support-chat and privacy-review protections were preserved. Unclassified legacy root files retain previous access pending classification.
+
+Verified 15 October: permanent download tokens were removed from all 11 existing delivery-photo objects under `food_orders/`. All 11 old links denied unauthenticated access. Files were preserved. Use the authorized preview flow; other legacy file categories remain under review.

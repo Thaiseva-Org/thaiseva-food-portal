@@ -80,6 +80,14 @@ Repositories: [Food](https://github.com/Thaiseva-Org/thaiseva-food-portal), [Adm
 
 ## What is still waiting
 
-After these checks pass on mobile and old attachment readers, engineering can switch on the stricter photo/raw-order rules and revoke old private links. Old root-level files must be classified first so public catalog images are not broken.
+Update 15 October: the owner confirmed app-team completion and the stricter photo/raw-order rules are now deployed. Production app checks still need evidence from the app team. Old root-level files must be classified first so public catalog images are not broken.
 
 The release also needs business/privacy work: historical request review, MFA and credential work, vendor/transfer evidence, approved retention periods and incident handling. See [the release and remaining-work document](PDPA_RELEASE_2026-10-14.md). Those tasks do not require changing the normal order or payment screens.
+
+## Update: 15 October 2026
+
+Your app team owns the mobile changes and the owner has confirmed completion. Shared order/photo strict rules are now deployed; older app versions may lose restaurant-order or photo access. The admin website now checks the real Admin role/claim and blocks suspended or unverified accounts; this does not change mobile login or ordering.
+
+Privacy contact: **ThaiSeva - support@thaiseva.com**. See [the current remaining-work list](PDPA_REMAINING.md) for owners, effects and completion steps.
+
+Verified 15 October: permanent download tokens were removed from all 11 existing delivery-photo objects under `food_orders/`. All 11 old links denied unauthenticated access. Files were preserved. Use the authorized preview flow; other legacy file categories remain under review.
