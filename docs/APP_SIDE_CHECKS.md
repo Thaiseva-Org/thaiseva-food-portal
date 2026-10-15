@@ -93,3 +93,7 @@ Privacy contact: **ThaiSeva - support@thaiseva.com**. See [the current remaining
 Verified 15 October: permanent download tokens were removed from all 11 existing delivery-photo objects under `food_orders/`. All 11 old links denied unauthenticated access. Files were preserved. Use the authorized preview flow; other legacy file categories remain under review.
 
 Current owner scope: no admin MFA implementation; existing credentials go to the vault without provider-key rotation. See [technical status and reasons](PDPA_TECHNICAL_STATUS.md) for remaining runtime integration and app checks.
+
+## Additional identity-document migration
+
+The audit found 53 passport/licence images and 12 other user-scoped tokenized objects whose readers are not yet migrated. These are separate from the completed delivery-photo and partner-document changes. Add an authorized identity-document preview, migrate Admin/mobile readers, then revoke their private tokens. The delivery-photo API does not serve identity documents. See [check results](PDPA_CHECK_RESULTS_2026-10-15.md).

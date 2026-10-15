@@ -1,3 +1,5 @@
+> Latest check: [15 October results, fixes and exact remaining gaps](PDPA_CHECK_RESULTS_2026-10-15.md). Includes 31 additional private-link revocations and the deployed consent-bypass fix.
+
 > Current engineering scope: see [technical PDPA status and reasons](PDPA_TECHNICAL_STATUS.md). Owner requested no admin MFA implementation and vault storage without provider-key rotation. These are scope decisions, not completed remediation claims.
 
 # ThaiSeva: remaining privacy work

@@ -1,3 +1,5 @@
+> Latest check: [15 October results, fixes and exact remaining gaps](PDPA_CHECK_RESULTS_2026-10-15.md). Includes 31 additional private-link revocations and the deployed consent-bypass fix.
+
 # ThaiSeva: technical PDPA status
 
 Updated 15 October 2026. Contact: ThaiSeva - support@thaiseva.com.
