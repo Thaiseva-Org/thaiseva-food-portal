@@ -2,11 +2,11 @@
 
 Contact: ThaiSeva - support@thaiseva.com. This report records checked configuration and bounded tests. It does not certify full legal compliance. No admin MFA or provider-key rotation was added.
 
-## 1. Vault connection: checked, blocked by IAM
+## 1. Vault connection: completed; separate webhook configuration gap
 
-Six distinct credential values are stored in enabled Google Secret Manager versions. The runtime identity has no inherited Secret Accessor role and no access grant on the new secrets. The current operator cannot set secret IAM policies. Existing environment values were preserved so services keep running.
+The runtime IAM grant is now verified. All 72 affected functions were connected to the existing vault versions and returned ACTIVE. Migrated plaintext fields were removed. A full check of all 115 functions found no nonempty credential-named values in current runtime/build environment configuration. Five credential assignments were also removed from ignored local environment files. No keys were rotated.
 
-A cloud administrator must grant roles/secretmanager.secretAccessor on each required secret to its consuming runtime identity. Then bind the correct versions, remove plaintext environment entries and test email, OTP, payment checkout/verification, webhooks and notifications. Keep the two different webhook secrets separate. Storing a copy is complete; vault-only runtime integration remains incomplete. Exact secret/consumer mappings and administrator commands are in the restricted local vault handoff, not this public document.
+The Asia-east2 booking webhook already lacked its signing secret before this migration and still needs the correct endpoint-specific secret confirmed and bound. Food webhook rejection of an unsigned request was expected. See [completed vault migration and test limits](VAULT_CONNECTION_2026-10-15.md).
 
 ## 2. Old files and links: checked, partly fixed
 

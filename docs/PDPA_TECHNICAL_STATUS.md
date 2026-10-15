@@ -1,3 +1,5 @@
+> Vault update: [72 functions connected and current configuration verified](VAULT_CONNECTION_2026-10-15.md). The earlier vault IAM blocker is resolved. A pre-existing booking-webhook signing-secret gap remains separate.
+
 > Latest check: [15 October results, fixes and exact remaining gaps](PDPA_CHECK_RESULTS_2026-10-15.md). Includes 31 additional private-link revocations and the deployed consent-bypass fix.
 
 # ThaiSeva: technical PDPA status
@@ -23,7 +25,7 @@ This is an engineering control checklist, not a certificate of full legal compli
 
 | Work | Why it is still open | Completion evidence |
 | --- | --- | --- |
-| Finish vault runtime integration | Six distinct existing credential values were copied into enabled Secret Manager versions without rotation. Two different webhook secrets were preserved separately. Runtime access is missing and the operator cannot grant secret-accessor IAM. A vault copy alone does not remove plaintext runtime environment configuration. | Runtime identity can read only the secrets it needs; consuming functions use secret bindings; old plaintext environment entries are removed; email/OTP/payment/notification smoke checks pass. |
+| Booking-webhook signing-secret configuration | Vault migration is complete, but the Asia-east2 booking webhook already lacked its endpoint signing secret. | Confirm the correct existing endpoint-specific secret, bind it from the vault, then verify provider delivery without confusing it with the Food endpoint secret. |
 | Classify other legacy files and permanent links | The completed revocation covers delivery photos only. Other root objects may be public catalog assets or private material, and must not be handled identically. | Object classification, corrected storage paths/rules, private-link revocation and public-image checks. |
 | Finish erasure coverage and review cases | Five retention flags and remaining orders/bookings/shared messages/copies cannot safely be resolved by an automatic guess. | Verified case decisions and disposal/justified-retention evidence for each category, including derived views. |
 | Verify backup/export/log disposal and recovery | Live record deletion does not prove exports, backups or logs have expired. Restore behavior and access must also be checked. | Inventory, restricted permissions, disposal/expiry settings, restore procedure that respects prior erasures, and a controlled recovery test. |
@@ -41,4 +43,4 @@ See [current remaining work](PDPA_REMAINING.md) and [app checks](APP_SIDE_CHECKS
 
 ## Vault storage result
 
-Six distinct credential values are now stored in Google Secret Manager in project gothai-ffea1. No credential values were printed, committed to Git or rotated. The existing OTP/email-provider vault secrets were left unchanged. The new secrets have no runtime-access grant; the runtime account has no inherited Secret Accessor role. The current operator lacks secretmanager.secrets.setIamPolicy. Existing runtime environment values and local ignored environment files remain to avoid outages until a cloud administrator grants access and the consumer migration is tested. Storage copy is complete; vault-only runtime use is not complete.
+Six existing credential values are stored without rotation. Runtime Secret Accessor access was granted and verified. All 72 affected functions were migrated to pinned vault references and are ACTIVE. Across all 115 functions, no nonempty credential-named values remain in the checked current runtime/build environment fields. Five local ignored environment assignments were removed. See [completed migration and limits](VAULT_CONNECTION_2026-10-15.md). Historical copies and the pre-existing missing booking-webhook signing secret remain separate review items.
