@@ -1,3 +1,5 @@
+> Latest follow-up: [deployed identity previews, deletion guards, lifecycle dates and daily backups](PDPA_FOLLOWUP_2026-10-15.md). The earlier no-backup finding is superseded; first backup and restore verification remain open.
+
 # ThaiSeva technical privacy check - 15 October 2026
 
 Contact: ThaiSeva - support@thaiseva.com. This report records checked configuration and bounded tests. It does not certify full legal compliance. No admin MFA or provider-key rotation was added.

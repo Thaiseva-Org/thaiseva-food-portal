@@ -1,3 +1,5 @@
+> Latest follow-up: [deployed identity previews, deletion guards, lifecycle dates and daily backups](PDPA_FOLLOWUP_2026-10-15.md). The earlier no-backup finding is superseded; first backup and restore verification remain open.
+
 > Vault update: [72 functions connected and current configuration verified](VAULT_CONNECTION_2026-10-15.md). The earlier vault IAM blocker is resolved. A pre-existing booking-webhook signing-secret gap remains separate.
 
 > Latest check: [15 October results, fixes and exact remaining gaps](PDPA_CHECK_RESULTS_2026-10-15.md). Includes 31 additional private-link revocations and the deployed consent-bypass fix.

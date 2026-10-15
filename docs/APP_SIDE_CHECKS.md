@@ -99,3 +99,7 @@ Current owner scope: no admin MFA implementation; existing credentials go to the
 The audit found 53 passport/licence images and 12 other user-scoped tokenized objects whose readers are not yet migrated. These are separate from the completed delivery-photo and partner-document changes. Add an authorized identity-document preview, migrate Admin/mobile readers, then revoke their private tokens. The delivery-photo API does not serve identity documents. See [check results](PDPA_CHECK_RESULTS_2026-10-15.md).
 
 Vault connection is complete for 72 affected functions, with no additional app-screen changes. See [verification and separate webhook configuration gap](VAULT_CONNECTION_2026-10-15.md). Preserve vault bindings during future backend deployments.
+
+## Identity API now available
+
+`getIdentityDocument` (asia-east2) is deployed and the Admin self-drive reader uses it. Mobile still needs the reader migration before the 53 identity-document links can be revoked. See [exact payload, response, tests and limits](PDPA_FOLLOWUP_2026-10-15.md).

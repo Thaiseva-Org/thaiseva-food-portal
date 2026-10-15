@@ -70,35 +70,24 @@ test("production hotel / travel / inventory paths remain (do not delete)", () =>
   }
 });
 
-test("no loose open-auth write blocks reintroduced", () => {
-  // Live production (2026-08-12) includes a scoped CustomerSupport chat
-  // exception. Keep it; do not add unscoped `if request.auth != null`.
+test("support messages require ownership and sender checks without broad client mutation", () => {
   assert.doesNotMatch(rules, /allow read, write: if request\.auth != null;/);
-  assert.equal(
-    (rules.match(/allow read, write: if isAuthenticated\(\) && chatId == request\.auth\.uid/g) || []).length,
-    1, // Only matches for messages subcollection
-    "only the production CustomerSupport chat pair may use open read/write",
-  );
-  assert.match(
-    rules,
-    /match \/chats\/\{chatId\} \{[\s\S]*?chatId == request\.auth\.uid \+ "_CustomerSupport"/,
-  );
-  assert.doesNotMatch(
-    rules,
-    /match \/calls\/\{callId\} \{[\s\S]{0,80}allow read, write: if request\.auth/,
-  );
+  assert.doesNotMatch(rules, /allow read, write: if isAuthenticated\(\) && chatId == request\.auth\.uid/);
+  const support = rules.split("match /chats/{chatId}")[1].split("match /calls/{callId}")[0];
+  assert.match(support, /chatId == request\.auth\.uid \+ "_CustomerSupport"/);
+  assert.match(support, /ownSupportChat\(\) && safeSupportAppend\(\)/);
+  assert.match(support, /get\('senderId', ''\) == request\.auth\.uid/);
+  assert.match(support, /allow update, delete: if isAdmin\(\) \|\| isFoodAdmin\(\);/);
 });
 
-test("food order read allows restaurant owner schema without second loose orders block", () => {
-  assert.equal(
-    rules.split("match /orders/{orderId}").length - 1,
-    1,
-    "exactly one orders match (no APP duplicate override)",
-  );
-  assert.match(
-    rules,
-    /allow read: if isAdmin\(\) \|\| isFoodAdmin\(\)[\s\S]*?isFoodOrderRestaurantOwner\(\)/,
-  );
+test("restaurant owners read minimized views and cannot read complete orders by restaurant ownership", () => {
+  assert.equal(rules.split("match /orders/{orderId}").length - 1, 1);
+  const orders = rules.split("match /orders/{orderId}")[1].split("match /")[0];
+  const views = rules.split("match /partnerOrderViews/{orderId}")[1].split("match /")[0];
+  assert.doesNotMatch(orders, /isFoodOrderRestaurantOwner\(\)/);
+  assert.match(orders, /isFoodOrderReceiver\(\)/);
+  assert.match(views, /isFoodOrderRestaurantOwner\(\)/);
+  assert.match(views, /allow create, update, delete: if false/);
 });
 
 test("food order writes require backend authorization", () => {
