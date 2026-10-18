@@ -128,6 +128,22 @@ service firebase.storage {
       allow read: if folder in ['chat', 'chats', 'chatMedia'] && (owner(uid) || isAdmin() || isFoodAdmin());
       allow write: if folder in ['chat', 'chats', 'chatMedia'] && owner(uid) && sized(20 * 1024 * 1024);
     }
+    // Large historical support attachments require an API-issued, UID-bound
+    // one-minute grant. Deletion revokes access through the same metadata record.
+    match /customer-support-v2/{uid}/{attachmentId} {
+      function grantedLegacyDownload() {
+        let attachment = firestore.get(/databases/(default)/documents/customerSupportAttachmentsV2/$(attachmentId)).data;
+        return attachment.get('legacy', false) == true &&
+          attachment.get('size', 0) > 8 * 1024 * 1024 &&
+          attachment.customerId == uid &&
+          attachment.storagePath == 'customer-support-v2/' + uid + '/' + attachmentId &&
+          attachment.get('messageId', null) is string &&
+          attachment.get('deleting', false) == false &&
+          attachment.get('downloadGrants', {}).get(request.auth.uid, request.time) > request.time;
+      }
+      allow get: if authenticated() && grantedLegacyDownload();
+      allow list, write: if false;
+    }
     match /{file=**} {
       allow read, write: if false;
     }
