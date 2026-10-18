@@ -3,7 +3,7 @@ rules_version = '2';
 // SHARED multi-app Firestore rules (website + hotel/travel/cars + food portal).
 //
 // DO NOT change hotel / travel / car / van / chat / catalog / contact blocks
-// or the body of isAdmin() for food-only needs — that breaks other products.
+// or the body of isAdmin() for food-only needs â€” that breaks other products.
 //
 // Food portal changes ONLY:
 //   - helpers under "FOOD PORTAL HELPERS ONLY"
@@ -28,7 +28,7 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuspended', false) != true);
     }
 
-    // Safe role lookup — never call get().data on a missing doc (that errors and
+    // Safe role lookup â€” never call get().data on a missing doc (that errors and
     // denies the whole rule, even when OR'd with true).
     function userRole() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -309,7 +309,7 @@ service cloud.firestore {
 
     // ============================================================
     // WEBSITE MEDIA & DYNAMIC CONTENT (Images, Banners, QR, Stats)
-    // Strictly scoped to 'image' collection — read-only for public, admin write
+    // Strictly scoped to 'image' collection â€” read-only for public, admin write
     // Does NOT touch or affect any other apps, collections, or helpers.
     // ============================================================
 
@@ -361,11 +361,11 @@ service cloud.firestore {
       allow update: if isAdmin() && resource.data.status == 'Pending' &&
         request.resource.data.status == 'Cancelled' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt']);
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // ============================================================
-    // BOOKINGS — one rule set per collection (no open OR duplicates)
+    // BOOKINGS â€” one rule set per collection (no open OR duplicates)
     // ============================================================
 
     match /hotelBookingData/{bookingId} {
@@ -411,7 +411,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Soft holds (legacy) — Functions only
+    // Soft holds (legacy) â€” Functions only
     match /hotelBookingHolds/{holdId} {
       allow read: if isAdmin() ||
         (isAuthenticated() &&
@@ -420,7 +420,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // Simple stock locks — Functions write only
+    // Simple stock locks â€” Functions write only
     match /hotelLocks/{lockId} {
       allow read: if isAdmin() ||
         (isAuthenticated() && resource.data.userId == request.auth.uid);
@@ -468,16 +468,9 @@ service cloud.firestore {
     match /foodRestaurantChats/{ownerId} {
       allow read: if isFoodAdmin() ||
         (isAuthenticated() && request.auth.uid == ownerId);
-      allow create: if isFoodAdmin() ||
-        (isAuthenticated()
-          && request.auth.uid == ownerId
-          && request.resource.data.ownerId == request.auth.uid);
-      allow update: if isFoodAdmin() ||
-        (isAuthenticated()
-          && request.auth.uid == ownerId
-          && resource.data.ownerId == request.auth.uid
-          && request.resource.data.ownerId == resource.data.ownerId);
-      allow delete: if isFoodAdmin();
+      // Sending/read receipts are authorized by foodPartnerChat (Admin SDK).
+      // Keep legacy reads while old clients migrate; never permit client mutation.
+      allow create, update, delete: if false;
     }
 
     // Dedicated food support inbox. Customers send through the
@@ -560,7 +553,7 @@ service cloud.firestore {
     }
 
     match /HotelDB/{hotelId}/availability/{availabilityId} {
-      // Public read (do not call isAdmin() here — missing users/{uid} must not deny)
+      // Public read (do not call isAdmin() here â€” missing users/{uid} must not deny)
       allow read: if true;
       allow write: if isAdmin();
     }
@@ -674,7 +667,7 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // SHOPS / CLUBS — admin write, auth read
+    // SHOPS / CLUBS â€” admin write, auth read
     // ============================================================
 
     match /shops/{shopId} {
@@ -740,7 +733,7 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // CHAT / CALLS — participant scoped (not global)
+    // CHAT / CALLS â€” participant scoped (not global)
     // ============================================================
 
     match /chatRooms/{roomId} {
@@ -880,6 +873,26 @@ service cloud.firestore {
 
     match /hotel_statistics/{docId} {
       allow read, write: if isAdmin();
+    }
+
+    match /shops/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /clubs/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /attraction_categories/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /attractions/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // ============================================================

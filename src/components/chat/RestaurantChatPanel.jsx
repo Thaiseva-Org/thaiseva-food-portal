@@ -1,159 +1,188 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Timestamp,
-  arrayUnion,
-  collection,
-  doc,
-  onSnapshot,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
-import { db } from "../../../firebaseConfig";
 import { useAuth } from "../../AuthContext";
 import { messageTime } from "../../utils/restaurantChat";
-
-const INITIAL_MESSAGE_COUNT = 100;
-
-const timestampMillis = (value) => {
-  if (value?.toMillis) return value.toMillis();
-  if (value?.toDate) return value.toDate().getTime();
-  const parsed = value ? new Date(value).getTime() : 0;
-  return Number.isFinite(parsed) ? parsed : 0;
-};
+import { partnerChatApi } from "../../api/partnerChat";
+import { newIdempotencyKey } from "../../api/client";
 
 const displayName = (room) =>
-  room?.userInfo?.displayName ||
-  room?.userInfo?.name ||
-  room?.restaurantName ||
-  room?.ownerName ||
-  "Restaurant partner";
+  room?.restaurantName || room?.userInfo?.displayName || "Restaurant partner";
+const mergeMessages = (items) => [
+  ...new Map(items.map((item) => [item.id, item])).values(),
+];
 
 const RestaurantChatPanel = ({ admin = false }) => {
   const { currentUser, roleData, resData } = useAuth();
+  const currentUid = currentUser?.uid;
   const [rooms, setRooms] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [messages, setMessages] = useState([]);
-  const [visibleCount, setVisibleCount] = useState(INITIAL_MESSAGE_COUNT);
+  const [cursor, setCursor] = useState(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [showingOlder, setShowingOlder] = useState(false);
   const endRef = useRef(null);
+  const pending = useRef(null);
+  const generation = useRef(0);
+  const older = useRef(false);
+  const chatId = admin ? selectedId : currentUid || "";
 
   useEffect(() => {
-    if (!admin || !currentUser) return undefined;
-    return onSnapshot(
-      collection(db, "foodRestaurantChats"),
-      (snapshot) => {
-        const nextRooms = snapshot.docs
-          .map((item) => ({ id: item.id, ...item.data() }))
-          .sort(
-            (left, right) =>
-              timestampMillis(right.updatedAt) - timestampMillis(left.updatedAt)
-          );
-        setRooms(nextRooms);
-        setSelectedId((value) =>
-          nextRooms.some((room) => room.id === value)
-            ? value
-            : nextRooms[0]?.id || ""
-        );
-        setError("");
-      },
-      () => setError("Restaurant chats could not be loaded.")
-    );
-  }, [admin, currentUser]);
-
-  const chatId = admin ? selectedId : currentUser?.uid || "";
-
-  useEffect(() => {
-    if (!chatId) return undefined;
-    return onSnapshot(
-      doc(db, "foodRestaurantChats", chatId),
-      (snapshot) => {
-        const value = snapshot.data();
-        setMessages(Array.isArray(value?.messages) ? value.messages : []);
-        setError("");
-      },
-      () => setError("Messages could not be loaded.")
-    );
-  }, [chatId]);
+    if (!admin || !currentUid) return undefined;
+    let alive = true;
+    let timer;
+    async function poll() {
+      try {
+        if (!document.hidden) {
+          const result = await partnerChatApi("inbox");
+          if (alive) {
+            setRooms((previous) => [
+              ...result.items,
+              ...previous.filter(
+                (item) => !result.items.some((fresh) => fresh.id === item.id),
+              ),
+            ]);
+            setInboxCursor(result.nextCursor);
+            setSelectedId((value) => value || result.items[0]?.id || "");
+          }
+        }
+      } catch (err) {
+        if (alive) setError(err.message);
+      }
+      if (alive) timer = setTimeout(poll, 10000);
+    }
+    poll();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [admin, currentUid]);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      endRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [messages]);
+    generation.current += 1;
+    setMessages([]);
+    setCursor(null);
+    setError("");
+    setText("");
+    pending.current = null;
+    older.current = false;
+    setShowingOlder(false);
+    if (!chatId || !currentUid) return undefined;
+    let alive = true;
+    let timer;
+    async function poll() {
+      try {
+        if (!document.hidden && !older.current) {
+          const result = await partnerChatApi("messages", { ownerId: chatId });
+          if (alive) {
+            setMessages(result.items);
+            setCursor(result.nextCursor);
+            const room = result.conversation;
+            if (
+              room?.lastMessageId &&
+              (admin
+                ? room.isReadByAdmin === false
+                : room.isReadByOwner === false)
+            ) {
+              await partnerChatApi("read", {
+                ownerId: chatId,
+                throughMessageId: room.lastMessageId,
+              });
+            }
+          }
+        }
+      } catch (err) {
+        if (alive) setError(err.message);
+      }
+      if (alive) timer = setTimeout(poll, 5000);
+    }
+    async function start() {
+      try {
+        if (!admin) await partnerChatApi("open");
+      } catch (err) {
+        if (alive) setError(err.message);
+        return;
+      }
+      if (alive) poll();
+    }
+    start();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      generation.current += 1;
+    };
+  }, [admin, chatId, currentUid]);
 
-  useEffect(() => setVisibleCount(INITIAL_MESSAGE_COUNT), [chatId]);
-
+  const [inboxCursor, setInboxCursor] = useState(null);
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedId),
-    [rooms, selectedId]
+    [rooms, selectedId],
   );
   const visibleMessages = useMemo(
-    () => messages.slice(-visibleCount),
-    [messages, visibleCount]
+    () =>
+      [...messages].sort(
+        (a, b) =>
+          (messageTime(a)?.getTime() || 0) - (messageTime(b)?.getTime() || 0),
+      ),
+    [messages],
   );
 
-  const selectRoom = async (room) => {
-    setSelectedId(room.id);
-    if (room.isReadByAdmin !== false) return;
+  const selectRoom = (room) => {
+    if (!sending) setSelectedId(room.id);
+  };
+  const showEarlier = async () => {
+    if (!cursor || loadingOlder) return;
+    const version = generation.current;
+    setLoadingOlder(true);
+    older.current = true;
+    setShowingOlder(true);
     try {
-      await updateDoc(doc(db, "foodRestaurantChats", room.id), {
-        isReadByAdmin: true,
+      const result = await partnerChatApi("messages", {
+        ownerId: chatId,
+        cursor,
       });
-    } catch {
-      setError("Conversation could not be marked as read.");
+      if (generation.current === version) {
+        setMessages((previous) =>
+          mergeMessages([...previous, ...result.items]),
+        );
+        setCursor(result.nextCursor);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingOlder(false);
     }
   };
-
   const sendMessage = async (event) => {
     event.preventDefault();
-    const body = text.trim();
-    if (!body || !chatId || !currentUser || sending) return;
-    const ownerId = admin
-      ? selectedRoom?.ownerId || selectedRoom?.id
-      : currentUser.uid;
-    const restaurantName = admin
-      ? displayName(selectedRoom)
-      : resData?.name || roleData?.displayName || currentUser.email;
-    const message = {
-      id: `${currentUser.uid}_${Date.now()}`,
-      text: body,
-      senderId: currentUser.uid,
-      createdAt: Timestamp.now(),
-    };
-
+    if (!text.trim() || !chatId || !currentUid || sending) return;
+    const version = generation.current;
+    if (!pending.current)
+      pending.current = {
+        ownerId: chatId,
+        text: text.trim(),
+        requestId: newIdempotencyKey("food-chat"),
+      };
+    setSending(true);
+    setError("");
     try {
-      setSending(true);
-      setError("");
-      await setDoc(
-        doc(db, "foodRestaurantChats", chatId),
-        {
-          ownerId,
-          userId: ownerId,
-          participants: [currentUser.uid, ownerId].filter(
-            (value, index, values) =>
-              value && values.indexOf(value) === index
-          ),
-          userInfo: {
-            uid: ownerId,
-            displayName: restaurantName,
-            serviceCategory: "Restaurant",
-            role: "Restaurant",
-          },
-          restaurantName,
-          messages: arrayUnion(message),
-          lastMessage: { text: body },
-          isReadByAdmin: admin,
-          updatedAt: Timestamp.now(),
-        },
-        { merge: true }
-      );
-      setText("");
-    } catch (sendError) {
-      console.error(sendError);
-      setError("Message could not be sent. Please try again.");
+      const result = await partnerChatApi("send", pending.current);
+      if (generation.current === version) {
+        pending.current = null;
+        setText("");
+        setMessages((previous) => mergeMessages([result.message, ...previous]));
+        older.current = false;
+        setShowingOlder(false);
+        requestAnimationFrame(() =>
+          endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
+        );
+      }
+    } catch (err) {
+      if (generation.current === version)
+        setError(
+          `${err.message} Retry sends the same message once; cancel retry to change it.`,
+        );
     } finally {
       setSending(false);
     }
@@ -177,6 +206,7 @@ const RestaurantChatPanel = ({ admin = false }) => {
                 <button
                   type="button"
                   key={room.id}
+                  disabled={sending}
                   onClick={() => selectRoom(room)}
                   className={`w-full p-4 text-left border-b border-blue-900/80 transition-all duration-200 flex flex-col gap-1.5 ${
                     selectedId === room.id
@@ -187,9 +217,7 @@ const RestaurantChatPanel = ({ admin = false }) => {
                   <span className="flex items-center justify-between w-full">
                     <span
                       className={`font-semibold truncate pr-2 ${
-                        selectedId === room.id
-                          ? "text-white"
-                          : "text-blue-100"
+                        selectedId === room.id ? "text-white" : "text-blue-100"
                       }`}
                     >
                       {displayName(room)}
@@ -207,7 +235,9 @@ const RestaurantChatPanel = ({ admin = false }) => {
                   >
                     {typeof room.lastMessage === "string"
                       ? room.lastMessage
-                      : room.lastMessage?.text || room.lastMessage?.message || "Open conversation"}
+                      : room.lastMessage?.text ||
+                        room.lastMessage?.message ||
+                        "Open conversation"}
                   </span>
                 </button>
               ))
@@ -215,6 +245,27 @@ const RestaurantChatPanel = ({ admin = false }) => {
               <p className="p-5 text-sm text-blue-300 text-center mt-4">
                 No restaurant chats yet.
               </p>
+            )}
+            {inboxCursor && (
+              <button
+                type="button"
+                className="p-4 text-sm text-blue-200"
+                onClick={async () => {
+                  try {
+                    const result = await partnerChatApi("inbox", {
+                      cursor: inboxCursor,
+                    });
+                    setRooms((previous) =>
+                      mergeMessages([...previous, ...result.items]),
+                    );
+                    setInboxCursor(result.nextCursor);
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                Load more conversations
+              </button>
             )}
           </aside>
         )}
@@ -246,6 +297,19 @@ const RestaurantChatPanel = ({ admin = false }) => {
             {error && (
               <div className="rounded-xl bg-danger-50 border border-danger-100 p-3 text-sm text-danger-700 shadow-sm">
                 {error}
+                {pending.current && (
+                  <button
+                    type="button"
+                    disabled={sending}
+                    className="ml-2 underline"
+                    onClick={() => {
+                      pending.current = null;
+                      setError("");
+                    }}
+                  >
+                    Cancel retry
+                  </button>
+                )}
               </div>
             )}
             {!chatId ? (
@@ -257,16 +321,25 @@ const RestaurantChatPanel = ({ admin = false }) => {
               </div>
             ) : messages.length ? (
               <>
-                {messages.length > visibleMessages.length && (
+                {showingOlder && (
+                  <button
+                    type="button"
+                    className="btn-outline px-3 py-1.5 text-xs"
+                    onClick={() => {
+                      older.current = false;
+                      setShowingOlder(false);
+                    }}
+                  >
+                    Return to latest messages
+                  </button>
+                )}
+                {cursor && (
                   <div className="flex justify-center">
                     <button
                       type="button"
                       className="btn-outline px-3 py-1.5 text-xs"
-                      onClick={() =>
-                        setVisibleCount(
-                          (count) => count + INITIAL_MESSAGE_COUNT
-                        )
-                      }
+                      onClick={showEarlier}
+                      disabled={loadingOlder}
                     >
                       Show earlier messages
                     </button>
@@ -290,7 +363,11 @@ const RestaurantChatPanel = ({ admin = false }) => {
                         }`}
                       >
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                          {typeof message.text === "string" ? message.text : typeof message.message === "string" ? message.message : "Message"}
+                          {typeof message.text === "string"
+                            ? message.text
+                            : typeof message.message === "string"
+                              ? message.message
+                              : "Message"}
                         </p>
                         {sentAt && (
                           <p
@@ -329,13 +406,13 @@ const RestaurantChatPanel = ({ admin = false }) => {
               onChange={(event) => setText(event.target.value)}
               placeholder="Write your message..."
               maxLength={4000}
-              disabled={!chatId || sending}
+              disabled={!chatId || sending || !!pending.current}
               aria-label="Message"
             />
             <button
               className="bg-brand-500 text-white rounded-full h-12 w-12 flex items-center justify-center shrink-0 hover:scale-105 hover:shadow-lg hover:shadow-brand-500/30 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none disabled:hover:scale-100 disabled:shadow-none"
               disabled={!text.trim() || !chatId || sending}
-              aria-label="Send message"
+              aria-label={pending.current ? "Retry message" : "Send message"}
             >
               {sending ? (
                 <i className="bi bi-hourglass-split animate-spin text-lg" />

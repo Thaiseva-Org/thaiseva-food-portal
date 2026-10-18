@@ -53,6 +53,7 @@ const {
   setFoodRiderActive,
 } = require("./lib/riders");
 const { sendFoodCustomerMessage } = require("./lib/customerChats");
+const { foodPartnerChat } = require("./lib/partnerChats");
 const {
   registerPartnerDevice,
   unregisterPartnerDevice,
@@ -267,6 +268,9 @@ exports.sendFoodCustomerMessage = wrap(async (caller, data) => {
   await enforceRateLimit(caller, "sendFoodCustomerMessage", 30);
   return sendFoodCustomerMessage(caller, data);
 });
+
+// Partner ↔ food master admin. All sends/history/read receipts use this API.
+exports.foodPartnerChat = wrap(foodPartnerChat);
 
 
 

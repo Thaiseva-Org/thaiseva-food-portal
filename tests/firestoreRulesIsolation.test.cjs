@@ -114,8 +114,8 @@ test("restaurant chat database is owner scoped and customer chat stays separate"
   const chatBlock = rules.split("match /foodRestaurantChats/{ownerId}")[1] || "";
   const scoped = chatBlock.split("match /")[0];
   assert.match(scoped, /request\.auth\.uid == ownerId/);
-  assert.match(scoped, /request\.resource\.data\.ownerId == request\.auth\.uid/);
-  assert.match(scoped, /allow delete: if isFoodAdmin\(\);/);
+  assert.match(scoped, /allow create, update, delete: if false;/);
+  assert.match(scoped, /foodPartnerChat/);
   assert.doesNotMatch(scoped, /CustomerSupport/);
 
   const customerBlock = rules.split("match /foodCustomerSupportChats/{customerId}")[1] || "";

@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:partner-chat": "node --test tests/partnerChats.test.cjs",
+    "test:partner-chat:integration": "firebase emulators:exec --config ../Thaiseva-Admin-Portal-Web-App/firebase.customer-chat-test.json --project demo-thaiseva-chat --only firestore,auth,storage \"node --test tests/partnerChats.integration.cjs\"",
     "dev": "vite --port 5000",
     "build": "vite build",
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "test": "node --test tests/emailVerification.test.cjs tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/customerChats.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js tests/orderRider.test.js tests/orderData.test.js tests/orderPayments.test.cjs tests/orderFetching.test.js tests/createFoodOrder.test.cjs tests/httpApi.test.cjs tests/restaurantMenuFlow.test.cjs tests/frontendUtils.test.mjs tests/menuCatalog.test.mjs tests/platformOperations.test.cjs tests/orderFullLifecycle.test.cjs tests/partnerPush.test.cjs tests/partnerOrderPrivacy.test.cjs tests/deliveryFee.test.cjs",
+    "test": "node --test tests/emailVerification.test.cjs tests/onboardingPhase.test.js tests/backendValidation.test.cjs tests/customerChats.test.cjs tests/firestoreRulesIsolation.test.cjs tests/firestoreIndexesIsolation.test.cjs tests/partnerRoutes.test.js tests/sessionSecurity.test.js tests/commission.test.js tests/orderRider.test.js tests/orderData.test.js tests/orderPayments.test.cjs tests/orderFetching.test.js tests/createFoodOrder.test.cjs tests/httpApi.test.cjs tests/restaurantMenuFlow.test.cjs tests/frontendUtils.test.mjs tests/menuCatalog.test.mjs tests/platformOperations.test.cjs tests/orderFullLifecycle.test.cjs tests/partnerPush.test.cjs tests/partnerOrderPrivacy.test.cjs tests/deliveryFee.test.cjs tests/partnerChats.test.cjs",
     "check": "npm run lint && npm test && npm run build",
     "verify:production": "node scripts/verify-production.mjs",
     "deploy:check": "npm run verify:production && npm run check && npm --prefix functions run check",
