@@ -17,7 +17,6 @@ import { usePendingRequestCount } from "../../hooks/usePendingRequestCount";
 import { ORDER_STATUS } from "../../utils/orderStatus";
 import { hasAssignedRider } from "../../utils/orderRider";
 import { useRestaurantChatCount } from "../../hooks/useRestaurantChatCount";
-import { useCustomerChatCount } from "../../hooks/useCustomerChatCount";
 import { useBookings } from "../../context/BookingsProvider";
 import { normalizeBookingStatus, SHOW_TABLE_RESERVATIONS } from "../../utils/bookingStatus";
 
@@ -25,7 +24,6 @@ const MasterSidebar = ({ show, toggle }) => {
   const { orders } = useOrders() || {};
   const pendingRequests = usePendingRequestCount();
   const restaurantChatCount = useRestaurantChatCount();
-  const customerChatCount = useCustomerChatCount();
   const { bookings } = useBookings() || {};
 
   const pendingOrders = useMemo(
@@ -112,14 +110,6 @@ const MasterSidebar = ({ show, toggle }) => {
       to: "restaurantChat",
       path: "/foodAdmin/restaurantChat",
       badge: restaurantChatCount,
-      badgeTone: "danger",
-    },
-    {
-      icon: <ChatRoundedIcon fontSize="small" />,
-      label: "Food Customer Chat",
-      to: "foodCustomerChat",
-      path: "/foodAdmin/foodCustomerChat",
-      badge: customerChatCount,
       badgeTone: "danger",
     },
     {

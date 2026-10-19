@@ -1,6 +1,6 @@
 # Food partner ↔ food master admin messaging
 
-Updated 19 October 2026. Uses the existing partner/master web screens; no mobile UI is included.
+Updated 19 October 2026. Both roles use **Restaurant Chat**, styled like the main admin customer inbox with the food portal's blue brand tokens. Restaurant Admin has one private conversation with Food Master Admin; the master has a restaurant inbox with previews and unread filters. No mobile UI is included.
 
 Callable: `foodPartnerChat`, Firebase project `gothai-ffea1`, region **asia-southeast1**. This region differs from the general Thaiseva customer-chat API (`asia-east2`). Authentication and App Check follow the food portal's existing callable configuration. Callers must initialize App Check where enforcement is enabled.
 
@@ -61,4 +61,6 @@ New messages use individual records at `foodRestaurantChats/{ownerUid}/messages/
 
 Shared Firestore rules permit legacy authorized reads but deny direct client creation, updates and deletion of food partner conversations. New nested messages are API-only. Release the callable first, then the updated food hosting, then the canonical rules. Previous web builds that write directly will need a refresh after the rules release.
 
-This endpoint covers text conversations and read status. Existing food-customer chat, ordering, payments, and restaurant onboarding are unchanged. It does not add media uploads, push notifications, search or mobile screens to food partner chat.
+This endpoint covers text conversations and read status. The web screen includes search within loaded messages; load earlier pages to search more history. It does not add server-wide search, media uploads, push notifications, or mobile screens.
+
+Food Customer Chat has been removed from the food portal navigation, page exports, and unread subscriptions. Its old `/foodAdmin/foodCustomerChat` URL redirects to `/foodAdmin/restaurantChat`. Historical customer records and existing backend APIs are preserved; ordering, payments, and restaurant onboarding are unchanged.

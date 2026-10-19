@@ -26,7 +26,6 @@ import {
   Riders,
   RiderOverview,
   RestaurantChat as MasterRestaurantChat,
-  CustomerChat,
   TodayOrders,
   TableBookings,
 } from "./masterAdmin/pages";
@@ -345,7 +344,7 @@ const App = () => {
                     />
                     <Route
                       path="foodCustomerChat"
-                      element={<CustomerChat />}
+                      element={<Navigate to="/foodAdmin/restaurantChat" replace />}
                     />
                     <Route
                       path="ordersDetails/ordersDetView/:orderId"

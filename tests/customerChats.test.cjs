@@ -21,31 +21,38 @@ test("food customer chat does not bridge the legacy support collection", () => {
   const root = join(__dirname, "..");
   const handler = readFileSync(
     join(root, "functions", "src", "lib", "customerChats.js"),
-    "utf8"
+    "utf8",
   );
   const functionsIndex = readFileSync(
     join(root, "functions", "src", "index.js"),
-    "utf8"
+    "utf8",
   );
   assert.doesNotMatch(handler, /_CustomerSupport|collection\("chats"\)/);
-  assert.doesNotMatch(functionsIndex, /mirrorFoodCustomerChat|onDocumentWritten\(\{document:\s*"(?:chats|foodCustomerSupportChats)\//);
+  assert.doesNotMatch(
+    functionsIndex,
+    /mirrorFoodCustomerChat|onDocumentWritten\(\{document:\s*"(?:chats|foodCustomerSupportChats)\//,
+  );
   assert.match(functionsIndex, /exports\.sendFoodCustomerMessage/);
 });
 
-test("Food Customer Chat is available to the master admin and not restaurant partners", () => {
+test("Food Customer Chat entry is removed and its old route redirects to Restaurant Chat", () => {
   const root = join(__dirname, "..");
   const app = readFileSync(join(root, "src", "App.jsx"), "utf8");
   const masterSidebar = readFileSync(
     join(root, "src", "masterAdmin", "component", "Sidebar.jsx"),
-    "utf8"
+    "utf8",
   );
   const restaurantSidebar = readFileSync(
     join(root, "src", "restaurantAdmin", "component", "Sidebar.jsx"),
-    "utf8"
+    "utf8",
   );
   assert.match(app, /path="foodCustomerChat"/);
-  assert.match(masterSidebar, /label: "Food Customer Chat"/);
-  assert.match(masterSidebar, /to: "foodCustomerChat"/);
+  assert.doesNotMatch(
+    masterSidebar,
+    /Food Customer Chat|foodCustomerChat|useCustomerChatCount/,
+  );
+  assert.doesNotMatch(app, /element=\{<CustomerChat/);
+  assert.match(app, /Navigate to="\/foodAdmin\/restaurantChat" replace/);
   assert.match(masterSidebar, /label: "Menu"/);
   assert.doesNotMatch(restaurantSidebar, /Food Customer Chat|foodCustomerChat/);
 });
