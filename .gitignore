@@ -26,3 +26,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local generated reports, customer extracts and build captures
+*.log
+/pdpa-*-audit.json
+/category-live-verification.json
+/hotel_audit_*.json
+/build_err.txt
+/import_errors*.txt
+/lint_errors.txt
+/lint_output.txt
+/users*.json
+/users*.csv

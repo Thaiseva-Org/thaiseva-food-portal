@@ -4,6 +4,8 @@ Thaiseva Food Portal is the React and Firebase operations platform for restauran
 
 ## Documentation
 
+Current shared privacy evidence: [Technical Data Protection Report](https://github.com/Thaiseva-Org/Thaiseva-Admin/blob/main/docs/05-security/THAISEVA_TECHNICAL_DATA_PROTECTION.md). It covers actual data use, processing locations, safeguards, retention and verification limits. Historical privacy notes and generated logs were archived outside the application.
+
 Documentation is organized by subject. Each topic has one canonical file:
 
 | Theme | Document | Purpose |
