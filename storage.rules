@@ -40,11 +40,13 @@ service firebase.storage {
     // Any signed-in account can submit an attachment under its own UID.
     // Submitters cannot read or replace submitted attachments.
     match /uploads/{uid}/{file=**} {
-      allow read: if isAdmin() || isFoodAdmin();
+      allow read: if (isAdmin() || isFoodAdmin()) &&
+        (!('privateRetainedDocument' in resource.metadata) || resource.metadata.privateRetainedDocument != 'true');
       allow create: if owner(uid) && resource == null &&
         request.resource.size <= 15 * 1024 * 1024;
       allow update: if false;
-      allow delete: if isAdmin() || isFoodAdmin();
+      allow delete: if (isAdmin() || isFoodAdmin()) &&
+        (!('privateRetainedDocument' in resource.metadata) || resource.metadata.privateRetainedDocument != 'true');
     }
     // Delivery photos are private; legacy partner readers use the authorized callable.
     match /food_orders/{uid}/{file=**} {
@@ -75,7 +77,12 @@ service firebase.storage {
     }
     // Existing dashboard image links remain readable; new root uploads are denied.
     match /{fileName} {
-      allow read: if fileName.matches('[0-9]+-file');
+      // Root uploads are immutable. Exclude the four reviewed legacy licences
+      // explicitly, preserving existing public media without metadata lookups.
+      allow read: if fileName.matches('[0-9]+-file') && !(fileName in [
+        '1699075805724-file', '1699534595420-file',
+        '1703104711053-file', '1704266484536-file'
+      ]);
       allow write: if false;
     }
     match /{folder}/{file=**} {
@@ -84,8 +91,31 @@ service firebase.storage {
         (isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024);
     }
     match /users/{uid}/{file=**} {
-      allow read: if owner(uid) || isAdmin();
-      allow write: if (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024);
+      allow read: if (owner(uid) || isAdmin()) &&
+        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true');
+      allow delete: if (owner(uid) || isAdmin()) &&
+        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true');
+    }
+    function safeUserFileCreate(uid) {
+      return resource == null && (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024) &&
+        (!('privateDriverDocument' in request.resource.metadata) || request.resource.metadata.privateDriverDocument != 'true') &&
+        !request.resource.metadata.keys().hasAny(['privateDriverOwner']);
+    }
+    function safeUserFileUpdate(uid) {
+      return (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024) &&
+        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true') &&
+        (!('privateDriverDocument' in request.resource.metadata) || request.resource.metadata.privateDriverDocument != 'true') &&
+        !request.resource.metadata.keys().hasAny(['privateDriverOwner']);
+    }
+    match /users/{uid}/{fileName} {
+      allow create: if safeUserFileCreate(uid);
+      allow update: if safeUserFileUpdate(uid);
+    }
+    // Identity uploads use token-free APIs. Recursive path variables cannot
+    // safely be treated as strings for folder matching in Storage rules.
+    match /users/{uid}/{folder}/{file=**} {
+      allow create: if !(folder in ['passports','licences']) && safeUserFileCreate(uid);
+      allow update: if !(folder in ['passports','licences']) && safeUserFileUpdate(uid);
     }
     // Exclude public media here so its image validation cannot be bypassed.
     match /{collection}/{uid}/{folder}/{file=**} {
@@ -126,7 +156,8 @@ service firebase.storage {
     // Legacy sender-scoped chat media: private to the sender and support staff.
     match /{folder}/{uid}/{file=**} {
       allow read: if folder in ['chat', 'chats', 'chatMedia'] && (owner(uid) || isAdmin() || isFoodAdmin());
-      allow write: if folder in ['chat', 'chats', 'chatMedia'] && owner(uid) && sized(20 * 1024 * 1024);
+      // Current support/partner chat APIs validate participants and avoid bearer URLs.
+      allow write: if false;
     }
     // Large historical support attachments require an API-issued, UID-bound
     // one-minute grant. Deletion revokes access through the same metadata record.

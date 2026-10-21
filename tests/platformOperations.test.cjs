@@ -261,6 +261,18 @@ test("private previews remain authorized when the service account cannot sign UR
   await assert.rejects(f.appsLib.getApplicationFileUrl({uid: "other", role: "restaurantOwner"}, {path}), {code: "permission-denied"});
 });
 
+test("legacy application finalization cannot reissue private links using only a leaked path", async () => {
+  const f = fixture();
+  const applicationId = 'a'.repeat(24), file = `applications/${applicationId}/ownerId.pdf`;
+  const payload = {applicationId, path: file};
+  await assert.rejects(f.appsLib.finalizePublicUpload(customer, payload), {code:'permission-denied'});
+  await assert.rejects(f.appsLib.finalizePublicUpload(owner, payload), {code:'permission-denied'});
+  f.records.set('restaurants/owner-1', {ownerIdDocUrl:file});
+  assert.equal((await f.appsLib.finalizePublicUpload(owner,payload)).path,file);
+  assert.equal((await f.appsLib.finalizePublicUpload(master,payload)).path,file);
+  await assert.rejects(f.appsLib.finalizePublicUpload(master,{applicationId,path:`applications/${applicationId}/../victim.pdf`}),{code:'invalid-argument'});
+});
+
 test("public applications use bounded private server uploads with type and capability checks", async () => {
   const f = fixture();
   const {applicationId} = await f.appsLib.startPublicRestaurantApplication();

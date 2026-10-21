@@ -268,15 +268,14 @@ async function getPublicApplicationUploadUrl({ applicationId, kind, contentType,
   return { uploadUrl, path, contentType: type };
 }
 
-async function finalizePublicUpload({ applicationId, path }) {
-  if (!applicationId || !path || !String(path).startsWith(`applications/${applicationId}/`)) {
+async function finalizePublicUpload(caller, { applicationId, path }) {
+  if (!/^[a-f0-9]{16,32}$/.test(String(applicationId || "")) || !isPrivateFilePath(path) || !String(path).startsWith(`applications/${applicationId}/`)) {
     throw new HttpsError("invalid-argument", "Invalid upload path.");
   }
-  const file = getStorage().bucket().file(path);
-  const [exists] = await file.exists();
-  if (!exists) throw new HttpsError("not-found", "File was not uploaded.");
-  const url = await signedReadUrl(path, 60 * 60 * 1000);
-  return { url, path: String(path) };
+  // Possession of an old file path is not permission to mint a new bearer URL.
+  // Current anonymous onboarding receives a private path directly from upload;
+  // legacy finalization must use the same role/ownership checks as previews.
+  return getApplicationFileUrl(caller, {path});
 }
 
 async function getApplicationFileUrl(caller, { path }) {

@@ -149,8 +149,8 @@ exports.uploadPublicApplicationContent = wrapPublic(uploadPublicApplicationConte
   memory: "512MiB", concurrency: 10,
 });
 
-exports.finalizePublicUpload = wrapPublic(async (data) => {
-  return finalizePublicUpload(data);
+exports.finalizePublicUpload = wrap(async (caller, data) => {
+  return finalizePublicUpload(caller, data);
 });
 
 exports.getApplicationFileUrl = wrap(async (caller, data) => {

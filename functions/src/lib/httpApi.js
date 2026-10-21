@@ -54,7 +54,7 @@ function extractBearerToken(req) {
 }
 
 async function authenticateHttpRequest(req) {
-  const decoded = await getAuth().verifyIdToken(extractBearerToken(req));
+  const decoded = await getAuth().verifyIdToken(extractBearerToken(req), true);
   return resolveCaller({
     auth: {
       uid: decoded.uid,
