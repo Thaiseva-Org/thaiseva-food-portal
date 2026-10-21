@@ -1,4 +1,4 @@
-# PDPA fixes: application impact and release — 13 October 2026
+# PDPA fixes: application impact and release - 13 October 2026
 
 Website, Admin, Food hosting and seven selected privacy functions were released on 14 October. Thirty-four orders were backfilled and six indexes are ready. Live Firestore adds the partner view while preserving legacy access; stricter Storage/raw-order restrictions remain pending. See [actual release and remaining work](PDPA_RELEASE_2026-10-14.md). Mobile source is absent from this workspace; no `pubspec.yaml` was found. Do not treat passing local tests as a mobile compatibility check or legal certification.
 

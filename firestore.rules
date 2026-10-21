@@ -3,7 +3,7 @@ rules_version = '2';
 // SHARED multi-app Firestore rules (website + hotel/travel/cars + food portal).
 //
 // DO NOT change hotel / travel / car / van / chat / catalog / contact blocks
-// or the body of isAdmin() for food-only needs â€” that breaks other products.
+// or the body of isAdmin() for food-only needs - that breaks other products.
 //
 // Food portal changes ONLY:
 //   - helpers under "FOOD PORTAL HELPERS ONLY"
@@ -28,7 +28,7 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuspended', false) != true);
     }
 
-    // Safe role lookup â€” never call get().data on a missing doc (that errors and
+    // Safe role lookup - never call get().data on a missing doc (that errors and
     // denies the whole rule, even when OR'd with true).
     function userRole() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -103,7 +103,9 @@ service cloud.firestore {
       return ['uid', 'userId', 'authUid', 'name', 'firstName', 'lastName', 'fullName',
         'displayName', 'email', 'photoURL', 'profilePic', 'phone', 'phoneNo', 'phoneNumber',
         'nationality', 'address', 'userLocation1', 'dateOfBirth', 'gender', 'country',
-        'createdAt', 'updatedAt', 'onboardingCompleted', 'onboardingCompletedAt'];
+        'createdAt', 'updatedAt', 'onboardingCompleted', 'onboardingCompletedAt',
+        // Mobile app (mainappthaiseva)
+        'userLocation2', 'locationCoordinates', 'fcmToken', 'favRestaurants', 'addresses'];
     }
 
     function isSafeWebsiteUserCreate() {
@@ -322,7 +324,7 @@ service cloud.firestore {
 
     // ============================================================
     // WEBSITE MEDIA & DYNAMIC CONTENT (Images, Banners, QR, Stats)
-    // Strictly scoped to 'image' collection â€” read-only for public, admin write
+    // Strictly scoped to 'image' collection - read-only for public, admin write
     // Does NOT touch or affect any other apps, collections, or helpers.
     // ============================================================
 
@@ -378,7 +380,7 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // BOOKINGS â€” one rule set per collection (no open OR duplicates)
+    // BOOKINGS - one rule set per collection (no open OR duplicates)
     // ============================================================
 
     match /hotelBookingData/{bookingId} {
@@ -424,7 +426,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Soft holds (legacy) â€” Functions only
+    // Soft holds (legacy) - Functions only
     match /hotelBookingHolds/{holdId} {
       allow read: if isAdmin() ||
         (isAuthenticated() &&
@@ -433,7 +435,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // Simple stock locks â€” Functions write only
+    // Simple stock locks - Functions write only
     match /hotelLocks/{lockId} {
       allow read: if isAdmin() ||
         (isAuthenticated() && resource.data.userId == request.auth.uid);
@@ -566,7 +568,7 @@ service cloud.firestore {
     }
 
     match /HotelDB/{hotelId}/availability/{availabilityId} {
-      // Public read (do not call isAdmin() here â€” missing users/{uid} must not deny)
+      // Public read (do not call isAdmin() here - missing users/{uid} must not deny)
       allow read: if true;
       allow write: if isAdmin();
     }
@@ -676,7 +678,7 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // SHOPS / CLUBS â€” admin write, auth read
+    // SHOPS / CLUBS - admin write, auth read
     // ============================================================
 
     match /shops/{shopId} {
@@ -716,8 +718,11 @@ service cloud.firestore {
       );
     }
 
+    // Top-level docs are admin broadcasts (Admin portal > New Notification),
+    // shown to every signed-in user; the inboxes above keep their own rules.
     match /notifications/{docId} {
-      allow read, write, delete: if isAdmin();
+      allow read: if isAuthenticated();
+      allow write, delete: if isAdmin();
 
       match /messages/{messageId} {
         allow read: if isAdmin();
@@ -742,7 +747,7 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // CHAT / CALLS â€” participant scoped (not global)
+    // CHAT / CALLS - participant scoped (not global)
     // ============================================================
 
     match /chatRooms/{roomId} {
@@ -800,12 +805,14 @@ service cloud.firestore {
       );
     }
 
-    match /calls/{callId} {
-      allow read: if isAdmin() || isChatParticipant();
-      allow create: if isAdmin() || chatCreateSelf();
-      allow update: if isAdmin() || isChatParticipant();
-      allow delete: if isAdmin();
-    }
+   match /calls/{callId} {                                                                                                               
+        // Mobile app: the caller may read their own calls (callerID).                                                                      
+        allow read: if isAdmin() || isChatParticipant() ||                                                                                  
+          (isAuthenticated() && resource.data.get('callerID', '') == request.auth.uid);                                                     
+        allow create: if isAdmin() || chatCreateSelf();                                                                                     
+        allow update: if isAdmin() || isChatParticipant();                                                                                  
+        allow delete: if isAdmin();                                                                                                         
+      }  
 
     // ============================================================
     // EARNINGS / ADMIN OPS
@@ -941,5 +948,30 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if false;
     }
+
+    // ============================================================
+    // Mobile chat(assist)
+    // ============================================================
+    match /chatRooms/{roomId} {                                                                                                           
+        // A customer may only write their own entry in the admin support inbox;                                                            
+        // they still cannot read the inbox or touch anyone else's entry.                                                                   
+        function supportInboxSelfUpdate() {                                                                                 
+          let key = request.auth.uid + '_CustomerSupport';                                                                                  
+          let entry = request.resource.data.get(key, {});                                                                                   
+          return isAuthenticated() &&                                                                                                       
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([key])            &&                                                      
+            entry.get('userInfo', {}).get('uid', '') == request.auth.uid &&                                                                 
+            entry.get('isRead', false) == false;                                                                                            
+        }                                                                                                                                   
+                                                                                                                                  
+        allow read: if isAdmin() || isFoodAdmin() || (roomId != "CustomerSupport" && isChatParticipant());                                  
+        allow create: if isAdmin() || (roomId != "CustomerSupport" && chatCreateSelf());                                                    
+        allow update: if isAdmin() || isFoodAdmin() ||                                                                                      
+          (roomId != "CustomerSupport" && isChatParticipant()) ||                                                                           
+          (roomId == "CustomerSupport" && supportInboxSelfUpdate());                                                                        
+        allow delete: if isAdmin();                                                                                                         
+      }
+
+      
   }
 }

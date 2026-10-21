@@ -1,4 +1,4 @@
-# Privacy source remediation — 13–14 October 2026
+# Privacy source remediation - 13–14 October 2026
 
 Released on 14 October with compatibility permissions; strict access cutover remains pending. See [actual release status](PDPA_RELEASE_2026-10-14.md). See the [shared impact and release guide](PDPA_APP_IMPACT_AND_RELEASE.md) and [operating procedures](PDPA_OPERATING_PROCEDURES.md).
 
