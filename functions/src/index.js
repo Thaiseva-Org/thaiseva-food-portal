@@ -63,6 +63,7 @@ const {
   createFoodOrderHttpHandler,
   getFoodDeliveryQuoteHttpHandler,
   verifyFoodOrderPaymentHttpHandler,
+  createFoodCheckoutSessionHttpHandler,
   stripeFoodWebhookHandler,
   listOrderableRestaurantsHttpHandler,
 } = require("./lib/httpApi");
@@ -206,8 +207,16 @@ exports.getFoodDeliveryQuoteHttp = onRequest(
   getFoodDeliveryQuoteHttpHandler
 );
 
-// Customer app calls this after its Stripe PaymentSheet succeeds; reads
-// STRIPE_SECRET_KEY from functions/.env (see docs/CUSTOMER_APP_INTEGRATION.md).
+// Hosted Stripe Checkout for a card order (THB; Stripe Adaptive Pricing lets
+// the customer pay in their own currency). Reads STRIPE_SECRET_KEY.
+exports.createFoodCheckoutSessionHttp = onRequest(
+  { cors: true, invoker: "public" },
+  createFoodCheckoutSessionHttpHandler
+);
+
+// Customer app calls this after the Stripe Checkout (sessionId) or the older
+// PaymentSheet (paymentIntentId) succeeds; reads STRIPE_SECRET_KEY from
+// functions/.env (see docs/CUSTOMER_APP_INTEGRATION.md).
 exports.verifyFoodOrderPaymentHttp = onRequest(
   { cors: true, invoker: "public" },
   verifyFoodOrderPaymentHttpHandler

@@ -161,6 +161,7 @@ function fixture() {
   const audits = [];
   const deps = {
     "node:crypto": require("node:crypto"),
+    "node:url": require("node:url"),
     "firebase-functions/v2/https": { HttpsError },
     "firebase-admin/firestore": {
       getFirestore: () => db,

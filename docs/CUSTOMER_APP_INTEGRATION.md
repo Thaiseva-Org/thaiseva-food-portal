@@ -202,22 +202,38 @@ It returns `{ "ok": true, "data": { "deliveryCharge": 50, "distanceKm": 4.2, "di
 - `paymentMethod: "Cash on Delivery"`: Master Admin gets a **Verify cash received** button. Successful verification sets `isPaymentDone: true`.
 - `paymentMethod: "Thai QR"` (including PromptPay/legacy ThaiSeva aliases): Master Admin gets a **Verify Thai QR payment** button and may enter the transfer reference. Successful verification sets `isPaymentDone: true`.
 - `paymentMethod: "Stripe"`: there is no manual verification button. `createFoodOrder` initializes `verified: false`. The app then:
-  1. charges exactly the returned `amount` in THB with a PaymentIntent whose `metadata.orderId` is the order ID (and `metadata.userId` the customer UID), and
-  2. after the PaymentIntent succeeds, calls `verifyFoodOrderPaymentHttp`.
+  1. calls `createFoodCheckoutSessionHttp` and opens the returned Stripe Checkout `url` (hosted page). The server charges exactly the order's `Amount` in THB with `metadata.orderId`, `metadata.orderType: "food"` and `metadata.userId` on the session and its PaymentIntent, and
+  2. after Stripe redirects to the success URL, calls `verifyFoodOrderPaymentHttp` with the `sessionId`.
 
-  The server retrieves the PaymentIntent from Stripe and sets `verified: true`, `isPaymentDone: true`, `paymentStatus: "verified"`, `stripePaymentIntentId` and `paymentVerification` only when the PaymentIntent succeeded, belongs to that order and customer, and `amount_received` equals `Amount` in satang. The portal then shows **Stripe verified**. Customer-supplied `verified` values in order payloads are ignored.
+  The server retrieves the payment from Stripe and sets `verified: true`, `isPaymentDone: true`, `paymentStatus: "verified"`, `stripePaymentIntentId` and `paymentVerification` only when the payment succeeded, belongs to that order and customer, and `amount_received` equals `Amount` in satang. The portal then shows **Stripe verified**. Customer-supplied `verified` values in order payloads are ignored.
+
+  **Local currency (Stripe Adaptive Pricing).** With Adaptive Pricing switched on in the Stripe Dashboard (Settings → Payments → Adaptive Pricing), the hosted Checkout offers the customer their local currency at Stripe's rate (Stripe adds a 2–4% conversion fee that the customer pays). The session and PaymentIntent stay in THB, so the checks above are unchanged. When the customer paid in another currency the order also gets `stripePresentment: { currency: "USD", amount: 7.12, amountMinor: 712 }` (Stripe's `presentment_details`). Thai QR and cash stay THB.
+
+```text
+POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/createFoodCheckoutSessionHttp
+Authorization: Bearer <Firebase ID token>
+Content-Type: application/json
+
+{ "orderId": "ORD-...",
+  "successUrl": "https://thaiseva.com/booking/success?session_id={CHECKOUT_SESSION_ID}",
+  "cancelUrl": "https://thaiseva.com/booking/cancel" }
+```
+
+It returns `{ "ok": true, "data": { "orderId": "...", "alreadyPaid": false, "sessionId": "cs_...", "url": "https://checkout.stripe.com/...", "amount": 216.5 } }`. Return URLs must be `https://thaiseva.com` (or `www.`) pages, and the success URL must contain `{CHECKOUT_SESSION_ID}`. The Checkout expires after 31 minutes. Calling it again for the same order checks the previous Checkout first: if it was paid the order is marked paid and `alreadyPaid: true` comes back with no new page; if it is still open it is expired, so only the newest page can be paid. Card payments need at least ฿10 (Stripe's THB minimum).
 
 ```text
 POST https://asia-southeast1-gothai-ffea1.cloudfunctions.net/verifyFoodOrderPaymentHttp
 Authorization: Bearer <Firebase ID token>
 Content-Type: application/json
 
-{ "orderId": "ORD-...", "paymentIntentId": "pi_..." }
+{ "orderId": "ORD-...", "sessionId": "cs_..." }
 ```
+
+App builds from before the hosted Checkout send `{ "orderId": "...", "paymentIntentId": "pi_..." }` after an in-app PaymentSheet; that still works.
 
 A success returns `{ "ok": true, "data": { "orderId": "...", "verified": true, "alreadyApplied": false } }`. Calling it again is safe and returns `alreadyApplied: true`. `failed-precondition` means the payment has not succeeded or does not match the order; `unavailable` means Stripe could not be reached (retry).
 
-The function reads `STRIPE_SECRET_KEY` from `functions/.env` (not committed; see `functions/.env.example`). It must be the secret key of the same Stripe account that creates the app's PaymentIntents.
+The function reads `STRIPE_SECRET_KEY` from `functions/.env` (not committed; see `functions/.env.example`). It must be the secret key of the same Stripe account the app's publishable key belongs to.
 
 **Webhook backup.** If the app's verify call never arrives (app closed, network lost), `stripeFoodWebhook` does the same checks when Stripe sends `payment_intent.succeeded` and records `paymentVerification.verifiedBy: "stripe-webhook"`. It only handles PaymentIntents with `metadata.orderType: "food"` and `metadata.orderId`, so the app must send both; other payments on the same Stripe account are ignored. Register `https://asia-southeast1-gothai-ffea1.cloudfunctions.net/stripeFoodWebhook` in the Stripe dashboard (Developers → Webhooks) for the `payment_intent.succeeded` event and put its signing secret in `functions/.env` as `STRIPE_WEBHOOK_SECRET`. Unsigned or wrongly signed requests get `403`.
 

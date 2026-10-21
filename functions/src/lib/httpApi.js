@@ -6,6 +6,7 @@ const { createFoodOrder } = require("./orders");
 const { quoteFoodDelivery } = require("./deliveryFee");
 const {
   verifyStripeOrderPayment,
+  createStripeOrderCheckout,
   verifyStripeSignature,
   handleStripeFoodWebhookEvent,
 } = require("./orderPayments");
@@ -155,6 +156,31 @@ async function verifyFoodOrderPaymentHttpHandler(req, res) {
   }
 }
 
+// Hosted Stripe Checkout page for a card order; the app then calls
+// verifyFoodOrderPaymentHttp with the returned sessionId.
+async function createFoodCheckoutSessionHttpHandler(req, res) {
+  res.set("Cache-Control", "no-store");
+  if (req.method !== "POST") {
+    res.set("Allow", "POST");
+    return res.status(405).json({
+      ok: false,
+      error: { code: "method-not-allowed", message: "Use POST." },
+    });
+  }
+
+  try {
+    const caller = await authenticateHttpRequest(req);
+    await enforceRateLimit(caller, "createFoodCheckoutSessionHttp", 20);
+    const payload = req.body?.data && typeof req.body.data === "object"
+      ? req.body.data
+      : req.body || {};
+    const result = await createStripeOrderCheckout(caller, payload);
+    return res.status(200).json({ ok: true, data: result });
+  } catch (err) {
+    return sendApiError(res, err);
+  }
+}
+
 // Stripe webhook (payment_intent.succeeded): backup for the app's
 // verifyFoodOrderPaymentHttp call. Signed with STRIPE_WEBHOOK_SECRET.
 async function stripeFoodWebhookHandler(req, res) {
@@ -235,6 +261,7 @@ module.exports = {
   createFoodOrderHttpHandler,
   getFoodDeliveryQuoteHttpHandler,
   verifyFoodOrderPaymentHttpHandler,
+  createFoodCheckoutSessionHttpHandler,
   stripeFoodWebhookHandler,
   listOrderableRestaurantsHttpHandler,
 };
