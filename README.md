@@ -4,6 +4,8 @@ Thaiseva Food Portal is the React and Firebase operations platform for restauran
 
 ## Documentation
 
+Current shared privacy evidence: [Technical Data Protection Report](https://github.com/Thaiseva-Org/Thaiseva-Admin/blob/main/docs/05-security/THAISEVA_TECHNICAL_DATA_PROTECTION.md). It covers actual data use, processing locations, safeguards, retention and verification limits. Historical privacy notes and generated logs were archived outside the application.
+
 Documentation is organized by subject. Each topic has one canonical file:
 
 | Theme | Document | Purpose |
@@ -19,6 +21,7 @@ Documentation is organized by subject. Each topic has one canonical file:
 | Payments | [Payment gateways](docs/PAYMENT_GATEWAYS.md) | Provider configuration and payment flow |
 | Recovery | [Backup and recovery](docs/BACKUP_AND_RECOVERY.md) | Backup policy and disaster recovery |
 | Operations guide | [Partner guide](docs/Thaiseva_Partner_Guide.md) | Restaurant-partner workflows |
+| Manual QA | [Manual testing guide](docs/MANUAL_TESTING_GUIDE.md) | Shared 254-case execution guide, result sheet, route checks and defect template |
 | Product guide | [Client guide](docs/Thaiseva_Client_Guide.md) | Non-technical platform overview |
 
 When code and prose disagree, treat backend validation, Firebase rules, and tests as authoritative, then update the relevant canonical document in the same change.

@@ -1,4 +1,4 @@
-# API Specifications & Endpoint Catalog — Thaiseva Food Portal
+# API Specifications & Endpoint Catalog - Thaiseva Food Portal
 
 ## 1. Overview & API Architecture
 
@@ -42,7 +42,7 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
 | `assignOrderRider` | Protected | Yes | Master Admin | Standard | Binds courier to order ticket |
 | `verifyFoodOrderPaymentHttp` | Protected HTTP | Yes, Bearer ID token | Order's customer | 30 / min | Marks the customer's own Stripe order paid after Stripe confirms the PaymentIntent |
 | `masterConfirmOrder` | Protected | Yes | Master Admin | Standard | Confirms an order only with an active rider assignment; keeps the delivery fee set at checkout |
-| `stripeFoodWebhook` | Public HTTP | Stripe signature | Stripe | — | Backup: marks a Stripe food order paid on `payment_intent.succeeded` |
+| `stripeFoodWebhook` | Public HTTP | Stripe signature | Stripe | - | Backup: marks a Stripe food order paid on `payment_intent.succeeded` |
 | `verifyOrderPayment` | Protected | Yes | Master Admin | Standard | Verifies COD/Thai QR settlement after order confirmation; Stripe uses `verifyFoodOrderPaymentHttp` |
 | `clearOrderPayment` | Protected | Yes | Master Admin | Standard | Marks partner payout as cleared |
 | `createFoodItem` | Protected | Yes | Restaurant Owner / Platform Master | Standard | Adds a dish to the caller's tenant menu |

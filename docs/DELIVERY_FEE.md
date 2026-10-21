@@ -1,4 +1,4 @@
-# Distance-Based Delivery Fee — Thaiseva Food
+# Distance-Based Delivery Fee - Thaiseva Food
 
 Food delivery is priced by the **road distance** from the restaurant to the
 customer's delivery pin. The server calculates the fee; the customer app only

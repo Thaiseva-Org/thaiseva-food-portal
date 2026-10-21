@@ -28,18 +28,25 @@ export function mapOrderDoc(snap) {
     orderId: orderData.orderId || snap.id,
     timestamp: rawTime || null,
     Date: date || "N/A",
-    CustomerName: orderData.Receiver?.name || "N/A",
+    CustomerName: orderData.CustomerName || orderData.Receiver?.name || "N/A",
     CustomerId: orderData.Receiver?.id || "N/A",
+    CustomerContact:
+      orderData.CustomerContact ||
+      orderData.Receiver?.phone ||
+      orderData.Receiver?.phoneNumber ||
+      "-",
+    CustomerEmail:
+      orderData.CustomerEmail || orderData.Receiver?.email || "-",
     Receiver: orderData.Receiver || {},
-    Location: orderData.Location || "N/A",
+    Location: orderData.Location || orderData.Receiver?.address || "N/A",
     Amount: orderData.Amount ?? 0,
     foodSubtotal: orderData.foodSubtotal ?? null,
     deliveryCharge: orderData.deliveryCharge ?? 0,
-    Status: orderData.currentStatus || "N/A",
-    restaurantName: orderData?.Restaurant?.name || "N/A",
+    Status: orderData.currentStatus || orderData.Status || orderData.status || "N/A",
+    restaurantName: orderData?.restaurantName || orderData?.Restaurant?.name || "N/A",
     Restaurant: orderData.Restaurant || null,
     RestaurantId: orderData?.RestaurantId || orderData?.Restaurant?.id || "N/A",
-    ownerId: orderData?.Restaurant?.ownerId || "",
+    ownerId: orderData?.Restaurant?.ownerId || orderData?.ownerId || "",
     DeliveryPartner: orderData.DeliveryPartner || null,
     assignedRiderId:
       orderData.assignedRiderId || orderData.DeliveryPartner?.id || "",
@@ -58,6 +65,7 @@ export function mapOrderDoc(snap) {
       )
         ? orderData.verified === true
         : orderData.isPaymentDone === true,
+    Items: orderData.Items || orderData.items || [],
   };
 }
 
@@ -96,7 +104,7 @@ function buildOrdersQuery(
   endDate,
   { pageSize = null, dateField = "timestamp" } = {}
 ) {
-  const ordersRef = collection(db, "orders");
+  const ordersRef = collection(db, restaurantId ? "partnerOrderViews" : "orders");
   const bounds = rangeBounds(startDate, endDate);
   const clauses = [];
   if (restaurantId) {
@@ -258,10 +266,16 @@ const fetchReservations = async (
   }
 };
 
+async function fetchAllOrders({ restaurantId = "", startDate = "", endDate = "" } = {}) {
+  const docs = await compatibleDocs(restaurantId, startDate, endDate, null);
+  return docs.map(mapOrderDoc);
+}
+
 export {
   fetchOrders,
   fetchOrdersTotalPages,
   fetchRecentPartnerOrders,
   fetchReservations,
   fetchReservationsTotalPages,
+  fetchAllOrders,
 };

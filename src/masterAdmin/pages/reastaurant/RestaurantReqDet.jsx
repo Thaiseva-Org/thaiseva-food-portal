@@ -27,7 +27,7 @@ const DetailRow = ({ label, value }) => (
       {label}
     </p>
     <p className="mt-0.5 text-sm font-medium text-ink break-words">
-      {value || "—"}
+      {value || "-"}
     </p>
   </div>
 );
@@ -285,7 +285,7 @@ const RestaurantReqDet = () => {
                 Restaurant ID
               </p>
               <p className="text-lg font-bold text-brand-700 tabular-nums break-all">
-                {restaurantData.id || "—"}
+                {restaurantData.id || "-"}
               </p>
             </div>
           </div>
@@ -330,14 +330,14 @@ const RestaurantReqDet = () => {
             <div>
               <h2 className="section-title text-base">Description</h2>
               <p className="mt-1.5 text-sm text-ink-muted leading-relaxed break-words whitespace-pre-wrap">
-                {restaurantData.description || "—"}
+                {restaurantData.description || "-"}
               </p>
             </div>
 
             <div>
               <h2 className="section-title text-base">Location</h2>
               <p className="mt-1.5 text-sm text-ink-muted break-words">
-                {restaurantData.location || "—"}
+                {restaurantData.location || "-"}
               </p>
               {restaurantData.landmark ? (
                 <p className="mt-1 text-sm text-ink-subtle break-words">

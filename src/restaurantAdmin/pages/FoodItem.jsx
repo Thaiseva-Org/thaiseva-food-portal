@@ -17,6 +17,8 @@ import MenuItemDetail from "./menu/MenuItemDetail";
 import MenuList from "./menu/MenuList";
 import MenuToolbar from "./menu/MenuToolbar";
 import ConfirmModal from "../../components/ConfirmModal";
+import CsvImportModal from "./menu/CsvImportModal";
+import { exportMenuCatalogToExcel } from "../../utils/excelExport";
 import {
   DEFAULT_FILTERS,
   categorySectionId,
@@ -66,8 +68,30 @@ const FoodItem = () => {
   }));
   const [displayCount, setDisplayCount] = useState(24);
   const [retryTrigger, setRetryTrigger] = useState(0);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   const handleRetry = () => setRetryTrigger(prev => prev + 1);
+
+  const handleExportMenu = async () => {
+    try {
+      setIsExportingExcel(true);
+      const listToExport = filteredItems.length > 0 ? filteredItems : items;
+      const targetRestaurantName =
+        restaurants.find((r) => r.id === filters.restaurantId)?.name ||
+        resData?.name ||
+        "ThaiSeva";
+      await exportMenuCatalogToExcel({
+        items: listToExport,
+        restaurantName: targetRestaurantName,
+      });
+    } catch (err) {
+      console.error("Export failed:", err);
+      setFeedback({ type: "error", message: "Failed to export menu to Excel." });
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
 
   useEffect(() => {
     document.title = "Thaiseva | Menu";
@@ -415,6 +439,27 @@ const FoodItem = () => {
         </div>
         {canManageMenu && (
           <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+            <button
+              type="button"
+              className="btn-outline !min-h-11"
+              onClick={handleExportMenu}
+              disabled={isExportingExcel || items.length === 0}
+              title="Export menu dishes to formatted Excel spreadsheet"
+            >
+              <i className="bi bi-file-earmark-excel text-emerald-600 me-1.5" aria-hidden="true" />
+              {isExportingExcel ? "Exporting..." : "Export Excel"}
+            </button>
+
+            <button
+              type="button"
+              className="btn-outline !min-h-11"
+              onClick={() => setImportModalOpen(true)}
+              title="Bulk import dishes via Excel or CSV"
+            >
+              <i className="bi bi-upload me-1.5" aria-hidden="true" />
+              Bulk Import
+            </button>
+
             <Link
               to={
                 filters.restaurantId !== "all"
@@ -694,6 +739,13 @@ const FoodItem = () => {
         message={itemToDelete ? `Archive "${itemToDelete.itemName}" from your menu?` : ""}
         confirmText="Yes, delete"
         cancelText="Cancel"
+      />
+
+      <CsvImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImportComplete={handleRetry}
+        ownerUid={filters.restaurantId !== "all" ? filters.restaurantId : menuRoot}
       />
     </div>
   );

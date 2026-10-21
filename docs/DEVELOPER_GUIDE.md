@@ -1,4 +1,4 @@
-# Developer Onboarding & Operations Guide — Thaiseva Food Portal
+# Developer Onboarding & Operations Guide - Thaiseva Food Portal
 
 ## 1. Prerequisites & Environment Setup
 
@@ -127,7 +127,7 @@ node scripts/seed-master-admin.mjs --email="admin@thaiseva.com" --password="Secu
 | **Callable Function** | Firebase Cloud Function invoked via `httpsCallable` SDK passing JSON payloads automatically. |
 | **Custom Claims** | Security attributes attached to a user's Firebase JWT token (e.g. `foodRole = "restaurantOwner"`). |
 | **Tenant Menu** | Restaurant-specific catalog stored under `food_items/{ownerUid}/items`; the platform kitchen uses owner ID `thaiseva-platform`. |
-| **THB (฿)** | Thai Baht — Official currency for all order totals, dish unit prices, and partner payouts. |
+| **THB (฿)** | Thai Baht - Official currency for all order totals, dish unit prices, and partner payouts. |
 | **RBAC** | Role-Based Access Control enforcing permissions based on user role. |
 
 ---

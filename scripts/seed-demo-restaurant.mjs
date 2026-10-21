@@ -1,6 +1,6 @@
 /**
  * Seed comprehensive dummy data for partner UI QA via Firebase CLI OAuth
- * (Identity Toolkit + Firestore REST — no service account required).
+ * (Identity Toolkit + Firestore REST - no service account required).
  *
  * Usage:
  *   npm run seed:restaurant -- --email=restaurant@gmail.com
@@ -66,11 +66,11 @@ function money(n) {
 async function getAccessToken() {
   const configPath = join(homedir(), ".config/configstore/firebase-tools.json");
   if (!existsSync(configPath)) {
-    throw new Error("firebase-tools.json missing — run firebase login");
+    throw new Error("firebase-tools.json missing - run firebase login");
   }
   const cfg = JSON.parse(readFileSync(configPath, "utf8"));
   const refreshToken = cfg.tokens?.refresh_token;
-  if (!refreshToken) throw new Error("No refresh token — run firebase login");
+  if (!refreshToken) throw new Error("No refresh token - run firebase login");
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

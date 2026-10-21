@@ -18,6 +18,8 @@ import { submitRestaurantApplication } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
+import PartnerPrivacyNotice from "../../../components/PartnerPrivacyNotice";
+import { useResolvedApplicationFileUrl } from "../../../utils/applicationFiles";
 import CuisineSelect from "../../../components/CuisineSelect";
 
 import { extractCityFromPlace } from "../../../utils/location";
@@ -211,7 +213,7 @@ const OwnerOnboarding = () => {
         `restaurants/${currentUser.uid}/documents/${key}/${safeName}`
       );
       await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const url = storageRef.fullPath;
       setDocuments((prev) => ({
         ...prev,
         [key]: { url, name: file.name, uploading: false },
@@ -414,6 +416,7 @@ const OwnerOnboarding = () => {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 md:py-12 animate-slide-up min-w-0">
+        <PartnerPrivacyNotice />
         <div className="mb-8 min-w-0">
           <div className="flex items-center justify-between mb-2 gap-3">
             <p className="text-sm font-semibold text-ink-heading">
@@ -471,7 +474,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 0 — Welcome */}
+          {/* Step 0 - Welcome */}
           {step === 0 && (
             <div className="text-center py-4 md:py-8">
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-soft text-brand-600 text-3xl">
@@ -501,7 +504,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 1 — Basics */}
+          {/* Step 1 - Basics */}
           {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
@@ -559,7 +562,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 2 — Business */}
+          {/* Step 2 - Business */}
           {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
@@ -652,7 +655,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 3 — Location */}
+          {/* Step 3 - Location */}
           {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
@@ -707,7 +710,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 4 — Photo & description */}
+          {/* Step 4 - Photo & description */}
           {step === 0 && (
             <div className="space-y-5 max-w-xl min-w-0">
               <div>
@@ -795,7 +798,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 5 — Documents */}
+          {/* Step 5 - Documents */}
           {step === 0 && (
             <div className="space-y-5 max-w-2xl min-w-0">
               <div>
@@ -842,7 +845,7 @@ const OwnerOnboarding = () => {
               <DocumentUploadCard
                 title="Food safety / health certificate"
                 required={false}
-                description="Optional — recommended for faster approval"
+                description="Optional - recommended for faster approval"
                 icon={<MdUploadFile className="text-brand-500 text-xl" />}
                 doc={documents[DOC_KEYS.foodSafety]}
                 inputRef={foodSafetyInputRef}
@@ -864,7 +867,7 @@ const OwnerOnboarding = () => {
             </div>
           )}
 
-          {/* Step 6 — Review */}
+          {/* Step 6 - Review */}
           {step === 1 && (
             <div className="space-y-5 min-w-0">
               <div>
@@ -899,9 +902,9 @@ const OwnerOnboarding = () => {
                     label="Registration #"
                     value={businessRegistrationNumber}
                   />
-                  <Row label="Tax ID" value={taxId || "—"} />
+                  <Row label="Tax ID" value={taxId || "-"} />
                   <Row label="Location" value={location} />
-                  <Row label="Landmark" value={landmark || "—"} />
+                  <Row label="Landmark" value={landmark || "-"} />
                   <Row label="Description" value={description} />
                 </div>
               </div>
@@ -989,16 +992,18 @@ const Row = ({ label, value }) => (
     <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
       {label}
     </p>
-    <p className="mt-0.5 font-medium text-ink break-words">{value || "—"}</p>
+    <p className="mt-0.5 font-medium text-ink break-words">{value || "-"}</p>
   </div>
 );
 
-const DocReviewRow = ({ label, doc, optional }) => (
+const DocReviewRow = ({ label, doc, optional }) => {
+  const resolvedUrl = useResolvedApplicationFileUrl(doc?.url);
+  return (
   <li className="flex items-center justify-between gap-3 min-w-0">
     <span className="text-ink-muted shrink-0">{label}</span>
-    {doc?.url ? (
+    {resolvedUrl ? (
       <a
-        href={doc.url}
+        href={resolvedUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="text-brand-600 font-semibold truncate hover:underline max-w-[60%]"
@@ -1008,11 +1013,12 @@ const DocReviewRow = ({ label, doc, optional }) => (
       </a>
     ) : (
       <span className="text-ink-subtle text-xs">
-        {optional ? "Not provided" : "Missing"}
+        {doc?.url ? "Preview unavailable" : optional ? "Not provided" : "Missing"}
       </span>
     )}
   </li>
-);
+  );
+};
 
 const DocumentUploadCard = ({
   title,
@@ -1024,6 +1030,7 @@ const DocumentUploadCard = ({
   onPick,
   onClear,
 }) => {
+  const resolvedUrl = useResolvedApplicationFileUrl(doc?.url);
   const isImage = doc?.url && /\.(jpe?g|png|gif|webp)(\?|$)/i.test(doc.url);
 
   return (
@@ -1056,9 +1063,9 @@ const DocumentUploadCard = ({
 
       {doc?.url ? (
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
-          {isImage ? (
+          {isImage && resolvedUrl ? (
             <img
-              src={doc.url}
+              src={resolvedUrl}
               alt=""
               className="h-20 w-20 rounded-lg object-cover border border-neutral-100 shrink-0"
             />
@@ -1073,7 +1080,9 @@ const DocumentUploadCard = ({
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <a
-                href={doc.url}
+                href={resolvedUrl || undefined}
+                aria-disabled={!resolvedUrl}
+                onClick={event => { if (!resolvedUrl) event.preventDefault(); }}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-ghost text-xs py-1.5 px-3"

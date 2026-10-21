@@ -55,17 +55,23 @@ import {
 
 import {
   isMasterAdminIdentity,
-  MASTER_ADMIN_EMAILS,
 } from "../src/utils/adminIdentity.js";
 
 import { extractCityFromPlace } from "../src/utils/location.js";
 import { getOwnerUid, getMenuRootId } from "../src/utils/tenant.js";
 import {
   buildFinanceCsvReport,
+  buildStatisticsCsvReport,
   csvText,
   csvMoney,
   safeCsvFilenamePart,
 } from "../src/utils/financeCsv.js";
+import {
+  createMenuImportTemplateWorkbook,
+  parseMenuImportFile,
+  buildOrdersWorkbook,
+  buildStatisticsWorkbook,
+} from "../src/utils/excelExport.js";
 
 test("orderStatus: mappings, normalization, and filtering", () => {
   assert.equal(detailStatusKey("New Order"), "new");
@@ -280,12 +286,11 @@ test("weekRange: local calendar calculations and navigation", () => {
 });
 
 test("adminIdentity: email normalization and claims verification", () => {
-  assert.equal(MASTER_ADMIN_EMAILS.includes("admin@gmail.com"), true);
 
   // Email check (case insensitive)
-  assert.equal(isMasterAdminIdentity({}, "admin@gmail.com"), true);
-  assert.equal(isMasterAdminIdentity({}, "ADMIN@GMAIL.COM"), true);
-  assert.equal(isMasterAdminIdentity({}, " Admin@Gmail.com "), true);
+  assert.equal(isMasterAdminIdentity({}, "admin@gmail.com"), false);
+  assert.equal(isMasterAdminIdentity({}, "ADMIN@GMAIL.COM"), false);
+  assert.equal(isMasterAdminIdentity({}, " Admin@Gmail.com "), false);
   assert.equal(isMasterAdminIdentity({}, "other@gmail.com"), false);
 
   // Claims check
@@ -512,3 +517,407 @@ test("financeCsv: buildFinanceCsvReport generates unified multi-section CSV repo
   assert.deepEqual(report[section3Index + 11], ["Commission Pricing Applied", "Standard / Recorded (15%)"]);
 });
 
+test("excelExport: creates professional template workbook and parses imported spreadsheet", async () => {
+  const wb = createMenuImportTemplateWorkbook();
+  assert.ok(wb, "Workbook must be created");
+
+  const templateSheet = wb.getWorksheet("Menu Import Template");
+  assert.ok(templateSheet, "Must contain 'Menu Import Template' sheet");
+
+  const guideSheet = wb.getWorksheet("Instructions & Rules");
+  assert.ok(guideSheet, "Must contain 'Instructions & Rules' sheet");
+
+  // Verify headers
+  const headerRow = templateSheet.getRow(4).values;
+  assert.ok(headerRow.includes("itemName"));
+  assert.ok(headerRow.includes("price"));
+  assert.ok(headerRow.includes("category"));
+
+  // Verify buffer writing and parsing
+  const buffer = await wb.xlsx.writeBuffer();
+  assert.ok(buffer.byteLength > 1000, "Workbook buffer should have content");
+
+  const mockFile = {
+    name: "thaiseva_menu_import_template.xlsx",
+    arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  };
+
+  const { rows, error } = await parseMenuImportFile(mockFile);
+  assert.equal(error, null);
+  assert.ok(Array.isArray(rows));
+  assert.ok(rows.length >= 4, "Should parse at least 4 sample dishes");
+
+  const samplePadThai = rows.find((r) => r.itemName.includes("Pad Thai"));
+  assert.ok(samplePadThai, "Should find Pad Thai sample dish");
+  assert.equal(samplePadThai.price, 120);
+  assert.equal(samplePadThai.category, "Noodles");
+  assert.equal(samplePadThai.itemType, "Non Veg");
+});
+
+test("excelExport: buildOrdersWorkbook generates multi-tab workbook with all orders, details, totals, and formulas", async () => {
+  const mockOrders = [
+    {
+      OrderID: "ORD-00101",
+      Date: "2026-09-30 12:30",
+      restaurantName: "Bangkok Bistro",
+      CustomerName: "John Doe",
+      CustomerContact: "+66812345678",
+      CustomerEmail: "john@example.com",
+      Location: "123 Sukhumvit Road, Bangkok",
+      paymentMethod: "Stripe Card",
+      Status: "Delivered",
+      deliveryCharge: 40,
+      foodSubtotal: 290,
+      Amount: 330,
+      Items: [
+        {
+          ItemName: "Pad Thai Goong",
+          Label: "Noodles",
+          Quantity: 2,
+          Price: 120,
+          discount: 0,
+        },
+        {
+          ItemName: "Thai Iced Tea",
+          Label: "Beverages",
+          Quantity: 1,
+          Price: 50,
+          discount: 0,
+        },
+      ],
+    },
+    {
+      OrderID: "ORD-00102",
+      Date: "2026-09-30 13:15",
+      restaurantName: "Bangkok Bistro",
+      CustomerName: "Jane Smith",
+      CustomerContact: "+66898765432",
+      CustomerEmail: "jane@example.com",
+      Location: "45 Silom Soi 3, Bangkok",
+      paymentMethod: "Cash on Delivery",
+      Status: "Preparing",
+      deliveryCharge: 35,
+      foodSubtotal: 180,
+      Amount: 215,
+      Items: [
+        {
+          ItemName: "Green Curry Chicken",
+          Label: "Curry",
+          Quantity: 1,
+          Price: 200,
+          discount: 10,
+        },
+      ],
+    },
+  ];
+
+  const wb = buildOrdersWorkbook({
+    orders: mockOrders,
+    restaurantName: "Bangkok Bistro",
+    dateRangeLabel: "Today",
+  });
+
+  assert.ok(wb, "Workbook must be created");
+
+  // 1. Verify Sheet 1: All Orders & Totals
+  const sheet1 = wb.getWorksheet("All Orders & Totals");
+  assert.ok(sheet1, "Sheet 1 'All Orders & Totals' must exist");
+
+  // KPI card values (Row 6)
+  const kpiRow = sheet1.getRow(6).values;
+  assert.equal(kpiRow[1], 2); // Total Orders
+  assert.equal(kpiRow[2], 4); // Total Dishes (2 + 1 + 1 = 4)
+  assert.equal(kpiRow[3], 470); // Total Food Subtotal (290 + 180)
+  assert.equal(kpiRow[4], 75); // Total Delivery (40 + 35)
+  assert.equal(kpiRow[5], 545); // Grand Total Revenue (330 + 215)
+
+  // Row 9: First order data row
+  const row1Values = sheet1.getRow(9).values;
+  assert.ok(String(row1Values[1]).includes("00101"));
+  assert.equal(row1Values[4], "Bangkok Bistro");
+  assert.equal(row1Values[5], "John Doe");
+  assert.ok(String(row1Values[9]).includes("Pad Thai Goong"));
+  assert.ok(String(row1Values[9]).includes("Thai Iced Tea"));
+  assert.equal(row1Values[10], 3); // 2 + 1 = 3 dishes
+  assert.equal(row1Values[13], 290); // food subtotal
+  assert.equal(row1Values[14], 40); // delivery fee
+  assert.equal(row1Values[15], 330); // order total
+
+  // Row 11: Summary Total Row
+  const totalRow = sheet1.getRow(11);
+  assert.equal(totalRow.getCell(10).value.formula, "SUM(J9:J10)");
+  assert.equal(totalRow.getCell(10).value.result, 4);
+  assert.equal(totalRow.getCell(13).value.formula, "SUM(M9:M10)");
+  assert.equal(totalRow.getCell(13).value.result, 470);
+  assert.equal(totalRow.getCell(14).value.formula, "SUM(N9:N10)");
+  assert.equal(totalRow.getCell(14).value.result, 75);
+  assert.equal(totalRow.getCell(15).value.formula, "SUM(O9:O10)");
+  assert.equal(totalRow.getCell(15).value.result, 545);
+
+  // 2. Verify Sheet 2: Order Item Details
+  const sheet2 = wb.getWorksheet("Order Item Details");
+  assert.ok(sheet2, "Sheet 2 'Order Item Details' must exist");
+
+  // Row 5: Pad Thai
+  const itemRow1 = sheet2.getRow(5).values;
+  assert.equal(itemRow1[5], "John Doe");
+  assert.equal(itemRow1[8], "Pad Thai Goong");
+  assert.equal(itemRow1[10], 2); // Qty
+  assert.equal(itemRow1[11], 120); // Unit price
+  assert.equal(itemRow1[13], 240); // Line total
+
+  // Row 6: Thai Iced Tea
+  const itemRow2 = sheet2.getRow(6).values;
+  assert.equal(itemRow2[8], "Thai Iced Tea");
+  assert.equal(itemRow2[10], 1);
+  assert.equal(itemRow2[13], 50);
+
+  // Row 7: Green Curry Chicken
+  const itemRow3 = sheet2.getRow(7).values;
+  assert.equal(itemRow3[5], "Jane Smith");
+  assert.equal(itemRow3[8], "Green Curry Chicken");
+  assert.equal(itemRow3[10], 1);
+  assert.equal(itemRow3[13], 180); // 200 * 0.9 = 180
+
+  // Row 8: Item Total Row
+  const itemTotalRow = sheet2.getRow(8);
+  assert.equal(itemTotalRow.getCell(10).value.formula, "SUM(J5:J7)");
+  assert.equal(itemTotalRow.getCell(10).value.result, 4);
+  assert.equal(itemTotalRow.getCell(13).value.formula, "SUM(M5:M7)");
+  assert.equal(itemTotalRow.getCell(13).value.result, 470);
+
+  // 3. Verify Sheet 3: Executive Revenue Summary
+  const sheet3 = wb.getWorksheet("Executive Revenue Summary");
+  assert.ok(sheet3, "Sheet 3 'Executive Revenue Summary' must exist");
+  assert.ok(sheet3.rowCount >= 10);
+});
+
+test("excelExport: buildOrdersWorkbook correctly handles app orders with lowercase items, auto-computed totals, and customer fallbacks", () => {
+  const appOrders = [
+    {
+      id: "app-order-001",
+      orderId: "APP-001",
+      Date: "2026-09-30 14:00",
+      restaurantName: "Siam Spice",
+      Receiver: {
+        name: "Alice Wang",
+        phone: "+66822223333",
+        email: "alice@example.com",
+        address: "789 Rama IV Road",
+      },
+      paymentMethod: "PromptPay",
+      currentStatus: "Delivered",
+      deliveryCharge: 50,
+      amount: 450,
+      items: [
+        {
+          itemName: "Tom Yum Soup",
+          category: "Soups",
+          quantity: 2,
+          price: 150,
+        },
+        {
+          name: "Sticky Rice with Mango",
+          qty: 1,
+          cost: 100,
+        },
+      ],
+    },
+    {
+      id: "app-order-002",
+      orderId: "APP-002",
+      Date: "2026-09-30 15:30",
+      restaurantName: "Siam Spice",
+      CustomerName: "Bob Lee",
+      CustomerContact: "+66833334444",
+      Location: "101 Thong Lo, Bangkok",
+      paymentMethod: "Stripe",
+      Status: "Preparing",
+      deliveryCharge: 30,
+      orderDetails: [
+        {
+          title: "Chicken Satay",
+          quantity: 3,
+          price: 60,
+        },
+      ],
+    },
+  ];
+
+  const wb = buildOrdersWorkbook({
+    orders: appOrders,
+    restaurantName: "Siam Spice",
+    dateRangeLabel: "Today",
+  });
+
+  const sheet1 = wb.getWorksheet("All Orders & Totals");
+  const sheet2 = wb.getWorksheet("Order Item Details");
+
+  // Sheet 1 checks
+  const row1 = sheet1.getRow(9).values;
+  assert.equal(row1[5], "Alice Wang");
+  assert.equal(row1[6], "+66822223333");
+  assert.equal(row1[13], 400); // 450 - 50 = 400 subtotal
+  assert.equal(row1[14], 50); // delivery
+  assert.equal(row1[15], 450); // gross
+
+  const row2 = sheet1.getRow(10).values;
+  assert.equal(row2[5], "Bob Lee");
+  assert.equal(row2[10], 3); // 3 items
+  assert.equal(row2[13], 180); // auto-computed 3 * 60
+  assert.equal(row2[14], 30);
+  assert.equal(row2[15], 210); // 180 + 30
+
+  // Sheet 2 itemized checks
+  const item1 = sheet2.getRow(5).values;
+  assert.equal(item1[5], "Alice Wang");
+  assert.equal(item1[8], "Tom Yum Soup");
+  assert.equal(item1[10], 2);
+  assert.equal(item1[11], 150);
+  assert.equal(item1[13], 300);
+
+  const item2 = sheet2.getRow(6).values;
+  assert.equal(item2[8], "Sticky Rice with Mango");
+  assert.equal(item2[10], 1);
+  assert.equal(item2[13], 100);
+
+  const item3 = sheet2.getRow(7).values;
+  assert.equal(item3[5], "Bob Lee");
+  assert.equal(item3[8], "Chicken Satay");
+  assert.equal(item3[10], 3);
+  assert.equal(item3[13], 180);
+});
+
+test("financeCsv: buildStatisticsCsvReport formats dashboard stats correctly", () => {
+  const report = buildStatisticsCsvReport({
+    restaurantName: "Chilli Thai",
+    restaurantId: "rest-ct-01",
+    dateRangeLabel: "Today",
+    kpis: {
+      totalOrder: 25,
+      delivered: 20,
+      canceled: 2,
+      countCustomer: 18,
+      completeOrder: 50,
+    },
+    orderSummary: {
+      total: 25,
+      delivered: 20,
+      cancelled: 2,
+      inprocess: 3,
+      newOrder: 0,
+    },
+    topItems: [
+      { itemName: "Pad Kra Pao", count: 12, earning: 1440 },
+      { itemName: "Thai Milk Tea", count: 15, earning: 900 },
+    ],
+    commissionRate: 15,
+  });
+
+  assert.ok(Array.isArray(report));
+  assert.equal(report[0][0], "THAISEVA RESTAURANT STATISTICS REPORT");
+  assert.deepEqual(report[1], ["Restaurant Name", "Chilli Thai"]);
+  assert.deepEqual(report[2], ["Restaurant ID", "rest-ct-01"]);
+  assert.deepEqual(report[3], ["Date Range", "Today"]);
+  assert.deepEqual(report[5], ["Commission Rate", "15%"]);
+
+  // Operational metrics
+  const totalOrdersRow = report.find((r) => r[0] === "Total Orders");
+  assert.ok(totalOrdersRow);
+  assert.equal(totalOrdersRow[1], 25);
+
+  const deliveredRow = report.find((r) => r[0] === "Orders Delivered (Completed)");
+  assert.ok(deliveredRow);
+  assert.equal(deliveredRow[1], 20);
+
+  // Top items check
+  const topPadKraPao = report.find((r) => r[1] === "Pad Kra Pao");
+  assert.ok(topPadKraPao);
+  assert.equal(topPadKraPao[0], 1);
+  assert.equal(topPadKraPao[2], 12);
+  assert.equal(topPadKraPao[3], "1440.00");
+});
+
+test("excelExport: buildStatisticsWorkbook creates multi-sheet statistics report with KPIs and dishes", () => {
+  const wb = buildStatisticsWorkbook({
+    restaurantName: "Chilli Thai",
+    restaurantId: "rest-ct-01",
+    dateRangeLabel: "This Month",
+    kpis: {
+      totalOrder: 2,
+      delivered: 1,
+      canceled: 0,
+      countCustomer: 2,
+      completeOrder: 4,
+    },
+    orderSummary: {
+      total: 2,
+      delivered: 1,
+      cancelled: 0,
+      inprocess: 1,
+      newOrder: 0,
+    },
+    topItems: [
+      { id: "dish-krapao", itemName: "Pad Kra Pao", count: 3, earning: 360 },
+    ],
+    orders: [
+      {
+        orderId: "ORD-101",
+        Date: "2026-09-30 12:00",
+        CustomerName: "Alice",
+        CustomerContact: "+66811112222",
+        CustomerEmail: "alice@test.com",
+        Location: "Silom, Bangkok",
+        paymentMethod: "PromptPay",
+        Status: "Delivered",
+        amount: 300,
+        deliveryCharge: 40,
+        orderDetails: [{ title: "Pad Kra Pao", quantity: 2, price: 130 }],
+      },
+      {
+        orderId: "ORD-102",
+        Date: "2026-09-30 13:00",
+        CustomerName: "Bob",
+        Location: "Sukhumvit, Bangkok",
+        paymentMethod: "Cash",
+        Status: "Preparing",
+        amount: 150,
+        deliveryCharge: 30,
+        orderDetails: [{ title: "Pad Kra Pao", quantity: 1, price: 120 }],
+      },
+    ],
+    commissionRate: 15,
+  });
+
+  const sheet1 = wb.getWorksheet("Statistics & Performance");
+  const sheet2 = wb.getWorksheet("Top Selling Dishes");
+  const sheet3 = wb.getWorksheet("Orders Detail");
+
+  assert.ok(sheet1, "Sheet 1 (Statistics & Performance) exists");
+  assert.ok(sheet2, "Sheet 2 (Top Selling Dishes) exists");
+  assert.ok(sheet3, "Sheet 3 (Orders Detail) exists");
+
+  // Sheet 1 KPI row checks
+  const kpiRow = sheet1.getRow(6).values;
+  assert.equal(kpiRow[1], 2); // Total orders
+  assert.equal(kpiRow[2], 1); // Delivered
+  assert.equal(kpiRow[3], 0); // Cancelled
+  assert.equal(kpiRow[4], 2); // Customers
+  assert.equal(kpiRow[5], 4); // Items Sold
+  assert.equal(kpiRow[6], 450); // Total Gross (300 + 150)
+
+  // Sheet 2 Top Dishes check
+  const topRow1 = sheet2.getRow(5).values;
+  assert.equal(topRow1[1], 1); // Rank 1
+  assert.equal(topRow1[2], "Pad Kra Pao");
+  assert.equal(topRow1[4], 3); // Portions count
+  assert.equal(topRow1[5], 360); // Revenue
+
+  // Sheet 3 Orders Detail check
+  const orderRow1 = sheet3.getRow(5).values;
+  assert.equal(orderRow1[1], "#ORD-101");
+  assert.equal(orderRow1[4], "Alice");
+  assert.equal(orderRow1[8], "PromptPay");
+  assert.equal(orderRow1[9], "DELIVERED");
+  assert.equal(orderRow1[11], 300); // Gross
+});

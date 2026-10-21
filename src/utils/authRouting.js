@@ -9,7 +9,7 @@ export { getOnboardingPhase };
 /**
  * Resolve where a signed-in user should land.
  * - Master admin: only if backend set claims / admin flags (never from self-signup)
- * - Everyone else: restaurant owner path (onboarding or /partner — never UID URLs)
+ * - Everyone else: restaurant owner path (onboarding or /partner - never UID URLs)
  */
 export async function resolvePostLoginPath(user) {
   if (!user) return "/auth";

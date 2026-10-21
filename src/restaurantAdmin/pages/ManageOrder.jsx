@@ -11,7 +11,7 @@ import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
 import { useOrders } from "../../context/OrdersProvider";
-import { fetchOrders, fetchOrdersTotalPages } from "../../services/GetOrders";
+import { fetchOrders, fetchOrdersTotalPages, fetchAllOrders } from "../../services/GetOrders";
 import {
   ORDER_STATUS,
   ORDER_STATUS_FILTERS,
@@ -25,6 +25,7 @@ import {
   summaryCardActive,
 } from "../../utils/orderStatus";
 import { partnerPath } from "../../utils/partnerRoutes";
+import { exportOrdersToExcel } from "../../utils/excelExport";
 
 const matchesSearch = (item, query) => {
   if (!query) return true;
@@ -77,13 +78,56 @@ const ManageOrder = () => {
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [isRealTime, setIsRealTime] = useState(false);
+  const [isRealTime, setIsRealTime] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [lastDocs, setLastDocs] = useState([]);
   const [refetch, setRefetch] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+
+  const handleExportOrders = async () => {
+    try {
+      setIsExportingExcel(true);
+      const dateLabel = isRealTime
+        ? "Live Orders"
+        : startDate && endDate
+          ? `${startDate} to ${endDate}`
+          : "All Time";
+
+      let ordersToExport = filteredRows;
+      if (!isRealTime && restaurantId) {
+        try {
+          const allOrders = await fetchAllOrders({
+            restaurantId,
+            startDate,
+            endDate,
+          });
+          const matched = (allOrders || []).filter(
+            (item) =>
+              orderMatchesStatusFilter(item.Status, statusFilter) &&
+              matchesSearch(item, deferredSearchQuery.trim().toLowerCase())
+          );
+          ordersToExport = statusFilter === "all" ? sortOrdersByStatus(matched) : matched;
+        } catch (fetchErr) {
+          console.warn("Falling back to current view for Excel export:", fetchErr);
+        }
+      }
+
+      await exportOrdersToExcel({
+        orders: ordersToExport,
+        restaurantName: ordersToExport[0]?.restaurantName || "Partner Restaurant Orders",
+        dateRangeLabel: dateLabel,
+        filename: `Orders_${isRealTime ? "live" : startDate || "all"}.xlsx`,
+      });
+    } catch (err) {
+      console.error("Export orders failed:", err);
+      alert("Failed to export orders to Excel.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
 
   useEffect(() => {
     document.title = "Thaiseva | Manage Orders";
@@ -202,6 +246,18 @@ const ManageOrder = () => {
             details to update progress.
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2 self-start shrink-0">
+          <button
+            type="button"
+            className="btn-outline !min-h-10 text-sm flex items-center gap-1.5"
+            onClick={handleExportOrders}
+            disabled={isExportingExcel || filteredRows.length === 0}
+            title="Export filtered orders to Excel"
+          >
+            <i className="bi bi-file-earmark-excel text-emerald-600" aria-hidden="true" />
+            {isExportingExcel ? "Exporting..." : "Export Excel (.xlsx)"}
+          </button>
+        </div>
       </div>
 
       <StatGrid>
@@ -236,6 +292,7 @@ const ManageOrder = () => {
           onEndDateChange={setEndDate}
           onApply={applyDateRange}
           onReset={resetToLive}
+          selectedPreset={isRealTime ? null : undefined}
           loading={loading}
           resetLabel="Live"
         />

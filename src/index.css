@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════
-   Design tokens — keep in sync with tailwind.config.js
+   Design tokens - keep in sync with tailwind.config.js
    and COLOR_THEME_REFERENCE.md
    ═══════════════════════════════════════════════════════════ */
 
@@ -585,7 +585,7 @@ input:checked ~ span:last-child {
     @apply min-w-0;
   }
 
-  /* Dashboard: status progress row — label/value on top, full-width bar below */
+  /* Dashboard: status progress row - label/value on top, full-width bar below */
   .status-row {
     @apply flex flex-col gap-2 py-3 min-w-0;
   }

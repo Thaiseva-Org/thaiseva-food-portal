@@ -119,7 +119,7 @@ const CategorySelect = ({
         await setDoc(ref, { data: [...existing, name] }, { merge: true });
         return true;
       } catch {
-        // Partners may lack write access — category still works on the item.
+        // Partners may lack write access - category still works on the item.
         return false;
       }
     }

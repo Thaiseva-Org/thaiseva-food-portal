@@ -201,7 +201,7 @@ const Template = ({
           </nav>
           <p className="page-subtext mt-1 max-w-xl">
             {isEdit
-              ? "Update photo and details — the preview updates as you type."
+              ? "Update photo and details - the preview updates as you type."
               : "Drop a photo on the card. New items go live on the menu."}
           </p>
         </div>

@@ -11,7 +11,7 @@ import {
  * - restaurantAdmin: signed-in non-master (owners / applicants)
  * - onboarding: non-master users who still need onboarding
  *
- * Authorization is always from AuthContext — never from URL params.
+ * Authorization is always from AuthContext - never from URL params.
  */
 const PrivateRoute = ({ allowedRoles = [] }) => {
   const {

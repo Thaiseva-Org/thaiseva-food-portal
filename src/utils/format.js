@@ -1,5 +1,5 @@
 /**
- * Dashboard display helpers — keep large values readable without blowing layout.
+ * Dashboard display helpers - keep large values readable without blowing layout.
  */
 
 export function formatCount(value) {

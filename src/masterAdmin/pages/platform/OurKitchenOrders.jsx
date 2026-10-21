@@ -76,7 +76,7 @@ const OurKitchenOrders = () => {
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [isRealTime, setIsRealTime] = useState(false);
+  const [isRealTime, setIsRealTime] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [lastDocs, setLastDocs] = useState([]);
@@ -285,6 +285,7 @@ const OurKitchenOrders = () => {
           onEndDateChange={setEndDate}
           onApply={applyDateRange}
           onReset={resetToLive}
+          selectedPreset={isRealTime ? null : undefined}
           loading={loading}
           resetLabel="Live"
         />
@@ -419,7 +420,7 @@ const OurKitchenOrders = () => {
                         <StatusBadge status={item.Status} />
                       </td>
                       <td className="px-4 py-4 text-sm text-ink-muted">
-                        {riderLabel(item.DeliveryPartner) || "—"}
+                        {riderLabel(item.DeliveryPartner) || "-"}
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center justify-center gap-2">

@@ -1,5 +1,5 @@
 /**
- * Restaurant partner (owner) routes — never put Firebase UIDs in the URL.
+ * Restaurant partner (owner) routes - never put Firebase UIDs in the URL.
  * Tenant identity comes only from AuthContext / custom claims.
  */
 export const PARTNER_BASE = "/partner";

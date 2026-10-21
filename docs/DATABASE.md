@@ -1,4 +1,4 @@
-# Database Architecture & Data Dictionary — Thaiseva Food Portal
+# Database Architecture & Data Dictionary - Thaiseva Food Portal
 
 ## 1. Database Architecture & Technology Overview
 

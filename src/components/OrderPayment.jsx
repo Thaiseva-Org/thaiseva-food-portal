@@ -47,7 +47,7 @@ export default function OrderPayment({ order, onVerified }) {
           {stripe ? (stripeVerified ? "Stripe verified" : "Stripe not verified") : paid ? "Payment received" : "Awaiting payment"}
         </span>
       </div>
-      <p className="font-semibold">Amount: ฿{Number.isFinite(amount) ? amount.toFixed(2) : "—"}</p>
+      <p className="font-semibold">Amount: ฿{Number.isFinite(amount) ? amount.toFixed(2) : "-"}</p>
       {order.paymentVerification && (
         <div className="text-sm text-slate-600">
           <p>Verified by {order.paymentVerification.verifiedBy}{verifiedAt ? ` · ${verifiedAt.toLocaleString()}` : ""}</p>

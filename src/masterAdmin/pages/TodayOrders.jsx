@@ -5,6 +5,7 @@ import {
   fetchOrderRecordsTotalPages,
   subscribeOrderRecords,
   fetchVerifiedRestaurantsList,
+  fetchAllOrderRecords,
 } from "../../services/DailyRecords";
 import { CSVLink } from "react-csv";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
@@ -13,6 +14,7 @@ import { useAuth } from "../../AuthContext";
 import { Pagination } from "@mui/material";
 import { clearOrderPayment } from "../../api";
 import { formatDisplayOrderId } from "../../utils/orderData";
+import { exportOrdersToExcel } from "../../utils/excelExport";
 
 const TodayOrders = () => {
   const { isMasterAdmin } = useAuth();
@@ -93,7 +95,11 @@ const TodayOrders = () => {
               item.comission,
               item.accounting,
               item.isClear,
-              item.Status
+              item.Status,
+              item.Items,
+              item.deliveryCharge,
+              item.foodSubtotal,
+              item.paymentMethod
             )
           );
           setOrderDetails(datanew);
@@ -172,13 +178,18 @@ const TodayOrders = () => {
     comission,
     accounting,
     isClear,
-    Status = "Delivered"
+    Status = "Delivered",
+    Items = [],
+    deliveryCharge = 0,
+    foodSubtotalRaw = null,
+    paymentMethod = ""
   ) => {
     const invoicedate = new Date();
     const totalAmount = Number(accounting?.amount ?? Amount) || 0;
     const foodSubtotal = Number(
       accounting?.foodSubtotal ??
-        totalAmount - Number(accounting?.deliveryCharge || 0)
+        foodSubtotalRaw ??
+        totalAmount - Number(accounting?.deliveryCharge ?? deliveryCharge ?? 0)
     ) || 0;
     const partnerAmount = Number(
       accounting?.partnerShare ??
@@ -199,6 +210,10 @@ const TodayOrders = () => {
       Amount: totalAmount.toFixed(2),
       Status: Status || "-",
       isClear,
+      Items: Items || [],
+      deliveryCharge: Number(deliveryCharge ?? accounting?.deliveryCharge ?? 0) || 0,
+      foodSubtotal,
+      paymentMethod: paymentMethod || "",
       userInvoice: {
         paymentTo: {
           partnerName: CustomerName,
@@ -287,6 +302,40 @@ const TodayOrders = () => {
     );
     setCsvData(data);
     setIsDownloading(false);
+  };
+
+  const handleDownloadExcel = async () => {
+    try {
+      setIsDownloading(true);
+      const restaurantLabel = activeRestaurantObj ? activeRestaurantObj.name : "All Restaurants";
+      const dateLabel = startDate && endDate ? `${startDate} to ${endDate}` : "All Time";
+
+      let ordersToExport = orderDetails;
+      try {
+        const allRecords = await fetchAllOrderRecords({
+          restaurantId: selectedRestaurant || null,
+          startDate,
+          endDate,
+        });
+        if (allRecords && allRecords.length > 0) {
+          ordersToExport = allRecords;
+        }
+      } catch (fetchErr) {
+        console.warn("Falling back to loaded view for Excel export:", fetchErr);
+      }
+
+      await exportOrdersToExcel({
+        orders: ordersToExport,
+        restaurantName: restaurantLabel,
+        dateRangeLabel: dateLabel,
+        filename: `Orders_${restaurantSlug}${dateRangeSlug}.xlsx`,
+      });
+    } catch (err) {
+      console.error("Export Excel failed:", err);
+      customAlert("Failed to export Excel report.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleClear = async (orderId) => {
@@ -437,22 +486,35 @@ const TodayOrders = () => {
             )}
           </form>
 
-          <div className="mb-0.5 flex items-end">
+          <div className="mb-0.5 flex items-center gap-2">
+            <button
+              type="button"
+              className="py-2 px-3.5 rounded text-white font-semibold bg-emerald-600 hover:bg-emerald-700 focus:outline-none text-sm transition-colors flex items-center gap-1.5 shadow-sm"
+              onClick={handleDownloadExcel}
+              disabled={isDownloading || orderDetails.length === 0}
+              title="Export loaded orders to a styled Excel (.xlsx) spreadsheet"
+            >
+              <i className="bi bi-file-earmark-excel" aria-hidden="true" />
+              {isDownloading ? "Exporting..." : "Export Excel (.xlsx)"}
+            </button>
+
             {!csvData ? (
               <button
-                className="py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none text-sm transition-colors"
+                type="button"
+                className="py-2 px-3 text-neutral-600 bg-white border border-neutral-300 hover:bg-neutral-50 rounded font-semibold focus:outline-none text-sm transition-colors"
                 onClick={handleDownload}
+                disabled={orderDetails.length === 0}
               >
-                {isDownloading ? "Generating..." : "Generate CSV"}
+                CSV
               </button>
             ) : (
               <CSVLink
-                className="py-2 px-4 rounded text-white font-semibold bg-orange-400 hover:bg-orange-500 focus:outline-none text-sm transition-colors"
+                className="py-2 px-3 text-neutral-700 bg-neutral-100 border border-neutral-300 hover:bg-neutral-200 rounded font-semibold focus:outline-none text-sm transition-colors"
                 data={csvData}
                 headers={headers}
                 filename={fileName}
               >
-                Export
+                Download CSV
               </CSVLink>
             )}
           </div>

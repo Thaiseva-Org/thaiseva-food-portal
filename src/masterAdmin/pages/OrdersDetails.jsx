@@ -18,7 +18,17 @@ import InfoMessage from "../../components/InfoMessage";
 import Loading from "../../components/Loading";
 import StatusBadge from "../../components/StatusBadge";
 import { useOrders } from "../../context/OrdersProvider";
-import { fetchOrders, fetchOrdersTotalPages } from "../../services/GetOrders";
+import {
+  fetchOrders,
+  fetchOrdersTotalPages,
+  fetchAllOrders,
+} from "../../services/GetOrders";
+import { customAlert } from "../../utils/alertService";
+import {
+  exportOrdersToExcel,
+  formatOrderItemsSummary,
+  getOrderFinancials,
+} from "../../utils/excelExport";
 import { isPlatformOrder } from "../../utils/platformRestaurant";
 import {
   ORDER_STATUS,
@@ -85,7 +95,7 @@ const OrdersDetails = () => {
   const [error, setError] = useState(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [isRealTime, setIsRealTime] = useState(false);
+  const [isRealTime, setIsRealTime] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [lastDocs, setLastDocs] = useState([]);
@@ -102,6 +112,8 @@ const OrdersDetails = () => {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [copiedAddressId, setCopiedAddressId] = useState("");
   const [addressCopyError, setAddressCopyError] = useState("");
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
 
   useEffect(() => {
     document.title = "Thaiseva | Orders";
@@ -301,6 +313,106 @@ const OrdersDetails = () => {
     }
   };
 
+  const handleDownloadExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+      const dateLabel = isRealTime
+        ? "Live Orders (24h)"
+        : startDate && endDate
+          ? `${startDate} to ${endDate}`
+          : "All Historical Orders";
+
+      let ordersToExport = filteredRows;
+
+      // In historical mode without explicit search or status filter, fetch all orders in range so export is complete
+      if (!isRealTime && !normalizedQuery && statusFilter === "all") {
+        try {
+          const allOrders = await fetchAllOrders({ startDate, endDate });
+          const nonPlatform = (allOrders || []).filter((item) => !isPlatformOrder(item));
+          if (nonPlatform.length > 0) {
+            ordersToExport = nonPlatform;
+          }
+        } catch (fetchErr) {
+          console.warn("Falling back to loaded view for Excel export:", fetchErr);
+        }
+      }
+
+      await exportOrdersToExcel({
+        orders: ordersToExport,
+        restaurantName: "ThaiSeva Partner Orders",
+        dateRangeLabel: dateLabel,
+        filename: `Orders_${isRealTime ? "live" : startDate || "all"}_export.xlsx`,
+      });
+    } catch (err) {
+      console.error("Export orders to Excel failed:", err);
+      customAlert("Failed to export orders to Excel.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  const handleDownloadCsv = () => {
+    try {
+      setIsExportingCsv(true);
+      const rows = filteredRows.map((item) => {
+        const fin = getOrderFinancials(item);
+        const dishes = formatOrderItemsSummary(item).replace(/\n/g, "; ");
+        return [
+          item.OrderID,
+          item.Date || "N/A",
+          `"${(item.restaurantName || "N/A").replace(/"/g, '""')}"`,
+          `"${(item.CustomerName || "N/A").replace(/"/g, '""')}"`,
+          `"${(item.CustomerContact || "N/A").replace(/"/g, '""')}"`,
+          `"${(item.CustomerEmail || "N/A").replace(/"/g, '""')}"`,
+          `"${(item.Location || "N/A").replace(/"/g, '""')}"`,
+          `"${dishes.replace(/"/g, '""')}"`,
+          fin.itemsCount,
+          `"${(item.paymentMethod || "N/A").replace(/"/g, '""')}"`,
+          item.Status || "N/A",
+          fin.subtotal.toFixed(2),
+          fin.delivery.toFixed(2),
+          fin.gross.toFixed(2),
+        ];
+      });
+
+      const csvHeaders = [
+        "Order ID",
+        "Date",
+        "Restaurant",
+        "Customer Name",
+        "Customer Contact",
+        "Customer Email",
+        "Delivery Address",
+        "Items Ordered",
+        "Total Quantity",
+        "Payment Method",
+        "Status",
+        "Food Subtotal (THB)",
+        "Delivery Fee (THB)",
+        "Order Total (THB)",
+      ];
+
+      const csvContent =
+        "data:text/csv;charset=utf-8,\uFEFF" +
+        [csvHeaders.join(","), ...rows.map((e) => e.join(","))].join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute(
+        "download",
+        `Orders_${isRealTime ? "live" : startDate || "all"}_export.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Export CSV failed:", err);
+      customAlert("Failed to export CSV report.");
+    } finally {
+      setIsExportingCsv(false);
+    }
+  };
+
   const sourceRows = useMemo(
     () =>
       (isRealTime ? orders : orderDetailsRecord || []).filter(
@@ -340,7 +452,7 @@ const OrdersDetails = () => {
   return (
     <div className="px-4 py-8 md:px-6 md:py-10">
       {/* Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="page-header">Orders</h1>
@@ -362,6 +474,30 @@ const OrdersDetails = () => {
             Partner restaurant tickets only. ThaiSeva kitchen menu orders stay
             on Our orders.
           </p>
+        </div>
+
+        {/* Export Buttons */}
+        <div className="flex items-center gap-2.5 self-start lg:self-auto">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-sm focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleDownloadExcel}
+            disabled={isExportingExcel || filteredRows.length === 0}
+            title="Export all orders with itemized dishes and totals to styled Excel (.xlsx)"
+          >
+            <i className="bi bi-file-earmark-excel text-base" aria-hidden="true" />
+            {isExportingExcel ? "Exporting Excel..." : "Export Excel (.xlsx)"}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-neutral-700 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg shadow-sm focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleDownloadCsv}
+            disabled={isExportingCsv || filteredRows.length === 0}
+            title="Export orders with items and totals to CSV"
+          >
+            <i className="bi bi-filetype-csv text-base" aria-hidden="true" />
+            CSV
+          </button>
         </div>
       </div>
 
@@ -397,6 +533,7 @@ const OrdersDetails = () => {
           onEndDateChange={setEndDate}
           onApply={applyDateRange}
           onReset={resetToLive}
+          selectedPreset={isRealTime ? null : undefined}
           loading={loading}
           resetLabel="Live (24h)"
         />

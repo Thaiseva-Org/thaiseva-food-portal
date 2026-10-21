@@ -13,7 +13,7 @@ const money = (value) => {
   return `฿${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`;
 };
 
-const displayValue = (value, fallback = "—") => {
+const displayValue = (value, fallback = "-") => {
   const text = String(value ?? "").trim();
   return escapeHtml(text || fallback);
 };

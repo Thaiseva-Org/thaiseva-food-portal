@@ -1,4 +1,4 @@
-# System Architecture Documentation — Thaiseva Food Portal
+# System Architecture Documentation - Thaiseva Food Portal
 
 ## 1. System Overview & Architectural Pattern
 

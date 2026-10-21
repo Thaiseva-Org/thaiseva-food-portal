@@ -4,7 +4,7 @@ import axios from "axios";
 import { MdCheckCircle } from "react-icons/md";
 import { FaImages } from "react-icons/fa";
 import MapLocationPicker from "../../../components/MapLocationPicker";
-import { submitPublicRestaurantApplication } from "../../../api";
+import { submitPublicRestaurantApplication, checkPublicPartnerEmail } from "../../../api";
 import { getGoogleMapsApiKey } from "../../../utils/tenant";
 import {
   ensurePublicApplicationId,
@@ -12,9 +12,11 @@ import {
 } from "../../../utils/publicApplyUpload";
 import { Logo } from "../../../assets";
 import Loading from "../../../components/Loading";
+import PartnerPrivacyNotice from "../../../components/PartnerPrivacyNotice";
 import CuisineSelect from "../../../components/CuisineSelect";
 
 import { extractCityFromPlace } from "../../../utils/location";
+import { sendEmailOtp, resendEmailOtp, verifyEmailOtp } from "../../../api/emailOtp";
 
 const SERVICE_TYPES = ["Delivery", "Dine-in", "Both"];
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -40,6 +42,79 @@ const PublicApply = () => {
   const [ownerName, setOwnerName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [emailId, setEmailId] = useState("");
+  const [challenge, setChallenge] = useState(null);
+  const [emailProof, setEmailProof] = useState(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const otpRequest = useRef(0);
+  const otpPending = useRef(false);
+  const normalizedEmail = emailId.trim().toLowerCase();
+  const emailVerified = emailProof?.email === normalizedEmail && emailProof?.expiresAt > now;
+  const resendSeconds = Math.max(0, Math.ceil(((challenge?.resendAt || 0) - now) / 1000));
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => { clearInterval(timer); otpRequest.current += 1; };
+  }, []);
+
+  const changeEmail = (value) => {
+    otpRequest.current += 1;
+    setEmailId(value);
+    setChallenge(null);
+    setEmailProof(null);
+    setOtpCode("");
+    setOtpError("");
+  };
+
+  const handleOtp = async (verify = false) => {
+    if (otpPending.current) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setOtpError("Enter a valid email address first.");
+      return;
+    }
+    if (verify && (!challenge || !/^\d{6}$/.test(otpCode))) {
+      setOtpError("Enter the six-digit code from your email.");
+      return;
+    }
+    const requestId = ++otpRequest.current;
+    otpPending.current = true;
+    setOtpBusy(true);
+    setOtpError("");
+    try {
+      if (verify) {
+        const proof = await verifyEmailOtp(normalizedEmail, challenge.challengeId, otpCode);
+        if (requestId !== otpRequest.current) return;
+        if (proof.verified !== true || proof.email !== normalizedEmail || !proof.verificationToken || proof.expiresAt <= Date.now()) {
+          throw new Error("Could not confirm email verification. Request a new code.");
+        }
+        setEmailProof(proof);
+        setOtpCode("");
+      } else {
+        await checkPublicPartnerEmail({ email: normalizedEmail });
+        if (requestId !== otpRequest.current) return;
+        const replacement = challenge?.challengeId
+          ? await resendEmailOtp(normalizedEmail, challenge.challengeId)
+          : await sendEmailOtp(normalizedEmail);
+        if (requestId !== otpRequest.current) return;
+        setChallenge(replacement);
+        setEmailProof(null);
+        setOtpCode("");
+      }
+      setNow(Date.now());
+    } catch (err) {
+      if (requestId !== otpRequest.current) return;
+      setOtpError(err.message || "Email verification failed. Please try again.");
+      const retrySeconds = Number(err.details?.retryAfterSeconds);
+      if (retrySeconds > 0) {
+        setChallenge((previous) => ({ ...previous, resendAt: Date.now() + retrySeconds * 1000 }));
+      }
+    } finally {
+      otpPending.current = false;
+      setOtpBusy(false);
+    }
+  };
   const [foodType, setFoodType] = useState("");
   const [businessRegistrationNumber, setBusinessRegistrationNumber] = useState("");
   const [taxId, setTaxId] = useState("");
@@ -133,6 +208,9 @@ const PublicApply = () => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailId.trim())) {
       return "Enter a valid email address.";
     }
+    if (!emailVerified || emailProof.expiresAt <= Date.now()) {
+      return "Verify your email before continuing. If verification expired, request a new code.";
+    }
     if (!businessRegistrationNumber.trim() || !serviceType || !openTime || !closeTime || selectedDays.length === 0) {
       return "Fill registration number, service type, and opening schedule (including days and times).";
     }
@@ -173,7 +251,8 @@ const PublicApply = () => {
         name: restaurantName.trim(),
         ownerName: ownerName.trim(),
         phoneNumber,
-        emailId: emailId.trim(),
+        emailId: normalizedEmail,
+        verificationToken: emailProof.verificationToken,
         foodType: foodType.trim(),
         businessRegistrationNumber: businessRegistrationNumber.trim(),
         taxId: taxId.trim() || null,
@@ -253,6 +332,7 @@ const PublicApply = () => {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8 md:py-12">
+        <PartnerPrivacyNotice />
         <div className="mb-6">
           <div className="mb-2 flex justify-between text-sm font-semibold text-ink-heading">
             <span>Step {step + 1} of {STEPS.length}</span>
@@ -287,7 +367,29 @@ const PublicApply = () => {
                 <input type="tel" className="modern-input" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
               </Field>
               <Field label="Email">
-                <input className="modern-input" type="email" value={emailId} onChange={(e) => setEmailId(e.target.value)} />
+                <input className="modern-input" type="email" value={emailId} disabled={otpBusy || submitting} onChange={(e) => changeEmail(e.target.value)} />
+                <div className="mt-2 space-y-2">
+                  {emailVerified ? (
+                    <p role="status" className="text-sm text-success-600">Email verified</p>
+                  ) : (
+                    <>
+                      <button type="button" className="btn-outline" disabled={otpBusy || resendSeconds > 0 || !normalizedEmail} onClick={() => handleOtp()}>
+                        {otpBusy ? "Please wait..." : resendSeconds > 0 ? `Resend in ${resendSeconds}s` : challenge?.challengeId ? "Resend code" : "Send verification code"}
+                      </button>
+                      {challenge?.challengeId && (
+                        <div className="space-y-2">
+                          <p role="status" className="text-xs text-ink-muted">
+                            {challenge.expiresAt <= now ? "Code expired. Request a new code." : "A code was sent to your email. It expires in five minutes."}
+                          </p>
+                          <label htmlFor="partner-email-otp" className="block text-sm font-semibold">Verification code</label>
+                          <input id="partner-email-otp" className="modern-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpCode} disabled={otpBusy} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))} placeholder="Six-digit code" />
+                          <button type="button" className="btn-primary" disabled={otpBusy || otpCode.length !== 6 || challenge.expiresAt <= now} onClick={() => handleOtp(true)}>Verify email</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {otpError && <p role="alert" className="text-sm text-danger-700">{otpError}</p>}
+                </div>
               </Field>
               <CuisineSelect value={foodType} onChange={setFoodType} required />
             </div>
@@ -425,10 +527,10 @@ const PublicApply = () => {
                     ["Service", serviceType],
                     ["Opening hours", `${selectedDays.length === 7 ? "Mon-Sun" : selectedDays.join(", ")} ${openTime} - ${closeTime}`],
                     ["Registration number", businessRegistrationNumber],
-                    ["Tax ID", taxId || "—"],
+                    ["Tax ID", taxId || "-"],
                     ["Address", location],
-                    ["City", city || "—"],
-                    ["Landmark", landmark || "—"],
+                    ["City", city || "-"],
+                    ["Landmark", landmark || "-"],
                     ["Description", description],
                   ].map(([label, value]) => (
                     <div key={label} className="min-w-0">

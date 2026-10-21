@@ -47,7 +47,7 @@ export const OrdersProvider = ({ children }) => {
     setOrdersError(null);
 
     const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const ordersRef = collection(db, "orders");
+    const ordersRef = collection(db, isRestaurantAdmin && !isMasterAdmin ? "partnerOrderViews" : "orders");
     const makeQuery = (dateField) => isRestaurantAdmin
       ? query(
           ordersRef,

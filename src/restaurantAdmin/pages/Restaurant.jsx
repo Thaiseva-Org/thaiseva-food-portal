@@ -46,7 +46,7 @@ const InfoTile = ({ icon, label, value, title }) => (
           className="mt-1 text-sm sm:text-base font-semibold text-ink break-words"
           title={title || (typeof value === "string" ? value : undefined)}
         >
-          {value || "—"}
+          {value || "-"}
         </p>
       </div>
     </div>
@@ -137,7 +137,7 @@ const Restaurant = () => {
   const isVerified = restaurantData.status === "Verified";
   const phoneDisplay = restaurantData.phoneNumber
     ? `${restaurantData.phoneNumber}`
-    : "—";
+    : "-";
   const commission = restaurantData.comission ?? restaurantData.commission ?? 0;
 
   return (
@@ -280,7 +280,7 @@ const Restaurant = () => {
                 className="mt-1.5 text-sm sm:text-base text-ink-muted leading-relaxed break-words"
                 title={restaurantData.location}
               >
-                {restaurantData.location || "—"}
+                {restaurantData.location || "-"}
               </p>
             </div>
 

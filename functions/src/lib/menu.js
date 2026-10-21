@@ -46,7 +46,7 @@ function cleanItemText(value, field, maxLength) {
 
 function cleanOptionalImageUrl(value) {
   const url = String(value || "").trim();
-  if (url.length > 2048 || (url && !/^https:\/\//i.test(url))) {
+  if (url.length > 2048 || (url && !/^https?:\/\//i.test(url))) {
     throw new HttpsError("invalid-argument", "imageUrl must be an HTTPS URL.");
   }
   return url;

@@ -116,7 +116,7 @@ test("recordsQuery filters by restaurantId when provided and excludes un-indexed
   });
 
   const clauses = qWithRest.clauses;
-  assert.equal(qWithRest.collectionName, "orders");
+  assert.equal(qWithRest.collectionName, "partnerOrderViews");
   // Must filter Restaurant.ownerId
   const restClause = clauses.find(
     (c) => c.type === "where" && c.field === "Restaurant.ownerId"

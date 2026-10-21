@@ -8,7 +8,6 @@ const ROLES = {
   CUSTOMER: "customer",
 };
 
-const MASTER_ADMIN_EMAILS = new Set(["admin@gmail.com"]);
 
 function requireAuth(request) {
   if (!request.auth?.uid) {
@@ -21,9 +20,7 @@ function requireAuth(request) {
 }
 
 function getRoleFromToken(token) {
-  const email = String(token.email || "").trim().toLowerCase();
   if (
-    MASTER_ADMIN_EMAILS.has(email) ||
     token.foodRole === ROLES.MASTER ||
     token.foodMasterAdmin === true
   ) {
@@ -40,17 +37,27 @@ function getRoleFromToken(token) {
 
 async function resolveCaller(request) {
   const { uid, token } = requireAuth(request);
-  let role = getRoleFromToken(token);
-  let restaurantId = token.foodRestaurantId || token.restaurantId || null;
+  const [account, profileSnap] = await Promise.all([
+    getAuth().getUser(uid),
+    getFirestore().collection("users").doc(uid).get(),
+  ]);
+  const profile = profileSnap.data() || {};
+  const authTime = Number(token.auth_time) * 1000;
+  const validAfter = Date.parse(account.tokensValidAfterTime || "1970-01-01");
+  if (account.disabled || profile.isSuspended === true ||
+      !Number.isFinite(authTime) || authTime <= 0 || !Number.isFinite(validAfter) || authTime < validAfter) {
+    throw new HttpsError("permission-denied", "This account is inactive. Sign in again.");
+  }
+  // Supplied tokens identify a session, not its current protected role or tenant.
+  const currentClaims = account.customClaims || {};
+  let role = getRoleFromToken(currentClaims);
+  let restaurantId = currentClaims.foodRestaurantId || currentClaims.restaurantId || null;
 
   // Migration fallback: a profile flag alone is insufficient because this is
   // a shared Firebase project. Confirm it against a verified food restaurant.
   if (!role) {
     const db = getFirestore();
-    const [profileSnap, restaurantSnap] = await Promise.all([
-      db.collection("users").doc(uid).get(),
-      db.collection("restaurants").doc(uid).get(),
-    ]);
+    const restaurantSnap = await db.collection("restaurants").doc(uid).get();
     if (profileSnap.exists && restaurantSnap.exists) {
       const data = profileSnap.data() || {};
       const restaurant = restaurantSnap.data() || {};
@@ -100,6 +107,10 @@ async function setUserClaims(uid, claims) {
     }
   }
   await auth.setCustomUserClaims(uid, merged);
+  // A demotion or tenant change must invalidate previously issued sessions.
+  if (JSON.stringify(user.customClaims || {}) !== JSON.stringify(merged)) {
+    await auth.revokeRefreshTokens(uid);
+  }
 }
 
 async function enforceRateLimit(caller, action, maxRequests = 120) {
