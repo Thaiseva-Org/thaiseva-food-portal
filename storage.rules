@@ -2,6 +2,14 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function authenticated() { return request.auth != null; }
+    // Reviewed legacy objects stay private even under an older public media path.
+    // Existing-object checks also prevent owners from removing the quarantine tag.
+    function legacyAccessAllowed() {
+      return resource == null ||
+        !('legacyPrivacyAccess' in resource.metadata) ||
+        resource.metadata.legacyPrivacyAccess != 'private' || isAdmin();
+    }
+
     function isAdmin() {
       return authenticated() && (
         request.auth.token.get('admin', false) == true ||
@@ -31,30 +39,30 @@ service firebase.storage {
 
     // Mobile app profile images are public; only the named owner can change them.
     match /profile_pics/{fileName} {
-      allow read: if true;
-      allow create, update: if authenticated() && fileName == request.auth.uid + '.jpg' &&
+      allow read: if legacyAccessAllowed() && (true);
+      allow create, update: if legacyAccessAllowed() && (authenticated() && fileName == request.auth.uid + '.jpg' &&
         request.resource.size <= 15 * 1024 * 1024 &&
-        request.resource.contentType == 'image/jpeg';
-      allow delete: if authenticated() && fileName == request.auth.uid + '.jpg';
+        request.resource.contentType == 'image/jpeg');
+      allow delete: if legacyAccessAllowed() && (authenticated() && fileName == request.auth.uid + '.jpg');
     }
     // Any signed-in account can submit an attachment under its own UID.
     // Submitters cannot read or replace submitted attachments.
     match /uploads/{uid}/{file=**} {
-      allow read: if (isAdmin() || isFoodAdmin()) &&
-        (!('privateRetainedDocument' in resource.metadata) || resource.metadata.privateRetainedDocument != 'true');
-      allow create: if owner(uid) && resource == null &&
-        request.resource.size <= 15 * 1024 * 1024;
-      allow update: if false;
-      allow delete: if (isAdmin() || isFoodAdmin()) &&
-        (!('privateRetainedDocument' in resource.metadata) || resource.metadata.privateRetainedDocument != 'true');
+      allow read: if legacyAccessAllowed() && ((isAdmin() || isFoodAdmin()) &&
+        (!('privateRetainedDocument' in resource.metadata) || resource.metadata.privateRetainedDocument != 'true'));
+      allow create: if legacyAccessAllowed() && (owner(uid) && resource == null &&
+        request.resource.size <= 15 * 1024 * 1024);
+      allow update: if legacyAccessAllowed() && (false);
+      allow delete: if legacyAccessAllowed() && ((isAdmin() || isFoodAdmin()) &&
+        (!('privateRetainedDocument' in resource.metadata) || resource.metadata.privateRetainedDocument != 'true'));
     }
     // Delivery photos are private; legacy partner readers use the authorized callable.
     match /food_orders/{uid}/{file=**} {
-      allow read: if owner(uid) || isAdmin() || isFoodAdmin();
-      allow create, update: if owner(uid) &&
+      allow read: if legacyAccessAllowed() && (owner(uid) || isAdmin() || isFoodAdmin());
+      allow create, update: if legacyAccessAllowed() && (owner(uid) &&
         request.resource.size <= 15 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
-      allow delete: if owner(uid) || isAdmin() || isFoodAdmin();
+        request.resource.contentType.matches('image/.*'));
+      allow delete: if legacyAccessAllowed() && (owner(uid) || isAdmin() || isFoodAdmin());
     }
 
     function assignedOrderReader(uid, orderId) {
@@ -67,34 +75,34 @@ service firebase.storage {
          order.get('DeliveryPartner', {}).get('id', '') == request.auth.uid);
     }
     match /food_orders/{uid}/{orderId}/{file=**} {
-      allow read: if assignedOrderReader(uid, orderId);
+      allow read: if legacyAccessAllowed() && (assignedOrderReader(uid, orderId));
     }
 
     // Public reads are explicit and never overlap private documents.
     match /site-media/{file=**} {
-      allow read: if true;
-      allow write: if isAdmin() && sized(50 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (true);
+      allow write: if legacyAccessAllowed() && (isAdmin() && sized(50 * 1024 * 1024));
     }
     // Existing dashboard image links remain readable; new root uploads are denied.
     match /{fileName} {
       // Root uploads are immutable. Exclude the four reviewed legacy licences
       // explicitly, preserving existing public media without metadata lookups.
-      allow read: if fileName.matches('[0-9]+-file') && !(fileName in [
+      allow read: if legacyAccessAllowed() && (fileName.matches('[0-9]+-file') && !(fileName in [
         '1699075805724-file', '1699534595420-file',
         '1703104711053-file', '1704266484536-file'
-      ]);
-      allow write: if false;
+      ]));
+      allow write: if legacyAccessAllowed() && (false);
     }
     match /{folder}/{file=**} {
-      allow read: if folder in ['images', 'restaurantImages', 'blogImages', 'hotelImages', 'hotel-images', 'serviceImages'];
-      allow write: if folder in ['images', 'restaurantImages', 'blogImages', 'hotelImages', 'hotel-images', 'serviceImages'] &&
-        (isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (folder in ['images', 'restaurantImages', 'blogImages', 'hotelImages', 'hotel-images', 'serviceImages']);
+      allow write: if legacyAccessAllowed() && (folder in ['images', 'restaurantImages', 'blogImages', 'hotelImages', 'hotel-images', 'serviceImages'] &&
+        (isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024));
     }
     match /users/{uid}/{file=**} {
-      allow read: if (owner(uid) || isAdmin()) &&
-        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true');
-      allow delete: if (owner(uid) || isAdmin()) &&
-        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true');
+      allow read: if legacyAccessAllowed() && ((owner(uid) || isAdmin()) &&
+        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true'));
+      allow delete: if legacyAccessAllowed() && ((owner(uid) || isAdmin()) &&
+        (!('privateDriverDocument' in resource.metadata) || resource.metadata.privateDriverDocument != 'true'));
     }
     function safeUserFileCreate(uid) {
       return resource == null && (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024) &&
@@ -108,56 +116,56 @@ service firebase.storage {
         !request.resource.metadata.keys().hasAny(['privateDriverOwner']);
     }
     match /users/{uid}/{fileName} {
-      allow create: if safeUserFileCreate(uid);
-      allow update: if safeUserFileUpdate(uid);
+      allow create: if legacyAccessAllowed() && (safeUserFileCreate(uid));
+      allow update: if legacyAccessAllowed() && (safeUserFileUpdate(uid));
     }
     // Identity uploads use token-free APIs. Recursive path variables cannot
     // safely be treated as strings for folder matching in Storage rules.
     match /users/{uid}/{folder}/{file=**} {
-      allow create: if !(folder in ['passports','licences']) && safeUserFileCreate(uid);
-      allow update: if !(folder in ['passports','licences']) && safeUserFileUpdate(uid);
+      allow create: if legacyAccessAllowed() && (!(folder in ['passports','licences']) && safeUserFileCreate(uid));
+      allow update: if legacyAccessAllowed() && (!(folder in ['passports','licences']) && safeUserFileUpdate(uid));
     }
     // Exclude public media here so its image validation cannot be bypassed.
     match /{collection}/{uid}/{folder}/{file=**} {
-      allow read: if collection in ['partners', 'hotels', 'HotelDB'] && (owner(uid) || isAdmin());
-      allow write: if collection in ['partners', 'hotels', 'HotelDB'] &&
-        folder != 'media' && (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (collection in ['partners', 'hotels', 'HotelDB'] && (owner(uid) || isAdmin()));
+      allow write: if legacyAccessAllowed() && (collection in ['partners', 'hotels', 'HotelDB'] &&
+        folder != 'media' && (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024));
     }
     match /{collection}/{uid}/{fileName} {
-      allow read: if collection in ['partners', 'hotels', 'HotelDB'] && (owner(uid) || isAdmin());
-      allow write: if collection in ['partners', 'hotels', 'HotelDB'] &&
-        (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (collection in ['partners', 'hotels', 'HotelDB'] && (owner(uid) || isAdmin()));
+      allow write: if legacyAccessAllowed() && (collection in ['partners', 'hotels', 'HotelDB'] &&
+        (owner(uid) || isAdmin()) && sized(15 * 1024 * 1024));
     }
     // Public partner media belongs in these explicit subfolders.
     match /{collection}/{uid}/media/{file=**} {
-      allow read: if collection in ['partners', 'hotels', 'HotelDB'];
-      allow write: if collection in ['partners', 'hotels', 'HotelDB'] &&
-        (owner(uid) || isAdmin()) && image() && sized(15 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (collection in ['partners', 'hotels', 'HotelDB']);
+      allow write: if legacyAccessAllowed() && (collection in ['partners', 'hotels', 'HotelDB'] &&
+        (owner(uid) || isAdmin()) && image() && sized(15 * 1024 * 1024));
     }
     match /restaurants/{uid}/documents/{file=**} {
-      allow read: if owner(uid) || isAdmin() || isFoodAdmin();
-      allow write: if (isAdmin() || isFoodAdmin() ||
-        (owner(uid) && resource == null && request.resource != null)) && documentUpload();
+      allow read: if legacyAccessAllowed() && (owner(uid) || isAdmin() || isFoodAdmin());
+      allow write: if legacyAccessAllowed() && ((isAdmin() || isFoodAdmin() ||
+        (owner(uid) && resource == null && request.resource != null)) && documentUpload());
     }
     match /restaurants/{uid}/{fileName} {
-      allow read: if true;
-      allow write: if (owner(uid) || isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (true);
+      allow write: if legacyAccessAllowed() && ((owner(uid) || isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024));
     }
     match /restaurants/{uid}/{folder}/{file=**} {
-      allow read: if folder in ['media', 'images', 'menu', 'profile', 'items'];
-      allow write: if folder in ['media', 'images', 'menu', 'profile', 'items'] &&
-        (owner(uid) || isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024);
+      allow read: if legacyAccessAllowed() && (folder in ['media', 'images', 'menu', 'profile', 'items']);
+      allow write: if legacyAccessAllowed() && (folder in ['media', 'images', 'menu', 'profile', 'items'] &&
+        (owner(uid) || isAdmin() || isFoodAdmin()) && image() && sized(15 * 1024 * 1024));
     }
     // Public application uploads use the validated backend; no direct client writes.
     match /applications/{applicationId}/{file=**} {
-      allow read: if isAdmin() || isFoodAdmin();
-      allow write: if false;
+      allow read: if legacyAccessAllowed() && (isAdmin() || isFoodAdmin());
+      allow write: if legacyAccessAllowed() && (false);
     }
     // Legacy sender-scoped chat media: private to the sender and support staff.
     match /{folder}/{uid}/{file=**} {
-      allow read: if folder in ['chat', 'chats', 'chatMedia'] && (owner(uid) || isAdmin() || isFoodAdmin());
+      allow read: if legacyAccessAllowed() && (folder in ['chat', 'chats', 'chatMedia'] && (owner(uid) || isAdmin() || isFoodAdmin()));
       // Current support/partner chat APIs validate participants and avoid bearer URLs.
-      allow write: if false;
+      allow write: if legacyAccessAllowed() && (false);
     }
     // Large historical support attachments require an API-issued, UID-bound
     // one-minute grant. Deletion revokes access through the same metadata record.
@@ -172,11 +180,11 @@ service firebase.storage {
           attachment.get('deleting', false) == false &&
           attachment.get('downloadGrants', {}).get(request.auth.uid, request.time) > request.time;
       }
-      allow get: if authenticated() && grantedLegacyDownload();
-      allow list, write: if false;
+      allow get: if legacyAccessAllowed() && (authenticated() && grantedLegacyDownload());
+      allow list, write: if legacyAccessAllowed() && (false);
     }
     match /{file=**} {
-      allow read, write: if false;
+      allow read, write: if legacyAccessAllowed() && (false);
     }
   }
 }
