@@ -1,7 +1,7 @@
 const { createHmac, timingSafeEqual } = require("node:crypto");
 const { URL, URLSearchParams } = require("node:url");
 const { HttpsError } = require("firebase-functions/v2/https");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { ROLES } = require("./auth");
 const { writeAuditLogTx } = require("./audit");
 
@@ -77,6 +77,44 @@ async function verifyOrderPayment(caller, { orderId, expectedAmount, expectedMet
 function isStripePaymentMethod(value) {
   const method = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   return ["stripe", "stripecard", "cardstripe"].includes(method);
+}
+
+// Card orders wait here, under their order ID, until Stripe reports the
+// payment; only then are they written to `orders` and the restaurant told.
+// Server-only (no client rules); `expireAt` is for a Firestore TTL policy,
+// long after the 31-minute Checkout can be paid.
+const CHECKOUT_DRAFTS = "foodCheckoutDrafts";
+const DRAFT_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+function checkoutDraftExpiry(now = Date.now()) {
+  return Timestamp.fromMillis(now + DRAFT_LIFETIME_MS);
+}
+
+function writeNewOrderNotificationsTx(tx, db, ownerId, orderId) {
+  tx.set(
+    db.collection("notifications").doc("restaurants").collection(ownerId).doc(),
+    {
+      title: "New Order Received!",
+      desc: `New order #${orderId}. Awaiting admin confirmation.`,
+      type: "order",
+      image: "",
+      timestamp: FieldValue.serverTimestamp(),
+    }
+  );
+
+  tx.set(db.collection("notifications").doc("restaurants").collection("RestAdmin").doc(), {
+    title: "Order awaiting confirmation", desc: `Confirm order #${orderId}.`, type: "order", timestamp: FieldValue.serverTimestamp(),
+  });
+}
+
+// The placed order, else its unpaid checkout draft.
+async function readCardOrder(get, db, orderId) {
+  const ref = db.collection("orders").doc(orderId);
+  const snap = await get(ref);
+  if (snap.exists) return { ref, data: snap.data(), draft: false };
+  const draftRef = db.collection(CHECKOUT_DRAFTS).doc(orderId);
+  const draftSnap = await get(draftRef);
+  return { ref: draftRef, data: draftSnap.exists ? draftSnap.data() : null, draft: true };
 }
 
 // Stripe form encoding: { a: { b: 1 }, c: [x] } -> a[b]=1&c[0]=x
@@ -158,13 +196,12 @@ function stripePresentment(...sources) {
 // The intent must be for this order, by its customer, succeeded, in THB and for
 // exactly the order's Amount. With Adaptive Pricing the intent stays in THB;
 // what the customer paid in their own currency is saved as stripePresentment.
+// A checkout draft becomes the order here, so it is placed only once paid.
 async function applyStripeOrderPayment(orderId, intent, { actorUid, actorRole = null, session = null } = {}) {
   const db = getFirestore();
-  const ref = db.collection("orders").doc(orderId);
   const paymentIntentId = intent?.id;
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const order = snap.exists ? snap.data() : null;
+    const { ref, data: order, draft } = await readCardOrder((r) => tx.get(r), db, orderId);
     if (!order) throw new HttpsError("not-found", "Order not found.");
     if (!isStripePaymentMethod(order.paymentMethod)) {
       throw new HttpsError("failed-precondition", "This order is not paid by card.");
@@ -189,7 +226,7 @@ async function applyStripeOrderPayment(orderId, intent, { actorUid, actorRole = 
     }
     const verifiedBy = actorUid === customerUid ? "stripe" : "stripe-webhook";
     const presentment = stripePresentment(intent, session);
-    tx.update(ref, {
+    const payment = {
       verified: true,
       isPaymentDone: true,
       paymentStatus: "verified",
@@ -201,7 +238,24 @@ async function applyStripeOrderPayment(orderId, intent, { actorUid, actorRole = 
       },
       ...(presentment ? { stripePresentment: presentment } : {}),
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    if (draft) {
+      // Placed now: the order's time and first status are the payment's.
+      const { expireAt, ...placed } = order;
+      const placedAt = new Date();
+      const status = Array.isArray(placed.Status) && placed.Status[0] ? placed.Status[0] : { status: "New Order", by: customerUid };
+      tx.set(db.collection("orders").doc(orderId), {
+        ...placed,
+        ...payment,
+        Status: [{ ...status, timestamp: placedAt }],
+        checkoutStartedAt: placed.createdAt ?? null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+      tx.delete(ref);
+      writeNewOrderNotificationsTx(tx, db, order.Restaurant?.ownerId, orderId);
+    } else {
+      tx.update(ref, payment);
+    }
     writeAuditLogTx(tx, db, {
       actorUid, actorRole,
       action: "order.stripe_payment_verified", targetType: "order", targetId: orderId,
@@ -209,6 +263,7 @@ async function applyStripeOrderPayment(orderId, intent, { actorUid, actorRole = 
       before: { verified: false },
       after: {
         verified: true, isPaymentDone: true, amount, paymentIntentId, verifiedBy,
+        ...(draft ? { placedFromCheckout: true } : {}),
         ...(presentment ? { presentmentCurrency: presentment.currency, presentmentAmount: presentment.amount } : {}),
       },
     });
@@ -242,8 +297,8 @@ async function verifyStripeOrderPayment(caller, { orderId, paymentIntentId, sess
   if (!bySession && (typeof paymentIntentId !== "string" || !/^pi_[A-Za-z0-9]{1,250}$/.test(paymentIntentId))) {
     throw new HttpsError("invalid-argument", "A valid Stripe payment ID is required.");
   }
-  const snap = await getFirestore().collection("orders").doc(orderId).get();
-  const current = snap.exists ? snap.data() : null;
+  const db = getFirestore();
+  const { data: current } = await readCardOrder((r) => r.get(), db, orderId);
   if (!current || current.Receiver?.id !== caller.uid) throw new HttpsError("not-found", "Order not found.");
   if (!isStripePaymentMethod(current.paymentMethod)) {
     throw new HttpsError("failed-precondition", "This order is not paid by card.");
@@ -319,9 +374,8 @@ async function createStripeOrderCheckout(caller, { orderId, successUrl, cancelUr
   if (!success || !cancel) {
     throw new HttpsError("invalid-argument", "Valid Thaiseva return URLs are required.");
   }
-  const ref = getFirestore().collection("orders").doc(orderId);
-  const snap = await ref.get();
-  const order = snap.exists ? snap.data() : null;
+  const db = getFirestore();
+  const { ref, data: order } = await readCardOrder((r) => r.get(), db, orderId);
   if (!order || order.Receiver?.id !== caller.uid) throw new HttpsError("not-found", "Order not found.");
   if (!isStripePaymentMethod(order.paymentMethod)) {
     throw new HttpsError("failed-precondition", "This order is not paid by card.");
@@ -438,6 +492,9 @@ async function handleStripeFoodWebhookEvent(event) {
 }
 
 module.exports = {
+  CHECKOUT_DRAFTS,
+  checkoutDraftExpiry,
+  writeNewOrderNotificationsTx,
   verifyOrderPayment,
   manualPaymentMethod,
   isStripePaymentMethod,

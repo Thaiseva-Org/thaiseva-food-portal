@@ -377,3 +377,107 @@ test("webhook saves the local-currency amount from the PaymentIntent", async () 
   }));
   assert.deepEqual({ ...f.writes[0].stripePresentment }, { currency: "INR", amount: 612, amountMinor: 61200 });
 });
+
+// Card orders are checkout drafts (foodCheckoutDrafts/{orderId}) until Stripe
+// reports the payment; only then are they written to orders/{orderId}.
+function storeFixture(docs) {
+  const store = new Map(Object.entries(docs));
+  const audits = [];
+  let auto = 0;
+  class HttpsError extends Error {
+    constructor(code, message) { super(message); this.code = code; }
+  }
+  const ref = (path) => ({
+    path,
+    id: path.split("/").pop(),
+    collection: (name) => collection(`${path}/${name}`),
+    get: async () => snap(path),
+    update: async (data) => { store.set(path, { ...store.get(path), ...data }); },
+  });
+  const collection = (path) => ({ doc: (id = `auto${++auto}`) => ref(`${path}/${id}`) });
+  const snap = (path) => ({ exists: store.has(path), data: () => store.get(path) });
+  const tx = {
+    get: async (r) => snap(r.path),
+    set: (r, data) => store.set(r.path, data),
+    update: (r, data) => store.set(r.path, { ...store.get(r.path), ...data }),
+    delete: (r) => store.delete(r.path),
+  };
+  const dependencies = {
+    "firebase-functions/v2/https": { HttpsError },
+    "firebase-admin/firestore": {
+      FieldValue: { serverTimestamp: () => "server-time" },
+      Timestamp: { fromMillis: (ms) => ({ ms }) },
+      getFirestore: () => ({ collection, runTransaction: (run) => run(tx) }),
+    },
+    "./auth": { ROLES: { MASTER: "masterAdmin" } },
+    "./audit": { writeAuditLogTx: (t, db, entry) => audits.push(entry) },
+    "node:crypto": require("node:crypto"),
+    "node:url": require("node:url"),
+  };
+  const context = { module: { exports: {} }, require: (name) => dependencies[name], Buffer };
+  vm.runInNewContext(readFileSync(join(__dirname, "../functions/src/lib/orderPayments.js"), "utf8"), context);
+  const notifications = () => [...store.keys()].filter((path) => path.startsWith("notifications/"));
+  return { ...context.module.exports, store, audits, notifications };
+}
+
+const draftOrder = {
+  ...stripeOrder, orderId: "ORD-1", verified: false, isPaymentDone: false,
+  Status: [{ status: "New Order", timestamp: "draft-time", by: "customer-1" }],
+  createdAt: "draft-created", expireAt: { ms: 1 },
+};
+
+test("a paid Checkout places the drafted order, notifies the restaurant and removes the draft", async () => {
+  const f = storeFixture({ "foodCheckoutDrafts/ORD-1": draftOrder });
+  const result = { ...await f.verifyStripeOrderPayment(customer, { orderId: "ORD-1", sessionId: "cs_test_abc" }, sessionReturns(paidSession)) };
+  assert.deepEqual(result, { orderId: "ORD-1", verified: true, alreadyApplied: false });
+  const order = f.store.get("orders/ORD-1");
+  assert.equal(order.verified, true);
+  assert.equal(order.isPaymentDone, true);
+  assert.equal(order.Amount, 216.5);
+  assert.equal(order.currentStatus, "New Order");
+  assert.equal(order.createdAt, "server-time");
+  assert.equal(order.checkoutStartedAt, "draft-created");
+  assert.equal(order.expireAt, undefined);
+  assert.notEqual(order.Status[0].timestamp, "draft-time");
+  assert.equal(order.Status.length, 1);
+  assert.equal(f.store.has("foodCheckoutDrafts/ORD-1"), false);
+  assert.equal(f.notifications().length, 2);
+  assert.ok(f.notifications().some((path) => path.startsWith("notifications/restaurants/owner-1/")));
+  assert.equal(f.audits[0].after.placedFromCheckout, true);
+
+  // The webhook arriving afterwards changes nothing.
+  assert.equal((await f.handleStripeFoodWebhookEvent(webhookEvent(foodIntent))).alreadyApplied, true);
+  assert.equal(f.notifications().length, 2);
+});
+
+test("the webhook places a drafted order when the app never came back", async () => {
+  const f = storeFixture({ "foodCheckoutDrafts/ORD-1": draftOrder });
+  assert.equal((await f.handleStripeFoodWebhookEvent(webhookEvent(foodIntent))).handled, true);
+  assert.equal(f.store.get("orders/ORD-1").paymentVerification.verifiedBy, "stripe-webhook");
+  assert.equal(f.store.has("foodCheckoutDrafts/ORD-1"), false);
+});
+
+test("an unpaid or mismatched Checkout leaves the draft and places no order", async () => {
+  for (const session of [
+    { ...paidSession, payment_status: "unpaid" },
+    { ...paidSession, payment_intent: { ...paidIntent, amount_received: 100 } },
+  ]) {
+    const f = storeFixture({ "foodCheckoutDrafts/ORD-1": draftOrder });
+    await assert.rejects(f.verifyStripeOrderPayment(customer, { orderId: "ORD-1", sessionId: "cs_test_abc" }, sessionReturns(session)), { code: "failed-precondition" });
+    assert.equal(f.store.has("orders/ORD-1"), false);
+    assert.equal(f.store.has("foodCheckoutDrafts/ORD-1"), true);
+    assert.equal(f.notifications().length, 0);
+  }
+  const other = storeFixture({ "foodCheckoutDrafts/ORD-1": { ...draftOrder, Receiver: { id: "someone-else" } } });
+  await assert.rejects(other.verifyStripeOrderPayment(customer, { orderId: "ORD-1", sessionId: "cs_test_abc" }, sessionReturns(paidSession)), { code: "not-found" });
+});
+
+test("Checkout for a draft keeps it a draft and stores the session on it", async () => {
+  const f = storeFixture({ "foodCheckoutDrafts/ORD-1": draftOrder });
+  const result = await f.createStripeOrderCheckout(customer, checkoutRequest, { stripe: fakeCheckout(), now: () => 1_800_000_000_000 });
+  assert.equal(result.sessionId, "cs_test_new");
+  assert.equal(result.amount, 216.5);
+  assert.equal(f.store.get("foodCheckoutDrafts/ORD-1").stripeCheckoutSessionId, "cs_test_new");
+  assert.equal(f.store.has("orders/ORD-1"), false);
+  assert.equal(f.notifications().length, 0);
+});

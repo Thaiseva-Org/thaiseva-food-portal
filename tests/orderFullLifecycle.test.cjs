@@ -125,6 +125,7 @@ function fixture() {
             if (!records.has(r.path)) throw new HttpsError("not-found", "Not found");
             writes.push(() => apply(r.path, data));
           },
+          delete: (r) => writes.push(() => records.delete(r.path)),
         };
         const result = await run(tx);
         writes.forEach((w) => w());
@@ -170,6 +171,7 @@ function fixture() {
         increment: (n) => ({ increment: n }),
         arrayUnion: (...items) => ({ union: items }),
       },
+      Timestamp: { fromMillis: (ms) => ({ ms }) },
     },
     "./auth": {
       ROLES: { MASTER: "masterAdmin", OWNER: "restaurantOwner" },
@@ -221,9 +223,11 @@ function fixture() {
     process: { env: { GOOGLE_ROUTES_API_KEY: "test-key" } },
   });
 
+  deps["./orderPayments"] = load("orderPayments");
+
   return {
     ...load("orders"),
-    ...load("orderPayments"),
+    ...deps["./orderPayments"],
     records,
     audits,
     routes,
@@ -573,4 +577,57 @@ test("orderFullLifecycle: end-to-end kitchen progression, dispatch, delivery and
   const finalOrder = f.records.get(`orders/${orderId}`);
   assert.equal(finalOrder.comission, 15);
   assert.equal(finalOrder.accounting.partnerShare, 375);
+});
+
+test("orderFullLifecycle: a card order is placed only when Stripe reports the payment", async () => {
+  const f = fixture();
+  const orders = () => [...f.records.keys()].filter((p) => p.startsWith("orders/"));
+  const notifications = () => [...f.records.keys()].filter((p) => p.startsWith("notifications/"));
+  const payload = {
+    Restaurant: { ownerId: "rest-owner-1" },
+    Items: [{ ItemId: "item-curry", Quantity: 2 }],
+    Receiver: { name: "Card", address: "Silom", phoneNumber: "0890000003", location: { latitude: 13.73, longitude: 100.53 } },
+    paymentMethod: "Stripe",
+    idempotencyKey: "card-order",
+  };
+
+  const created = await f.createFoodOrder(customer, payload);
+  assert.equal(created.alreadyApplied, false);
+  assert.equal(orders().length, 0);
+  assert.equal(notifications().length, 0);
+  const draft = f.records.get(`foodCheckoutDrafts/${created.orderId}`);
+  assert.equal(draft.Amount, created.amount);
+  assert.equal(draft.verified, false);
+  assert.ok(draft.expireAt.ms > Date.now());
+
+  // Backing out of Checkout and paying again reuses the same draft.
+  const retry = await f.createFoodOrder(customer, payload);
+  assert.equal(retry.alreadyApplied, true);
+  assert.equal(retry.orderId, created.orderId);
+  assert.equal(retry.amount, created.amount);
+  await assert.rejects(f.createFoodOrder(customer, { ...payload, Items: [{ ItemId: "item-rice", Quantity: 1 }] }), { code: "already-exists" });
+
+  const intent = {
+    object: "payment_intent", id: "pi_card", status: "succeeded", currency: "thb",
+    amount_received: Math.round(created.amount * 100),
+    metadata: { orderId: created.orderId, orderType: "food", userId: customer.uid },
+  };
+  const paid = await f.handleStripeFoodWebhookEvent({ type: "payment_intent.succeeded", data: { object: intent } });
+  assert.equal(paid.handled, true);
+  const order = f.records.get(`orders/${created.orderId}`);
+  assert.equal(order.verified, true);
+  assert.equal(order.isPaymentDone, true);
+  assert.equal(order.currentStatus, "New Order");
+  assert.equal(order.Receiver.id, customer.uid);
+  assert.equal(order.expireAt, undefined);
+  assert.equal(f.records.has(`foodCheckoutDrafts/${created.orderId}`), false);
+  assert.equal(notifications().length, 2);
+
+  // Once placed, the same checkout returns the order (already paid).
+  assert.equal((await f.createFoodOrder(customer, payload)).alreadyApplied, true);
+
+  // Cash orders are still placed at once.
+  const cash = await f.createFoodOrder(customer, { ...payload, paymentMethod: "Cash on Delivery", idempotencyKey: "cash-order" });
+  assert.equal(f.records.has(`orders/${cash.orderId}`), true);
+  assert.equal(notifications().length, 4);
 });

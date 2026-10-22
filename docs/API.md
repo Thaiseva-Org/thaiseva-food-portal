@@ -259,9 +259,12 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
   order starts with `isPaymentDone: false` and `verified: false`:
   - Cash on Delivery / Thai QR: master admin confirms the order, then calls
     `verifyOrderPayment` (sets `isPaymentDone: true`).
-  - Stripe: the app creates the order first, charges exactly `amount` THB with
-    PaymentIntent `metadata.orderId`, then calls `verifyFoodOrderPaymentHttp`,
-    which sets `verified: true` and `isPaymentDone: true`.
+  - Stripe: the order is saved as a checkout draft
+    (`foodCheckoutDrafts/{orderId}`) and only written to `orders` (with
+    `verified: true`, `isPaymentDone: true`, and the restaurant notified) when
+    `verifyFoodOrderPaymentHttp` or `stripeFoodWebhook` confirms that Stripe
+    charged exactly `amount` THB for `metadata.orderId`. An unpaid Checkout
+    leaves no order.
   Reusing an `idempotencyKey` with the same payload returns the same order
   (`alreadyApplied: true`); with a changed payload it returns `already-exists`.
 * **Response Data**:

@@ -61,10 +61,11 @@ function fixture() {
   };
   const deps = {
     "node:crypto": require("node:crypto"),
+    "node:url": require("node:url"),
     "firebase-functions/v2/https": { HttpsError },
     "firebase-admin/firestore": { getFirestore: () => db, FieldValue: {
       serverTimestamp: () => "server-time", increment: increment => ({ increment }), arrayUnion: (...union) => ({ union }),
-    } },
+    }, Timestamp: { fromMillis: ms => ({ ms }) } },
     "./auth": { ROLES: { MASTER: "masterAdmin", OWNER: "restaurantOwner" }, assertTenantAccess: (caller, uid) => {
       if (caller.role !== "masterAdmin" && !(caller.role === "restaurantOwner" && caller.uid === uid)) throw new HttpsError("permission-denied", "Tenant denied");
     } },
@@ -84,6 +85,7 @@ function fixture() {
     return context.module.exports;
   };
   deps["./deliveryFee"] = load("deliveryFee", { fetch, AbortSignal, console, process: { env: { GOOGLE_ROUTES_API_KEY: "test-key" } } });
+  deps["./orderPayments"] = load("orderPayments", { console, process: { env: {} } });
   return { ...load("orders"), ...load("menu"), records };
 }
 const admin = { uid: "admin", role: "masterAdmin" };
