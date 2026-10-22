@@ -3,7 +3,13 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { writeAuditLogTx } = require("./audit");
 const { ROLES, assertTenantAccess } = require("./auth");
-const { quoteDelivery } = require("./deliveryFee");
+const { quoteDelivery, deliveryChargeForOrder } = require("./deliveryFee");
+const {
+  CHECKOUT_DRAFTS,
+  checkoutDraftExpiry,
+  isStripePaymentMethod,
+  writeNewOrderNotificationsTx,
+} = require("./orderPayments");
 const {
   loadActiveRiderSnapshot,
   loadRiderSnapshot,
@@ -761,20 +767,27 @@ async function createFoodOrder(caller, payload) {
   const orderRef = safeKey
     ? db.collection("orders").doc(`ORD-${createHash("sha256").update(`${caller.uid}:${safeKey}`).digest("hex")}`)
     : db.collection("orders").doc();
+  // A card order is only a checkout draft (same ID, not in `orders`, nobody
+  // notified) until Stripe reports the payment; applyStripeOrderPayment then
+  // places it. Leaving Checkout unpaid places nothing.
+  const cardOrder = isStripePaymentMethod(payload.paymentMethod);
+  const draftRef = db.collection(CHECKOUT_DRAFTS).doc(orderRef.id);
 
   // Price delivery before the transaction: it may call Google, and a
   // transaction can run more than once. A retry of an existing order skips
   // it and gets the stored order back below.
   const priorOrder = safeKey ? await orderRef.get() : null;
+  const priorDraft = safeKey && cardOrder && !priorOrder.exists ? await draftRef.get() : null;
   let delivery = null;
-  if (!priorOrder?.exists) {
+  if (!priorOrder?.exists && !priorDraft?.exists) {
     const restaurantSnap = await db.collection("restaurants").doc(payload.Restaurant.ownerId).get();
     if (!restaurantSnap.exists) throw new HttpsError("failed-precondition", "Restaurant no longer exists.");
     delivery = await quoteDelivery({ restaurant: restaurantSnap.data() || {}, location: payload.Receiver.location, db });
   }
 
   const result = await db.runTransaction(async (tx) => {
-    const existing = await tx.get(orderRef);
+    let existing = await tx.get(orderRef);
+    if (!existing.exists && cardOrder) existing = await tx.get(draftRef);
     if (existing.exists) {
       if (existing.data().requestHash !== requestHash) throw new HttpsError("already-exists", "Use a new idempotency key for a changed cart.");
       const prior = existing.data() || {};
@@ -791,7 +804,7 @@ async function createFoodOrder(caller, payload) {
     if (!delivery) throw new HttpsError("unavailable", "Please try placing the order again.");
     const dummyOrder = { ...payload, schemaVersion: 2, comission: null, deliveryCharge: 0 };
     const prepared = await prepareVerifiedAccounting(tx, db, dummyOrder, true);
-    const deliveryCharge = delivery.deliveryCharge;
+    const { deliveryCharge, rule: deliveryRule } = deliveryChargeForOrder(delivery.deliveryCharge, prepared.amount);
 
     const restSnap = await tx.get(prepared.restaurantRef);
     if (restSnap.data()?.active !== true || restSnap.data()?.status !== "Verified") {
@@ -853,6 +866,8 @@ async function createFoodOrder(caller, payload) {
       deliveryDistanceKm: delivery.distanceKm,
       deliveryPricing: {
         version: delivery.pricingVersion,
+        rule: deliveryRule,
+        distanceFee: delivery.deliveryCharge,
         distanceMeters: delivery.distanceMeters,
         distanceSource: delivery.distanceSource,
         fallbackReason: delivery.fallbackReason,
@@ -872,22 +887,12 @@ async function createFoodOrder(caller, payload) {
       ...(safeKey ? { idempotencyKeys: { [safeKey]: true } } : {}),
     };
     
-    tx.set(orderRef, orderDoc);
-    
-    tx.set(
-      db.collection("notifications").doc("restaurants").collection(prepared.ownerId).doc(),
-      {
-        title: "New Order Received!",
-        desc: `New order #${orderId}. Awaiting admin confirmation.`,
-        type: "order",
-        image: "",
-        timestamp: FieldValue.serverTimestamp(),
-      }
-    );
-    
-    tx.set(db.collection("notifications").doc("restaurants").collection("RestAdmin").doc(), {
-      title: "Order awaiting confirmation", desc: `Confirm order #${orderId}.`, type: "order", timestamp: FieldValue.serverTimestamp(),
-    });
+    if (cardOrder) {
+      tx.set(draftRef, { ...orderDoc, expireAt: checkoutDraftExpiry() });
+    } else {
+      tx.set(orderRef, orderDoc);
+      writeNewOrderNotificationsTx(tx, db, prepared.ownerId, orderId);
+    }
     return {
       alreadyApplied: false,
       orderId,

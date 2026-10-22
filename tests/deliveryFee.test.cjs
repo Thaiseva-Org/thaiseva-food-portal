@@ -6,6 +6,7 @@ const {
   normalizeLatLng,
   haversineMeters,
   feeForDistanceMeters,
+  deliveryChargeForOrder,
   fetchRoadDistanceMeters,
   distanceCacheId,
   quoteDelivery,
@@ -58,6 +59,24 @@ test("delivery fee bands include their upper edge", () => {
   assert.equal(last.toKm, null);
   assert.throws(() => feeForDistanceMeters(-1));
   assert.throws(() => feeForDistanceMeters(Number.NaN));
+});
+
+test("orders above 1,000 Baht pay 20 Baht delivery for any distance", () => {
+  const cases = [
+    // [distance fee, food subtotal, charged fee, rule]
+    [80, 999.99, 80, "distance"],
+    [80, 1000, 80, "distance"],
+    [80, 1000.01, 20, "large_order"],
+    [120, 5000, 20, "large_order"],
+    [30, 1500, 20, "large_order"],
+    [20, 1500, 20, "large_order"],
+    [120, 0, 120, "distance"],
+  ];
+  for (const [distanceFee, subtotal, charged, rule] of cases) {
+    const result = deliveryChargeForOrder(distanceFee, subtotal);
+    assert.equal(result.deliveryCharge, charged, `${distanceFee} / ${subtotal}`);
+    assert.equal(result.rule, rule, `${distanceFee} / ${subtotal}`);
+  }
 });
 
 test("coordinates accept numbers, numeric strings and lat/lng aliases", () => {

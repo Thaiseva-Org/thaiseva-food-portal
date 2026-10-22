@@ -2,11 +2,12 @@
 
 Food delivery is priced by the **road distance** from the restaurant to the
 customer's delivery pin. The server calculates the fee; the customer app only
-displays it. This replaced the old rule (฿100 below a ฿1,000 food subtotal,
-free above it). Every order now pays the distance fee, whatever its size.
+displays it. Orders whose food subtotal is **above ฿1,000** pay a flat **฿20**
+for any distance. This replaced the old rule (฿100 below a ฿1,000 food
+subtotal, free above it).
 
 Source: [`functions/src/lib/deliveryFee.js`](../functions/src/lib/deliveryFee.js).
-Pricing version: `distance-v1`.
+Pricing version: `distance-v2` (`distance-v1` had no large-order rule).
 
 ---
 
@@ -25,6 +26,18 @@ Pricing version: `distance-v1`.
 
 A band includes its upper edge: exactly 3.000 km is ฿30 and 3.001 km is ฿50.
 Distances are compared in whole meters.
+
+**Large orders:** when the verified food subtotal (after discounts, before
+delivery) is **above ฿1,000**, delivery is **฿20 for any distance**
+(`LARGE_ORDER_ABOVE_SUBTOTAL`, `LARGE_ORDER_DELIVERY_FEE`). Exactly ฿1,000.00
+pays the distance fee; ฿1,000.01 pays ฿20.
+
+| Food subtotal | Distance | Delivery fee |
+| :--- | :--- | ---: |
+| ฿510 | 4.2 km | ฿50 |
+| ฿1,000.00 | 12.5 km | ฿100 |
+| ฿1,200 | 12.5 km | ฿20 |
+| ฿3,000 | 30 km | ฿20 |
 
 The order total is:
 
@@ -112,11 +125,16 @@ Content-Type: application/json
     "distanceMeters": 4200,
     "distanceSource": "road",
     "band": { "fromKm": 3, "toKm": 5 },
-    "pricingVersion": "distance-v1"
+    "largeOrder": { "aboveSubtotal": 1000, "deliveryCharge": 20 },
+    "pricingVersion": "distance-v2"
   }
 }
 ```
 
+- `deliveryCharge` is the distance fee. If the cart's food subtotal is above
+  `largeOrder.aboveSubtotal`, show `largeOrder.deliveryCharge` instead. The
+  app reads both numbers from the response, so changing them needs no app
+  update.
 - `distanceSource` is `road` or `straight_line` (backup in use).
 - `band.toKm` is `null` for the last band (over 20 km).
 - Rate limit: 60 requests per user per minute.
@@ -134,7 +152,8 @@ the cache it gets the same result.
 ### 3.2 `createFoodOrderHttp`: changes
 
 - `Receiver.location` (`{latitude, longitude}`) is now **required**.
-- `deliveryCharge` is the distance fee (any client value is still ignored).
+- `deliveryCharge` is the distance fee, or ฿20 when the verified food subtotal
+  is above ฿1,000 (any client value is still ignored).
 - The response adds `foodSubtotal`, `deliveryCharge` and `deliveryDistanceKm`:
 
 ```json
@@ -165,9 +184,11 @@ New fields on `orders/{orderId}`:
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `deliveryCharge` | Number | Distance fee in THB (as before, now distance-based) |
+| `deliveryCharge` | Number | Delivery fee charged in THB |
 | `deliveryDistanceKm` | Number | Distance used for the fee, 2 decimals |
-| `deliveryPricing.version` | String | Pricing version (`distance-v1`) |
+| `deliveryPricing.version` | String | Pricing version (`distance-v2`) |
+| `deliveryPricing.rule` | String | `distance`, or `large_order` (food subtotal above ฿1,000) |
+| `deliveryPricing.distanceFee` | Number | The distance fee before the large-order rule |
 | `deliveryPricing.distanceMeters` | Number | Distance in meters |
 | `deliveryPricing.distanceSource` | String | `road` or `straight_line` |
 | `deliveryPricing.fallbackReason` | String/null | Why the backup was used (`no_api_key`, `timeout`, `network`, `http_<status>`, `route_not_found`, `element_error`, `bad_response`) |
@@ -238,9 +259,12 @@ Monitoring:
 
 ## 7. Changing or scaling
 
-- **Change prices or bands:** edit `DELIVERY_FEE_BANDS` in `deliveryFee.js`,
-  bump `DELIVERY_PRICING_VERSION`, update `tests/deliveryFee.test.cjs`, then
-  deploy. Existing orders keep the fee they were charged.
+- **Change prices or bands:** edit `DELIVERY_FEE_BANDS` (or
+  `LARGE_ORDER_ABOVE_SUBTOTAL` / `LARGE_ORDER_DELIVERY_FEE`) in
+  `deliveryFee.js`, bump `DELIVERY_PRICING_VERSION`, update
+  `tests/deliveryFee.test.cjs`, then deploy. Existing orders keep the fee they
+  were charged. The app takes the large-order numbers from the quote, so it
+  needs no update for those.
 - **Change how distance is measured** (for example `TWO_WHEELER` if the price
   is acceptable): change the request in `fetchRoadDistanceMeters` and bump
   `ROUTE_PROFILE` and `DELIVERY_PRICING_VERSION`.
@@ -263,9 +287,9 @@ node --test tests/deliveryFee.test.cjs tests/orderFullLifecycle.test.cjs tests/r
 npm test
 ```
 
-- `tests/deliveryFee.test.cjs`: every band edge, coordinate parsing, the Routes request (Essentials settings), Google errors, cache reuse, fallback and expiry.
-- `tests/orderFullLifecycle.test.cjs`: orders charged by distance, large orders pay delivery, the quote equals the charged fee, retries skip Google, fallback, missing pin or restaurant location.
-- `tests/restaurantMenuFlow.test.cjs`: checkout, confirmation and delivery accounting with the distance fee.
+- `tests/deliveryFee.test.cjs`: every band edge, the large-order rule (฿1,000.00 vs ฿1,000.01), coordinate parsing, the Routes request (Essentials settings), Google errors, cache reuse, fallback and expiry.
+- `tests/orderFullLifecycle.test.cjs`: orders charged by distance, large orders pay ฿20, the quote equals the charged fee, retries skip Google, fallback, missing pin or restaurant location.
+- `tests/restaurantMenuFlow.test.cjs`: checkout, confirmation and delivery accounting with the distance fee; exactly ฿1,000 vs above ฿1,000.
 
 ---
-*Distance-based delivery fee added 2026-10-04.*
+*Distance-based delivery fee and the ฿20 large-order rule added 2026-10-04.*

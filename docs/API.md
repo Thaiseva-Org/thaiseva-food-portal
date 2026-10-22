@@ -252,15 +252,19 @@ callables plus standard HTTP endpoints deployed to `asia-southeast1`.
   restaurant and cart inside a transaction, and writes the order with status
   `"New Order"`. `Receiver.location` is required: before the transaction it
   prices delivery by the road distance from the restaurant to that pin
-  (฿20–฿120, every order; see [DELIVERY_FEE.md](./DELIVERY_FEE.md)).
+  (฿20–฿120), or a flat ฿20 when the food subtotal is above ฿1,000 (see
+  [DELIVERY_FEE.md](./DELIVERY_FEE.md)).
   `amount` in the response is the full total (`Amount`).
   `paymentMethod` is `"Cash on Delivery"`, `"Thai QR"` or `"Stripe"`. Every
   order starts with `isPaymentDone: false` and `verified: false`:
   - Cash on Delivery / Thai QR: master admin confirms the order, then calls
     `verifyOrderPayment` (sets `isPaymentDone: true`).
-  - Stripe: the app creates the order first, charges exactly `amount` THB with
-    PaymentIntent `metadata.orderId`, then calls `verifyFoodOrderPaymentHttp`,
-    which sets `verified: true` and `isPaymentDone: true`.
+  - Stripe: the order is saved as a checkout draft
+    (`foodCheckoutDrafts/{orderId}`) and only written to `orders` (with
+    `verified: true`, `isPaymentDone: true`, and the restaurant notified) when
+    `verifyFoodOrderPaymentHttp` or `stripeFoodWebhook` confirms that Stripe
+    charged exactly `amount` THB for `metadata.orderId`. An unpaid Checkout
+    leaves no order.
   Reusing an `idempotencyKey` with the same payload returns the same order
   (`alreadyApplied: true`); with a changed payload it returns `already-exists`.
 * **Response Data**:
@@ -298,7 +302,7 @@ reject this endpoint because it performs Firebase Auth verification directly.
   `deliveryDistanceCache`, and returns the fee from the distance bands.
   `createFoodOrderHttp` reuses the cached distance, so the order is charged
   the quoted fee.
-* **Response Data**: `{ "ok": true, "data": { "ownerId": "…", "deliveryCharge": 50, "distanceKm": 4.2, "distanceMeters": 4200, "distanceSource": "road", "band": { "fromKm": 3, "toKm": 5 }, "pricingVersion": "distance-v1" } }`
+* **Response Data**: `{ "ok": true, "data": { "ownerId": "…", "deliveryCharge": 50, "distanceKm": 4.2, "distanceMeters": 4200, "distanceSource": "road", "band": { "fromKm": 3, "toKm": 5 }, "largeOrder": { "aboveSubtotal": 1000, "deliveryCharge": 20 }, "pricingVersion": "distance-v2" } }`. `deliveryCharge` is the distance fee; carts above `largeOrder.aboveSubtotal` pay `largeOrder.deliveryCharge`.
 * **Errors**: `invalid-argument` (bad restaurant ID or location),
   `failed-precondition` (restaurant closed or without a location),
   `unauthenticated`, `resource-exhausted`.

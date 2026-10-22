@@ -4,7 +4,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 // Bump when the bands or the way distance is measured change. Every order
 // stores the version it was priced with (deliveryPricing.version).
-const DELIVERY_PRICING_VERSION = "distance-v1";
+const DELIVERY_PRICING_VERSION = "distance-v2";
 
 // Delivery fee in THB by distance from the restaurant to the customer pin.
 // A band includes its upper edge: exactly 1 km is ฿20, 1.001 km is ฿30.
@@ -19,6 +19,12 @@ const DELIVERY_FEE_BANDS = Object.freeze([
   { upToKm: 20, fee: 110 },
   { upToKm: null, fee: 120 },
 ]);
+
+// Orders whose food subtotal (after discounts, before delivery) is above
+// ฿1,000 pay ฿20 delivery for any distance. Exactly ฿1,000 pays the
+// distance fee.
+const LARGE_ORDER_ABOVE_SUBTOTAL = 1000;
+const LARGE_ORDER_DELIVERY_FEE = 20;
 
 const ROUTES_MATRIX_URL =
   "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
@@ -88,6 +94,17 @@ function feeForDistanceMeters(meters) {
     fromKm = band.upToKm;
   }
   throw new HttpsError("internal", "Delivery fee bands are misconfigured.");
+}
+
+/** The delivery fee an order pays, given its distance fee and food subtotal. */
+function deliveryChargeForOrder(distanceFee, foodSubtotal) {
+  if (foodSubtotal > LARGE_ORDER_ABOVE_SUBTOTAL) {
+    return {
+      deliveryCharge: Math.min(distanceFee, LARGE_ORDER_DELIVERY_FEE),
+      rule: "large_order",
+    };
+  }
+  return { deliveryCharge: distanceFee, rule: "distance" };
 }
 
 /**
@@ -262,7 +279,11 @@ async function quoteDelivery({
   };
 }
 
-/** getFoodDeliveryQuoteHttp: the fee the cart shows before ordering. */
+/**
+ * getFoodDeliveryQuoteHttp: the fee the cart shows before ordering.
+ * deliveryCharge is the distance fee; largeOrder tells the app which food
+ * subtotal gets the flat large-order fee instead.
+ */
 async function quoteFoodDelivery(caller, payload = {}) {
   if (!caller?.uid) {
     throw new HttpsError("unauthenticated", "Sign in to see the delivery fee.");
@@ -287,6 +308,10 @@ async function quoteFoodDelivery(caller, payload = {}) {
     distanceMeters: quote.distanceMeters,
     distanceSource: quote.distanceSource,
     band: quote.band,
+    largeOrder: {
+      aboveSubtotal: LARGE_ORDER_ABOVE_SUBTOTAL,
+      deliveryCharge: Math.min(quote.deliveryCharge, LARGE_ORDER_DELIVERY_FEE),
+    },
     pricingVersion: quote.pricingVersion,
   };
 }
@@ -294,11 +319,14 @@ async function quoteFoodDelivery(caller, payload = {}) {
 module.exports = {
   DELIVERY_PRICING_VERSION,
   DELIVERY_FEE_BANDS,
+  LARGE_ORDER_ABOVE_SUBTOTAL,
+  LARGE_ORDER_DELIVERY_FEE,
   ROUTE_PROFILE,
   RouteDistanceError,
   normalizeLatLng,
   haversineMeters,
   feeForDistanceMeters,
+  deliveryChargeForOrder,
   fetchRoadDistanceMeters,
   distanceCacheId,
   quoteDelivery,
