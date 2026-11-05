@@ -164,7 +164,8 @@ const fetchPartnerOrdersData = async (
   orders = []
 ) => {
   try {
-    const reqRef = collection(db, "orders");
+    if (!restaurantId) return null;
+    const reqRef = collection(db, "partnerOrderViews");
     const ranged = Boolean(startDate && endDate);
     const startTimestamp = ranged
       ? new Date(new Date(startDate).setHours(0, 0, 0, 0))
@@ -201,8 +202,12 @@ const fetchPartnerOrdersData = async (
       where("currentStatus", "==", "New Order")
     );
 
-    const itemsRef = collection(db, `food_items/${resId}/items`);
-    const soldQuery = query(itemsRef, where("count", ">", 0));
+    const itemsRef = resId ? collection(db, `food_items/${resId}/items`) : null;
+    const soldPromise = itemsRef
+      ? getCountFromServer(query(itemsRef, where("count", ">", 0))).catch(
+          () => null
+        )
+      : Promise.resolve(null);
 
     const [totalSnap, deliveredSnap, cancelledSnap, newOrderSnap, soldSnap] =
       await Promise.all([
@@ -210,24 +215,25 @@ const fetchPartnerOrdersData = async (
         getCountFromServer(deliveredQuery),
         getCountFromServer(cancelledQuery),
         getCountFromServer(newOrderQuery),
-        getCountFromServer(soldQuery),
+        soldPromise,
       ]);
 
-    const total = totalSnap.data().count;
-    const delivered = deliveredSnap.data().count;
-    const cancelled = cancelledSnap.data().count;
-    const newOrder = newOrderSnap.data().count;
+    const total = totalSnap?.data()?.count ?? 0;
+    const delivered = deliveredSnap?.data()?.count ?? 0;
+    const cancelled = cancelledSnap?.data()?.count ?? 0;
+    const newOrder = newOrderSnap?.data()?.count ?? 0;
+    const sold = soldSnap?.data()?.count ?? 0;
 
-    setOrderCount(total);
-    setDelivered(delivered);
-    setCanceled(cancelled);
-    setSoldCount(soldSnap.data().count);
+    if (setOrderCount) setOrderCount(total);
+    if (setDelivered) setDelivered(delivered);
+    if (setCanceled) setCanceled(cancelled);
+    if (setSoldCount) setSoldCount(sold);
 
     const uniqueCustomers = new Set();
     (orders || []).forEach((item) => {
       if (item.CustomerId) uniqueCustomers.add(item.CustomerId);
     });
-    setTotalCus(uniqueCustomers.size);
+    if (setTotalCus) setTotalCus(uniqueCustomers.size);
     return {
       total,
       delivered,
@@ -236,7 +242,7 @@ const fetchPartnerOrdersData = async (
       inprocess: Math.max(0, total - newOrder - delivered - cancelled),
     };
   } catch (error) {
-    setError(error);
+    if (setError) setError(error);
     console.error("Error fetching orders data: ", error);
     return null;
   }
@@ -297,7 +303,10 @@ const fetchPartnerOrdersDoughnutData = async (
   endDate = ""
 ) => {
   try {
-    const reqRef = collection(db, "orders");
+    if (!restaurantId) {
+      return { total: 0, delivered: 0, cancelled: 0, newOrder: 0, inprocess: 0 };
+    }
+    const reqRef = collection(db, "partnerOrderViews");
     const owner = where("Restaurant.ownerId", "==", restaurantId);
     const bounds = rangeBounds(startDate, endDate);
     const rangeClauses = bounds
@@ -336,10 +345,10 @@ const fetchPartnerOrdersDoughnutData = async (
         ),
       ]);
 
-    const total = totalSnap.data().count;
-    const delivered = deliveredSnap.data().count;
-    const cancelled = cancelledSnap.data().count;
-    const newOrder = newSnap.data().count;
+    const total = totalSnap?.data()?.count ?? 0;
+    const delivered = deliveredSnap?.data()?.count ?? 0;
+    const cancelled = cancelledSnap?.data()?.count ?? 0;
+    const newOrder = newSnap?.data()?.count ?? 0;
     return {
       total,
       delivered,
@@ -383,6 +392,10 @@ const fetchTopRestro = async (setTopeRes) => {
 
 const fetchTopItem = async (resId, setTopItems) => {
   try {
+    if (!resId) {
+      if (setTopItems) setTopItems([]);
+      return;
+    }
     const itemsRef = collection(db, `food_items/${resId}/items`);
     const q = query(itemsRef, orderBy("count", "desc"), limit(3));
     const itemsSnapshot = await getDocs(q);
@@ -392,7 +405,7 @@ const fetchTopItem = async (resId, setTopItems) => {
       ...doc.data(),
     }));
 
-    setTopItems(topItems);
+    if (setTopItems) setTopItems(topItems);
   } catch (error) {
     console.error("Error fetching top items: ", error);
   }

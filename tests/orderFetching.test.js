@@ -194,3 +194,143 @@ test("fetchVerifiedRestaurantsList returns sorted partner restaurants and exclud
   assert.equal(result[1].name, "Zab Thai");
   assert.ok(!result.some((r) => r.ownerId === "thaiseva-platform"));
 });
+
+function loadDashboardDataService(capturedQueries = []) {
+  const context = {
+    console,
+    db: {},
+    isPlatformOwnerId: (id) => id === "thaiseva-platform",
+    collection: (_, name) => name,
+    where: (field, op, value) => ({ type: "where", field, op, value }),
+    orderBy: (field, dir) => ({ type: "order", field, dir }),
+    limit: (value) => ({ type: "limit", value }),
+    query: (collectionName, ...clauses) => {
+      const q = { collectionName, clauses };
+      capturedQueries.push(q);
+      return q;
+    },
+    getCountFromServer: async () => ({ data: () => ({ count: 5 }) }),
+    getDocs: async () => ({ docs: [] }),
+  };
+
+  const source = readFileSync(
+    new URL("../src/services/DashboardData.js", import.meta.url),
+    "utf8"
+  )
+    .replace(/import[\s\S]*?from\s+"[^"]+";/g, "")
+    .replace(/export function/g, "function")
+    .replace(/export const/g, "const")
+    .replace(/export async function/g, "async function")
+    .replace(/export\s*\{[\s\S]*?\};/g, "");
+
+  vm.runInNewContext(
+    `${source}\n` +
+      `globalThis.fetchPartnerOrdersData = fetchPartnerOrdersData;\n` +
+      `globalThis.fetchPartnerOrdersDoughnutData = fetchPartnerOrdersDoughnutData;\n` +
+      `globalThis.fetchOrdersData = fetchOrdersData;\n` +
+      `globalThis.fetchOrdersDoughnutData = fetchOrdersDoughnutData;\n`,
+    context
+  );
+  return context;
+}
+
+test("fetchPartnerOrdersData queries partnerOrderViews and targets Restaurant.ownerId", async () => {
+  const captured = [];
+  const ctx = loadDashboardDataService(captured);
+
+  const res = await ctx.fetchPartnerOrdersData(
+    "partner-owner-456",
+    "",
+    "",
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    "partner-owner-456"
+  );
+
+  assert.ok(res);
+  assert.ok(captured.length >= 4);
+  const orderQueries = captured.filter(
+    (q) => q.collectionName === "partnerOrderViews"
+  );
+  assert.equal(orderQueries.length, 4);
+
+  // Must NOT query "orders"
+  assert.equal(
+    captured.filter((q) => q.collectionName === "orders").length,
+    0
+  );
+
+  for (const q of orderQueries) {
+    const ownerClause = q.clauses.find(
+      (c) => c.type === "where" && c.field === "Restaurant.ownerId"
+    );
+    assert.ok(ownerClause);
+    assert.equal(ownerClause.value, "partner-owner-456");
+  }
+});
+
+test("fetchPartnerOrdersDoughnutData queries partnerOrderViews and targets Restaurant.ownerId", async () => {
+  const captured = [];
+  const ctx = loadDashboardDataService(captured);
+
+  const res = await ctx.fetchPartnerOrdersDoughnutData("partner-owner-456");
+
+  assert.ok(res);
+  assert.ok(captured.length >= 4);
+  const orderQueries = captured.filter(
+    (q) => q.collectionName === "partnerOrderViews"
+  );
+  assert.equal(orderQueries.length, 4);
+  assert.equal(
+    captured.filter((q) => q.collectionName === "orders").length,
+    0
+  );
+
+  for (const q of orderQueries) {
+    const ownerClause = q.clauses.find(
+      (c) => c.type === "where" && c.field === "Restaurant.ownerId"
+    );
+    assert.ok(ownerClause);
+    assert.equal(ownerClause.value, "partner-owner-456");
+  }
+});
+
+test("fetchPartnerOrdersData returns early if restaurantId is missing", async () => {
+  const captured = [];
+  const ctx = loadDashboardDataService(captured);
+
+  const res = await ctx.fetchPartnerOrdersData(
+    "",
+    "",
+    "",
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    () => {},
+    ""
+  );
+
+  assert.equal(res, null);
+  assert.equal(captured.length, 0);
+});
+
+test("fetchOrdersData and fetchOrdersDoughnutData query orders for master admin", async () => {
+  const captured = [];
+  const ctx = loadDashboardDataService(captured);
+
+  await ctx.fetchOrdersData("", "", () => {}, () => {}, () => {});
+  await ctx.fetchOrdersDoughnutData("", "");
+
+  const ordersQueries = captured.filter((q) => q.collectionName === "orders");
+  assert.ok(ordersQueries.length >= 5);
+  assert.equal(
+    captured.filter((q) => q.collectionName === "partnerOrderViews").length,
+    0
+  );
+});
