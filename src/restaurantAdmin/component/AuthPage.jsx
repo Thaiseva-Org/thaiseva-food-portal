@@ -71,7 +71,6 @@ const AuthPageAdmin = () => {
   const [showpsw, setShowpsw] = useState(false);
   const [name, setName] = useState("");
   const [isSignUp] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -101,7 +100,7 @@ const AuthPageAdmin = () => {
 
   const finishLogin = async (user) => {
     // Bind JWT session (force-refresh ID token + client session marker)
-    await establishAuthSession(user, { rememberMe });
+    await establishAuthSession(user);
     clearLoginFailures();
     clearSessionMessage?.();
     const path = await resolvePostLoginPath(user);
@@ -197,8 +196,8 @@ const AuthPageAdmin = () => {
           return;
         }
       }
-      // Session vs local JWT persistence (must be set before sign-in)
-      await applyAuthPersistence(rememberMe);
+      // Use browser-session persistence (must be set before sign-in).
+      await applyAuthPersistence(false);
 
       if (isSignUp) {
         const userCredential = await createUserWithEmailAndPassword(
@@ -456,24 +455,6 @@ const AuthPageAdmin = () => {
                   <span>{error}</span>
                 </div>
               )}
-
-              <label className="flex cursor-pointer items-start gap-2.5 select-none">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  disabled={submitting}
-                />
-                <span>
-                  <span className="block text-sm font-medium text-ink">
-                    Stay signed in on this device
-                  </span>
-                  <span className="block text-xs text-ink-subtle">
-                    Otherwise you are signed out when the browser closes.
-                  </span>
-                </span>
-              </label>
 
               <button
                 type="submit"
